@@ -4,6 +4,13 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { ensureProfile, hasSupabaseConfig, isMockAuthEnabled } from "@/lib/auth/session";
+import {
+  appendConsumedMockRecoveryToken,
+  isConsumedMockRecoveryToken,
+  isValidMockRecoveryToken,
+  MOCK_RECOVERY_CONSUMED_COOKIE,
+  MOCK_RECOVERY_COOKIE,
+} from "@/lib/auth/mock-recovery";
 import { getMockState, mockUserId } from "@/lib/data/mock-store";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -140,10 +147,20 @@ export async function updatePasswordAction(
 
   if (isMockAuthEnabled()) {
     const cookieStore = await cookies();
-    if (cookieStore.get("tl_mock_recovery")?.value !== "1") {
+    const token = cookieStore.get(MOCK_RECOVERY_COOKIE)?.value;
+    const consumedTokens = cookieStore.get(MOCK_RECOVERY_CONSUMED_COOKIE)?.value;
+    if (
+      !isValidMockRecoveryToken(token) ||
+      isConsumedMockRecoveryToken(token, consumedTokens)
+    ) {
       return { ok: false, message: "ลิงก์หมดอายุ กรุณาขอลิงก์ใหม่อีกครั้ง" };
     }
-    cookieStore.delete("tl_mock_recovery");
+    cookieStore.set(
+      MOCK_RECOVERY_CONSUMED_COOKIE,
+      appendConsumedMockRecoveryToken(consumedTokens, token),
+      { path: "/", sameSite: "lax" },
+    );
+    cookieStore.delete(MOCK_RECOVERY_COOKIE);
     return { ok: true, message: "ตั้งรหัสผ่านใหม่สำเร็จ" };
   }
 

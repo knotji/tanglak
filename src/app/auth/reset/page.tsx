@@ -2,6 +2,8 @@ import { AppShell } from "@/components/AppShell";
 import { ResetPasswordForm } from "@/features/auth/ResetPasswordForm";
 import { hasRecoverySession } from "@/lib/auth/session";
 
+export const dynamic = "force-dynamic";
+
 export default async function ResetPasswordPage() {
   const ready = await hasRecoverySession();
 

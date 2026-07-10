@@ -4,6 +4,12 @@ import { redirect } from "next/navigation";
 import { timeAsync } from "@/lib/observability/timing";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { validateSupabaseConfig } from "@/lib/supabase/config";
+import {
+  isConsumedMockRecoveryToken,
+  isValidMockRecoveryToken,
+  MOCK_RECOVERY_CONSUMED_COOKIE,
+  MOCK_RECOVERY_COOKIE,
+} from "@/lib/auth/mock-recovery";
 
 export type AppUser = {
   id: string;
@@ -54,7 +60,9 @@ export async function requireUser(): Promise<AppUser> {
 export async function hasRecoverySession(): Promise<boolean> {
   if (isMockAuthEnabled()) {
     const cookieStore = await cookies();
-    return cookieStore.get("tl_mock_recovery")?.value === "1";
+    const token = cookieStore.get(MOCK_RECOVERY_COOKIE)?.value;
+    const consumedTokens = cookieStore.get(MOCK_RECOVERY_CONSUMED_COOKIE)?.value;
+    return isValidMockRecoveryToken(token) && !isConsumedMockRecoveryToken(token, consumedTokens);
   }
 
   if (!hasSupabaseConfig()) return false;

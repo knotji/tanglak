@@ -1,6 +1,12 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import type { EmailOtpType } from "@supabase/supabase-js";
+import {
+  isConsumedMockRecoveryToken,
+  isValidMockRecoveryToken,
+  MOCK_RECOVERY_CONSUMED_COOKIE,
+  MOCK_RECOVERY_COOKIE,
+} from "@/lib/auth/mock-recovery";
 
 const protectedRoutes = ["/today", "/transactions", "/upload", "/debts", "/overview", "/settings"];
 const RESET_PASSWORD_PATH = "/auth/reset";
@@ -24,10 +30,17 @@ export async function middleware(request: NextRequest) {
     }
     if (request.nextUrl.pathname === RESET_PASSWORD_PATH) {
       const token = request.nextUrl.searchParams.get("token");
-      if (token === "valid-mock-recovery") {
-        request.cookies.set("tl_mock_recovery", "1");
+      const consumedTokens = request.cookies.get(MOCK_RECOVERY_CONSUMED_COOKIE)?.value;
+      if (isValidMockRecoveryToken(token) && !isConsumedMockRecoveryToken(token, consumedTokens)) {
+        request.cookies.set(MOCK_RECOVERY_COOKIE, token);
         const response = NextResponse.next({ request });
-        response.cookies.set("tl_mock_recovery", "1", { path: "/", sameSite: "lax" });
+        response.cookies.set(MOCK_RECOVERY_COOKIE, token, { path: "/", sameSite: "lax" });
+        return response;
+      }
+      if (token) {
+        request.cookies.delete(MOCK_RECOVERY_COOKIE);
+        const response = NextResponse.next({ request });
+        response.cookies.delete(MOCK_RECOVERY_COOKIE);
         return response;
       }
       return NextResponse.next();
