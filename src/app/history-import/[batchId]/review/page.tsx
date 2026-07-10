@@ -6,6 +6,8 @@ import { getImportBatch, listImportRows, listDebts } from "@/lib/data/finance-re
 import { ReviewBoardClient } from "./ReviewBoardClient";
 import { notFound } from "next/navigation";
 
+export const runtime = "nodejs";
+
 interface ReviewPageProps {
   params: Promise<{ batchId: string }>;
 }

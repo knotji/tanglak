@@ -5,6 +5,8 @@ import { requireCompletedOnboarding } from "@/lib/auth/onboarding";
 import { listAccounts } from "@/lib/data/finance-repository";
 import { HistoryImportClient } from "./HistoryImportClient";
 
+export const runtime = "nodejs";
+
 export default async function HistoryImportUploadPage() {
   const user = await requireUser();
   await requireCompletedOnboarding(user);

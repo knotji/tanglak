@@ -26,6 +26,43 @@ const ALLOWED_MIME_TYPES = [
 ];
 const ALLOWED_EXTENSIONS = ["pdf", "csv"];
 const MAX_FILE_SIZE = 10_000_000; // 10MB limit
+const PDF_SAFE_FALLBACK_MESSAGE = "อ่าน Statement ไม่สำเร็จ\nลองอัปโหลดใหม่ หรือใช้ไฟล์ CSV แทน";
+
+function getSafeErrorCode(error: unknown): string | undefined {
+  if (error instanceof PdfImportError) {
+    return error.code;
+  }
+  if (typeof error === "object" && error !== null && "code" in error) {
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === "string" || typeof code === "number") {
+      return String(code);
+    }
+  }
+  return undefined;
+}
+
+function logSafeParserDiagnostic(input: {
+  error: unknown;
+  batchId: string;
+  parserStage: string;
+}) {
+  const errorName = input.error instanceof Error ? input.error.name : typeof input.error;
+  const errorCode = getSafeErrorCode(input.error);
+  const diagnostic: Record<string, string> = {
+    parserStage: input.parserStage,
+    batchId: input.batchId,
+    errorName,
+  };
+
+  if (errorCode) {
+    diagnostic.errorCode = errorCode;
+  }
+  if (process.env.NODE_ENV === "development" && input.error instanceof Error) {
+    diagnostic.errorMessage = input.error.message;
+  }
+
+  console.error("Statement parser failed", diagnostic);
+}
 
 async function sanitizeFilename(originalName: string): Promise<string> {
   const parts = originalName.split(".");
@@ -148,9 +185,11 @@ export async function uploadStatementAction(
         storagePath,
       });
     } catch (parseError) {
-      if (process.env.NODE_ENV === "development") {
-        console.error("Statement parsing pipeline failed:", parseError);
-      }
+      logSafeParserDiagnostic({
+        error: parseError,
+        batchId: batch.id,
+        parserStage: "history-import.parseStatement",
+      });
       await updateImportBatch(user.id, batch.id, {
         status: "failed",
       });
@@ -161,7 +200,7 @@ export async function uploadStatementAction(
           parseError instanceof PdfImportError
             ? parseError.message
             : isPdf
-              ? "อ่าน Statement ไม่สำเร็จ\nลองอัปโหลดใหม่ หรือใช้ไฟล์ CSV แทน"
+              ? PDF_SAFE_FALLBACK_MESSAGE
               : parseError instanceof Error
                 ? parseError.message
                 : "การอ่านไฟล์ประวัติการเงินล้มเหลว",

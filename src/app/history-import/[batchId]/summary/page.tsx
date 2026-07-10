@@ -7,6 +7,8 @@ import { rollbackBatchAction } from "@/app/actions/history-import";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
+export const runtime = "nodejs";
+
 interface SummaryPageProps {
   params: Promise<{ batchId: string }>;
 }

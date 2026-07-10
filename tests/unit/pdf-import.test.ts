@@ -1,7 +1,8 @@
 // @vitest-environment node
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import nextConfig from "../../next.config";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildGenericBankStatementPdf,
   buildMalformedPdf,
@@ -235,5 +236,95 @@ describe("shared date/money normalization reused from CSV pipeline", () => {
 
   it("parses parenthesized negative amounts", () => {
     expect(parseAmountSatang("(1,234.56)")).toBe(-123456);
+  });
+});
+
+describe("pdf production runtime compatibility", () => {
+  it("externalizes PDF.js and native canvas packages from the Next server bundle", () => {
+    expect(nextConfig.serverExternalPackages).toEqual(
+      expect.arrayContaining(["pdfjs-dist", "@napi-rs/canvas"]),
+    );
+  });
+
+  it("keeps history import routes on the Node runtime", () => {
+    const uploadPage = readFileSync(join(process.cwd(), "src/app/history-import/page.tsx"), "utf8");
+    const reviewPage = readFileSync(
+      join(process.cwd(), "src/app/history-import/[batchId]/review/page.tsx"),
+      "utf8",
+    );
+    const summaryPage = readFileSync(
+      join(process.cwd(), "src/app/history-import/[batchId]/summary/page.tsx"),
+      "utf8",
+    );
+
+    expect(uploadPage).toContain('export const runtime = "nodejs"');
+    expect(reviewPage).toContain('export const runtime = "nodejs"');
+    expect(summaryPage).toContain('export const runtime = "nodejs"');
+  });
+
+  it("resolves the native canvas package PDF.js uses for Node DOM polyfills", async () => {
+    const canvas = await import("@napi-rs/canvas");
+    expect(canvas.DOMMatrix).toBeTypeOf("function");
+    expect(canvas.ImageData).toBeTypeOf("function");
+    expect(canvas.Path2D).toBeTypeOf("function");
+  });
+
+  it("loads PDF.js in Node and extracts text from an uploaded-byte Uint8Array", async () => {
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    expect(pdfjs.getDocument).toBeTypeOf("function");
+
+    const buffer = await buildGenericBankStatementPdf();
+    const doc = await extractPdfDocument(extractInput(buffer));
+
+    expect(doc.hasTextLayer).toBe(true);
+    expect(doc.pages.some((page) => page.rawText.includes("KBank"))).toBe(true);
+  });
+
+  it("uses getTextContent without invoking canvas rendering", async () => {
+    vi.resetModules();
+
+    const getTextContent = vi.fn(async () => ({
+      items: [
+        { str: "Statement text layer", transform: [1, 0, 0, 1, 10, 20] },
+        { str: "deterministic extraction", transform: [1, 0, 0, 1, 10, 10] },
+      ],
+    }));
+    const render = vi.fn();
+    const getPage = vi.fn(async () => ({ getTextContent, render }));
+    const destroy = vi.fn(async () => undefined);
+    const getDocument = vi.fn(() => ({
+      promise: Promise.resolve({ numPages: 1, getPage, destroy }),
+    }));
+
+    vi.doMock("pdfjs-dist/legacy/build/pdf.mjs", () => ({
+      getDocument,
+      GlobalWorkerOptions: { workerSrc: "" },
+    }));
+
+    try {
+      const { extractPdfDocument: mockedExtractPdfDocument } = await import(
+        "@/lib/import/pdf/pdf-text-extractor"
+      );
+      const bytes = new Uint8Array([37, 80, 68, 70]);
+      const doc = await mockedExtractPdfDocument({ bytes });
+
+      expect(getDocument).toHaveBeenCalledWith(expect.objectContaining({ data: bytes }));
+      expect(getPage).toHaveBeenCalledWith(1);
+      expect(getTextContent).toHaveBeenCalledOnce();
+      expect(render).not.toHaveBeenCalled();
+      expect(doc.hasTextLayer).toBe(true);
+    } finally {
+      vi.doUnmock("pdfjs-dist/legacy/build/pdf.mjs");
+      vi.resetModules();
+    }
+  });
+
+  it("keeps the statement extractor free of canvas rendering calls", () => {
+    const source = readFileSync(join(process.cwd(), "src/lib/import/pdf/pdf-text-extractor.ts"), "utf8");
+
+    expect(source).toContain("page.getTextContent()");
+    expect(source).not.toMatch(/\.render\s*\(/);
+    expect(source).not.toContain("CanvasFactory");
+    expect(source).not.toContain("createCanvas");
   });
 });
