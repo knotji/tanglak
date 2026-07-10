@@ -392,10 +392,12 @@ export async function confirmDocumentAction(
     // 5. Update document status to confirmed
     await updateDocument(user.id, doc.id, { status: "confirmed" });
 
-    revalidatePath("/transactions");
-    revalidatePath("/debts");
-    revalidatePath("/overview");
-    revalidatePath("/today");
+    if (!isMockAuthEnabled()) {
+      revalidatePath("/transactions");
+      revalidatePath("/debts");
+      revalidatePath("/overview");
+      revalidatePath("/today");
+    }
 
     return { ok: true, message: "บันทึกข้อมูลเรียบร้อยแล้ว" };
   } catch (error) {
@@ -438,9 +440,11 @@ export async function resolveDuplicateAction(
     // Update document status to confirmed
     await updateDocument(user.id, documentId, { status: "confirmed" });
 
-    revalidatePath("/transactions");
-    revalidatePath("/today");
-    revalidatePath("/overview");
+    if (!isMockAuthEnabled()) {
+      revalidatePath("/transactions");
+      revalidatePath("/today");
+      revalidatePath("/overview");
+    }
 
     return { ok: true, message: "แก้ไขความซ้ำซ้อนสำเร็จ" };
   } catch (error) {

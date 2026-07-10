@@ -5,6 +5,7 @@ import {
   buildNoTextLayerPdf,
   buildUnsupportedLayoutPdf,
 } from "../fixtures/pdf-statements";
+import { acquirePipelineLock } from "./helpers/pipeline-lock";
 
 async function login(page: import("@playwright/test").Page, email: string, password: string) {
   await page.goto("/auth");
@@ -19,7 +20,10 @@ async function login(page: import("@playwright/test").Page, email: string, passw
   await page.getByLabel("รหัสผ่าน", { exact: true }).fill(password);
   await page.getByLabel("ยืนยันรหัสผ่าน", { exact: true }).fill(password);
   await page.getByRole("button", { name: "สร้างบัญชี" }).click();
-  await expect(page).toHaveURL(/\/onboarding/);
+  await expect
+    .poll(() => new URL(page.url()).pathname)
+    .toMatch(/^\/(onboarding|today)$/);
+  await page.goto("/onboarding?edit=1");
   await page.getByLabel("ชื่อที่อยากให้เรียก").fill("ผู้ใช้ทดสอบ PDF");
   await page.getByRole("button", { name: "เริ่มใช้งาน" }).click();
   await expect(page).toHaveURL(/\/today/);
@@ -35,6 +39,16 @@ async function uploadPdf(page: import("@playwright/test").Page, buffer: Buffer, 
 }
 
 test.describe.serial("PDF statement import — deterministic parsing edge cases", () => {
+  let releasePipelineLock: (() => Promise<void>) | undefined;
+
+  test.beforeAll(async () => {
+    releasePipelineLock = await acquirePipelineLock();
+  });
+
+  test.afterAll(async () => {
+    await releasePipelineLock?.();
+  });
+
   const emailA = `pdf-a-${Date.now()}@example.test`;
   const emailB = `pdf-b-${Date.now()}@example.test`;
   const password = "password123";

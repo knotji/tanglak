@@ -1,4 +1,5 @@
 import type { Account, Debt, FinanceDocument, DocumentExtraction, Transaction, ImportBatch, ImportRow } from "@/types/domain";
+import { createHash } from "node:crypto";
 
 type MockState = {
   users: Map<string, { email: string; password: string; id: string }>;
@@ -32,5 +33,6 @@ export function getMockState(): MockState {
 }
 
 export function mockUserId(email: string) {
-  return `mock-${Buffer.from(email).toString("base64url").slice(0, 18)}`;
+  const digest = createHash("sha256").update(email).digest("base64url").slice(0, 24);
+  return `mock-${digest}`;
 }

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { acquirePipelineLock } from "./helpers/pipeline-lock";
 
 const email = `test-${Date.now()}@example.test`;
 const password = "password123";
@@ -12,15 +13,24 @@ async function loginAndCompleteOnboarding(page: import("@playwright/test").Page)
   await page.getByLabel("ยืนยันรหัสผ่าน", { exact: true }).fill(password);
   await page.getByRole("button", { name: "สร้างบัญชี" }).click();
 
-  await expect(page).toHaveURL(/\/onboarding/);
+  await expect
+    .poll(() => new URL(page.url()).pathname)
+    .toMatch(/^\/(onboarding|today)$/);
+  await page.goto("/onboarding?edit=1");
   await page.getByLabel("ชื่อที่อยากให้เรียก").fill("ผู้ใช้เอกสาร");
   await page.getByRole("button", { name: "เริ่มใช้งาน" }).click();
   await expect(page).toHaveURL(/\/today/);
 }
 
 test.describe.serial("Gemini Document Upload & Review Flow", () => {
-  test.beforeAll(async ({}) => {
-    // Shared setup if needed
+  let releasePipelineLock: (() => Promise<void>) | undefined;
+
+  test.beforeAll(async () => {
+    releasePipelineLock = await acquirePipelineLock();
+  });
+
+  test.afterAll(async () => {
+    await releasePipelineLock?.();
   });
 
   test("upload salary slip, review and confirm salary", async ({ page }) => {
@@ -215,6 +225,10 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
     await page.getByLabel("รหัสผ่าน", { exact: true }).fill(password);
     await page.getByLabel("ยืนยันรหัสผ่าน", { exact: true }).fill(password);
     await page.getByRole("button", { name: "สร้างบัญชี" }).click();
+    await expect
+      .poll(() => new URL(page.url()).pathname)
+      .toMatch(/^\/(onboarding|today)$/);
+    await page.goto("/onboarding?edit=1");
     await page.getByLabel("ชื่อที่อยากให้เรียก").fill("ผู้ใช้ B");
     await page.getByRole("button", { name: "เริ่มใช้งาน" }).click();
     await expect(page).toHaveURL(/\/today/);

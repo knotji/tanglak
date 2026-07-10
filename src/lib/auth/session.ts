@@ -46,7 +46,7 @@ async function getCurrentUserUncached(): Promise<AppUser | null> {
 export const getCurrentUser = cache(getCurrentUserUncached);
 
 export async function requireUser(): Promise<AppUser> {
-  const user = await getCurrentUser();
+  const user = await getCurrentUserUncached();
   if (!user) redirect("/auth");
   return user;
 }
