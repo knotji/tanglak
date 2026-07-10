@@ -1,6 +1,7 @@
 import { isMockAuthEnabled } from "@/lib/auth/session";
 import { getMockState } from "@/lib/data/mock-store";
 import { mapDebt, mapTransaction, mapDocument, mapDocumentExtraction, mapImportBatch, mapImportRow } from "@/lib/data/mappers";
+import { timeAsync } from "@/lib/observability/timing";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Debt, Transaction, FinanceDocument, DocumentExtraction, ImportBatch, ImportRow, Account } from "@/types/domain";
 
@@ -41,6 +42,18 @@ function assertOwner(userId: string, ownerId: string) {
   if (userId !== ownerId) throw new Error("Cannot access another user's data");
 }
 
+const TRANSACTION_COLUMNS =
+  "id, user_id, type, status, amount_satang, currency, occurred_at, merchant, category_label, source_account_id, destination_account_id, debt_id, document_id, reference_number, payment_method, account_last_four, destination_account_last_four, bank, source, confidence, note, import_batch_id, import_row_id, is_historical";
+
+const DEBT_COLUMNS =
+  "id, user_id, name, creditor, debt_type, payment_mode, original_amount_satang, outstanding_balance_satang, statement_balance_satang, amount_due_satang, minimum_payment_satang, amount_paid_this_cycle_satang, due_date, recurring_due_day, interest_rate_annual, remaining_installments, status, notes";
+
+const IMPORT_BATCH_COLUMNS =
+  "id, user_id, source_type, source_name, account_id, original_filename, storage_path, mime_type, file_size, period_start, period_end, statement_date, status, total_rows, parsed_rows, ready_rows, duplicate_rows, review_rows, skipped_rows, imported_rows, failed_rows, parser_name, parser_version, model_name, statement_metadata, detected_layout, page_count, created_at, updated_at, completed_at, rolled_back_at";
+
+const IMPORT_BATCH_LIST_COLUMNS =
+  "id, user_id, source_type, source_name, account_id, original_filename, storage_path, mime_type, file_size, period_start, period_end, statement_date, status, total_rows, parsed_rows, ready_rows, duplicate_rows, review_rows, skipped_rows, imported_rows, failed_rows, parser_name, parser_version, model_name, page_count, created_at, updated_at, completed_at, rolled_back_at";
+
 export async function listTransactions(userId: string, month: string): Promise<Transaction[]> {
   if (isMockAuthEnabled()) {
     return getMockState().transactions
@@ -48,14 +61,16 @@ export async function listTransactions(userId: string, month: string): Promise<T
       .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
   }
 
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("transactions")
-    .select("*")
-    .eq("user_id", userId)
-    .gte("occurred_at", `${month}-01T00:00:00+07:00`)
-    .lt("occurred_at", nextMonthStart(month))
-    .order("occurred_at", { ascending: false });
+  const { data, error } = await timeAsync("query.transactions.month", async () => {
+    const supabase = await createSupabaseServerClient();
+    return supabase
+      .from("transactions")
+      .select(TRANSACTION_COLUMNS)
+      .eq("user_id", userId)
+      .gte("occurred_at", `${month}-01T00:00:00+07:00`)
+      .lt("occurred_at", nextMonthStart(month))
+      .order("occurred_at", { ascending: false });
+  }, { userId });
   if (error) throw new Error(error.message);
   return (data ?? []).map(mapTransaction);
 }
@@ -67,12 +82,14 @@ export async function listAllTransactions(userId: string): Promise<Transaction[]
       .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
   }
 
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("transactions")
-    .select("*")
-    .eq("user_id", userId)
-    .order("occurred_at", { ascending: false });
+  const { data, error } = await timeAsync("query.transactions.all", async () => {
+    const supabase = await createSupabaseServerClient();
+    return supabase
+      .from("transactions")
+      .select(TRANSACTION_COLUMNS)
+      .eq("user_id", userId)
+      .order("occurred_at", { ascending: false });
+  }, { userId });
   if (error) throw new Error(error.message);
   return (data ?? []).map(mapTransaction);
 }
@@ -254,9 +271,9 @@ export async function listDebts(userId: string, includeClosed = false): Promise<
   }
 
   const supabase = await createSupabaseServerClient();
-  let query = supabase.from("debts").select("*").eq("user_id", userId).order("due_date", { ascending: true });
+  let query = supabase.from("debts").select(DEBT_COLUMNS).eq("user_id", userId).order("due_date", { ascending: true });
   if (!includeClosed) query = query.neq("status", "paid_off");
-  const { data, error } = await query;
+  const { data, error } = await timeAsync("query.debts", async () => query, { userId });
   if (error) throw new Error(error.message);
   return (data ?? []).map(mapDebt);
 }
@@ -764,7 +781,7 @@ export async function getImportBatch(userId: string, id: string): Promise<Import
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from("import_batches")
-    .select("*")
+    .select(IMPORT_BATCH_COLUMNS)
     .eq("id", id)
     .eq("user_id", userId)
     .maybeSingle();
@@ -826,12 +843,14 @@ export async function listImportBatches(userId: string): Promise<ImportBatch[]> 
     return getMockState().importBatches.filter((b) => b.userId === userId);
   }
 
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("import_batches")
-    .select("*")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false });
+  const { data, error } = await timeAsync("query.import_batches", async () => {
+    const supabase = await createSupabaseServerClient();
+    return supabase
+      .from("import_batches")
+      .select(IMPORT_BATCH_LIST_COLUMNS)
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+  }, { userId });
   if (error) throw new Error(error.message);
   return (data ?? []).map(mapImportBatch);
 }

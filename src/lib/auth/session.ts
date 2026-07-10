@@ -1,5 +1,7 @@
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { timeAsync } from "@/lib/observability/timing";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { validateSupabaseConfig } from "@/lib/supabase/config";
 
@@ -16,7 +18,7 @@ export function isMockAuthEnabled() {
   return process.env["E2E_MOCK_AUTH"] === "1";
 }
 
-export async function getCurrentUser(): Promise<AppUser | null> {
+async function getCurrentUserUncached(): Promise<AppUser | null> {
   const cookieStore = await cookies();
   const mockId = cookieStore.get("tl_mock_user")?.value;
   if (mockId && (isMockAuthEnabled() || !hasSupabaseConfig())) {
@@ -30,13 +32,18 @@ export async function getCurrentUser(): Promise<AppUser | null> {
 
   if (!hasSupabaseConfig()) return null;
 
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await timeAsync("auth.user", async () => {
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { user: currentUser },
+    } = await supabase.auth.getUser();
+    return currentUser;
+  });
 
   return user ? { id: user.id, email: user.email ?? undefined } : null;
 }
+
+export const getCurrentUser = cache(getCurrentUserUncached);
 
 export async function requireUser(): Promise<AppUser> {
   const user = await getCurrentUser();

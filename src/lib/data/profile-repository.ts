@@ -1,5 +1,7 @@
+import { cache } from "react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isMockAuthEnabled } from "@/lib/auth/session";
+import { timeAsync } from "@/lib/observability/timing";
 
 export type Profile = {
   userId: string;
@@ -24,15 +26,17 @@ export type ProfileInput = {
 
 const mockProfiles = new Map<string, Profile>();
 
-export async function getProfile(userId: string): Promise<Profile | null> {
+async function getProfileUncached(userId: string): Promise<Profile | null> {
   if (isMockAuthEnabled()) return mockProfiles.get(userId) ?? null;
 
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("user_id", userId)
-    .maybeSingle();
+  const { data, error } = await timeAsync("profile.onboarding", async () => {
+    const supabase = await createSupabaseServerClient();
+    return supabase
+      .from("profiles")
+      .select("user_id, display_name, preferred_currency, timezone, salary_day, preferred_reminder_days, wants_budget_guidance, onboarding_completed")
+      .eq("user_id", userId)
+      .maybeSingle();
+  }, { userId });
   if (error) throw new Error(error.message);
   if (!data) return null;
 
@@ -47,6 +51,8 @@ export async function getProfile(userId: string): Promise<Profile | null> {
     onboardingCompleted: data.onboarding_completed ?? false,
   };
 }
+
+export const getProfile = cache(getProfileUncached);
 
 export async function upsertProfile(userId: string, input: ProfileInput): Promise<Profile> {
   if (isMockAuthEnabled()) {

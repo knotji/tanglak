@@ -9,17 +9,19 @@ import { requireUser } from "@/lib/auth/session";
 import { listDebts, listTransactions } from "@/lib/data/finance-repository";
 import { remainingToMinimum } from "@/lib/finance/calculations";
 import { formatTHB } from "@/lib/finance/money";
+import { timePage } from "@/lib/observability/timing";
 
 export default async function TodayPage() {
-  const user = await requireUser();
-  await requireCompletedOnboarding(user);
-  const today = new Date();
-  const todayKey = today.toISOString().slice(0, 10);
-  const month = today.toISOString().slice(0, 7);
-  const [transactions, debts] = await Promise.all([
-    listTransactions(user.id, month),
-    listDebts(user.id),
-  ]);
+  return timePage("/today", async () => {
+    const user = await requireUser();
+    const today = new Date();
+    const todayKey = today.toISOString().slice(0, 10);
+    const month = today.toISOString().slice(0, 7);
+    const [, transactions, debts] = await Promise.all([
+      requireCompletedOnboarding(user),
+      listTransactions(user.id, month),
+      listDebts(user.id),
+    ]);
   const todayTransactions = transactions.filter((transaction) =>
     transaction.occurredAt.startsWith(todayKey),
   );
@@ -34,7 +36,7 @@ export default async function TodayPage() {
     .reduce((sum, transaction) => sum + transaction.amountSatang, 0);
   const nextDebt = debts[0];
 
-  return (
+    return (
     <AppShell>
       <PageHeader title="วันนี้" subtitle="ดูเงินวันนี้แบบไม่ต้องคิดเยอะ" />
       <FinancialHero
@@ -62,5 +64,6 @@ export default async function TodayPage() {
         <EmptyState title="วันนี้ยังไม่มีรายการ" body="เพิ่มเองหรืออัปโหลดสลิปแรกของวันนี้" />
       )}
     </AppShell>
-  );
+    );
+  });
 }

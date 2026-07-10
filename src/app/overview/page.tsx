@@ -6,18 +6,20 @@ import { MoneyFlowRow } from "@/components/MoneyFlowRow";
 import { PageHeader } from "@/components/PageHeader";
 import { requireUser } from "@/lib/auth/session";
 import { requireCompletedOnboarding } from "@/lib/auth/onboarding";
-import { listTransactions, listAllTransactions } from "@/lib/data/finance-repository";
+import { listAllTransactions } from "@/lib/data/finance-repository";
 import { calculateMonthlyTotals, calculateHistoricalInsights } from "@/lib/finance/calculations";
 import { formatTHB } from "@/lib/finance/money";
+import { timePage } from "@/lib/observability/timing";
 
 export default async function OverviewPage() {
-  const user = await requireUser();
-  await requireCompletedOnboarding(user);
-  const month = new Date().toISOString().slice(0, 7);
-  const [transactions, allTransactions] = await Promise.all([
-    listTransactions(user.id, month),
-    listAllTransactions(user.id),
-  ]);
+  return timePage("/overview", async () => {
+    const user = await requireUser();
+    const month = new Date().toISOString().slice(0, 7);
+    const [, allTransactions] = await Promise.all([
+      requireCompletedOnboarding(user),
+      listAllTransactions(user.id),
+    ]);
+    const transactions = allTransactions.filter((transaction) => transaction.occurredAt.startsWith(month));
   const totals = calculateMonthlyTotals(transactions, month);
   const insights = calculateHistoricalInsights(allTransactions);
   const categories = transactions
@@ -28,7 +30,7 @@ export default async function OverviewPage() {
       return acc;
     }, {});
 
-  return (
+    return (
     <AppShell>
       <PageHeader title="ภาพรวม" subtitle="เดือนนี้" />
       <FinancialHero
@@ -83,5 +85,6 @@ export default async function OverviewPage() {
         <EmptyState title="ข้อมูลยังไม่พอ" body="เริ่มจากเพิ่มรายรับหรือรายจ่ายอย่างน้อย 1 รายการ" />
       )}
     </AppShell>
-  );
+    );
+  });
 }

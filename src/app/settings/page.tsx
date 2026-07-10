@@ -4,6 +4,7 @@ import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { requireCompletedOnboarding } from "@/lib/auth/onboarding";
 import { requireUser } from "@/lib/auth/session";
+import { timePage } from "@/lib/observability/timing";
 
 function SettingsSection({
   title,
@@ -41,10 +42,11 @@ function SettingsLink({
 }
 
 export default async function SettingsPage() {
-  const user = await requireUser();
-  await requireCompletedOnboarding(user);
+  return timePage("/settings", async () => {
+    const user = await requireUser();
+    await requireCompletedOnboarding(user);
 
-  return (
+    return (
     <AppShell>
       <PageHeader title="ตั้งค่า" subtitle={user.email ?? "บัญชีตั้งหลัก"} />
 
@@ -83,5 +85,6 @@ export default async function SettingsPage() {
         </button>
       </form>
     </AppShell>
-  );
+    );
+  });
 }

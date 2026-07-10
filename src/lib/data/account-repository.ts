@@ -1,5 +1,6 @@
 import { isMockAuthEnabled } from "@/lib/auth/session";
 import { getMockState } from "@/lib/data/mock-store";
+import { timeAsync } from "@/lib/observability/timing";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Account, AccountType } from "@/types/domain";
 
@@ -64,6 +65,9 @@ function assertOwner(userId: string, ownerId?: string) {
   if (ownerId && ownerId !== userId) throw new Error("Cannot access another user's data");
 }
 
+const ACCOUNT_COLUMNS =
+  "id, user_id, name, institution_name, account_type, is_owned_by_user, account_last_four, last_four, currency, is_default, is_active, notes, created_at, updated_at";
+
 export async function listAccounts(userId: string): Promise<Account[]> {
   if (isMockAuthEnabled()) {
     return (getMockState().accounts ?? [])
@@ -71,13 +75,15 @@ export async function listAccounts(userId: string): Promise<Account[]> {
       .sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.name.localeCompare(b.name));
   }
 
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("accounts")
-    .select("*")
-    .eq("user_id", userId)
-    .order("is_default", { ascending: false })
-    .order("created_at", { ascending: false });
+  const { data, error } = await timeAsync("query.accounts", async () => {
+    const supabase = await createSupabaseServerClient();
+    return supabase
+      .from("accounts")
+      .select(ACCOUNT_COLUMNS)
+      .eq("user_id", userId)
+      .order("is_default", { ascending: false })
+      .order("created_at", { ascending: false });
+  }, { userId });
   if (error) throw new Error(error.message);
   return (data ?? []).map(mapAccount);
 }
