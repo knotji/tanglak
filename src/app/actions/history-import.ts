@@ -15,6 +15,7 @@ import {
 } from "@/lib/data/finance-repository";
 import { parseStatement, processStagingRows } from "@/lib/import/parser-registry";
 import { PdfImportError } from "@/lib/import/pdf/types";
+import { logSafeError } from "@/lib/observability/safe-diagnostics";
 import type { TransactionType } from "@/types/domain";
 
 const ALLOWED_MIME_TYPES = [
@@ -46,22 +47,14 @@ function logSafeParserDiagnostic(input: {
   batchId: string;
   parserStage: string;
 }) {
-  const errorName = input.error instanceof Error ? input.error.name : typeof input.error;
   const errorCode = getSafeErrorCode(input.error);
-  const diagnostic: Record<string, string> = {
-    parserStage: input.parserStage,
+  logSafeError("Statement parser failed", {
+    operation: "history-import",
+    stage: input.parserStage,
     batchId: input.batchId,
-    errorName,
-  };
-
-  if (errorCode) {
-    diagnostic.errorCode = errorCode;
-  }
-  if (process.env.NODE_ENV === "development" && input.error instanceof Error) {
-    diagnostic.errorMessage = input.error.message;
-  }
-
-  console.error("Statement parser failed", diagnostic);
+    error: input.error,
+    errorCode,
+  });
 }
 
 async function sanitizeFilename(originalName: string): Promise<string> {
@@ -237,9 +230,12 @@ export async function uploadStatementAction(
     revalidatePath("/history-import");
     return { ok: true, batchId: batch.id };
   } catch (error) {
-    if (process.env.NODE_ENV === "development") {
-      console.error("Statement import failed:", error);
-    }
+    logSafeError("Statement import failed", {
+      operation: "history-import",
+      stage: "upload",
+      batchId,
+      error,
+    });
     return { ok: false, message: error instanceof Error ? error.message : "การนำเข้าข้อมูลชุดประวัติล้มเหลว" };
   }
 }
@@ -273,7 +269,12 @@ export async function confirmBatchAction(
     revalidatePath("/overview");
     return { ok: true, message: "นำเข้าข้อมูลสำเร็จ" };
   } catch (error) {
-    console.error("Batch confirmation failed:", error);
+    logSafeError("Batch confirmation failed", {
+      operation: "history-import",
+      stage: "confirm",
+      batchId,
+      error,
+    });
     return { ok: false, message: error instanceof Error ? error.message : "การบันทึกรายการล้มเหลว" };
   }
 }
@@ -292,7 +293,12 @@ export async function rollbackBatchAction(batchId: string): Promise<{ ok: boolea
     revalidatePath("/overview");
     return { ok: true, message: "ย้อนกลับการนำเข้าสำเร็จ (ลบรายการที่เกี่ยวข้องทั้งหมดแล้ว)" };
   } catch (error) {
-    console.error("Rollback failed:", error);
+    logSafeError("Rollback failed", {
+      operation: "history-import",
+      stage: "rollback",
+      batchId,
+      error,
+    });
     return { ok: false, message: error instanceof Error ? error.message : "การย้อนกลับรายการล้มเหลว" };
   }
 }
@@ -325,7 +331,12 @@ export async function deleteBatchAction(batchId: string): Promise<{ ok: boolean;
     revalidatePath("/history-import");
     return { ok: true, message: "ลบชุดนำเข้าข้อมูลแล้ว" };
   } catch (error) {
-    console.error("Delete batch failed:", error);
+    logSafeError("Delete batch failed", {
+      operation: "history-import",
+      stage: "delete",
+      batchId,
+      error,
+    });
     return { ok: false, message: error instanceof Error ? error.message : "ลบชุดข้อมูลนำเข้าล้มเหลว" };
   }
 }

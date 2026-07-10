@@ -1,5 +1,6 @@
 import { extractedFinancialDocumentSchema } from "@/lib/ai/schemas";
 import { extractionSystemPrompt } from "@/lib/ai/prompts";
+import { logSafeError } from "@/lib/observability/safe-diagnostics";
 
 export async function extractFinancialDocument(input: {
   mimeType: string;
@@ -41,8 +42,7 @@ export async function extractFinancialDocument(input: {
   });
 
   if (!response.ok) {
-    const errorBody = await response.text().catch(() => "");
-    throw new Error(`Gemini extraction failed: Status ${response.status}. ${errorBody}`);
+    throw new Error(`Gemini extraction failed: Status ${response.status}`);
   }
 
   const payload = (await response.json()) as {
@@ -58,7 +58,13 @@ export async function extractFinancialDocument(input: {
     const parsedJson = JSON.parse(text.trim());
     return extractedFinancialDocumentSchema.parse(parsedJson);
   } catch (error) {
-    console.error("Gemini Raw Output parse/validation failed:", text, error);
+    logSafeError("Gemini extraction response parse failed", {
+      operation: "gemini.extractFinancialDocument",
+      stage: "parse-response",
+      provider: "gemini",
+      modelName: model,
+      error,
+    });
     throw error;
   }
 }

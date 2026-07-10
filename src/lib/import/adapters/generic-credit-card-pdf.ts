@@ -1,5 +1,6 @@
 import type { ImportParser, ParseResult, ParsedTransaction } from "../types";
 import { isMockAuthEnabled } from "@/lib/auth/session";
+import { logSafeError } from "@/lib/observability/safe-diagnostics";
 
 export class GenericCreditCardPDFParser implements ImportParser {
   name = "generic-credit-card-pdf";
@@ -85,8 +86,7 @@ Do not add markdown formatting code block backticks. Return raw JSON text only.`
     });
 
     if (!response.ok) {
-      const body = await response.text();
-      throw new Error(`Gemini statement parsing failed: Status ${response.status}. ${body}`);
+      throw new Error(`Gemini statement parsing failed: Status ${response.status}`);
     }
 
     const json = (await response.json()) as {
@@ -108,7 +108,13 @@ Do not add markdown formatting code block backticks. Return raw JSON text only.`
         totalRows: (result.rows || []).length,
       };
     } catch (e) {
-      console.error("Failed to parse Gemini statement JSON:", text, e);
+      logSafeError("Gemini statement response parse failed", {
+        operation: "gemini.parseCreditCardStatement",
+        stage: "parse-response",
+        provider: "gemini",
+        modelName: model,
+        error: e,
+      });
       throw new Error("Malformed JSON statement response from AI model");
     }
   }

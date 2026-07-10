@@ -7,16 +7,13 @@ import {
   MOCK_RECOVERY_CONSUMED_COOKIE,
   MOCK_RECOVERY_COOKIE,
 } from "@/lib/auth/mock-recovery";
+import { getSupabasePublicConfig, validateSupabaseConfig } from "@/lib/supabase/config";
 
 const protectedRoutes = ["/today", "/transactions", "/upload", "/debts", "/overview", "/settings"];
 const RESET_PASSWORD_PATH = "/auth/reset";
 
 function isProtected(pathname: string) {
   return protectedRoutes.some((route) => pathname === route || pathname.startsWith(`${route}/`));
-}
-
-function hasSupabaseConfig() {
-  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 }
 
 export async function middleware(request: NextRequest) {
@@ -48,12 +45,19 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  if (!hasSupabaseConfig()) return NextResponse.next();
+  const configStatus = validateSupabaseConfig();
+  if (!configStatus.ok) {
+    if (isProtected(request.nextUrl.pathname)) {
+      return NextResponse.redirect(new URL("/auth", request.url));
+    }
+    return NextResponse.next();
+  }
 
   let response = NextResponse.next({ request });
+  const supabaseConfig = getSupabasePublicConfig();
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    supabaseConfig.url,
+    supabaseConfig.publicKey,
     {
       cookies: {
         getAll() {

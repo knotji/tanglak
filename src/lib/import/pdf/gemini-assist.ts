@@ -78,8 +78,7 @@ Do not invent columns that are not in the input. Do not return transaction rows 
     });
 
     if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      return { ok: false, modelName, promptVersion: PROMPT_VERSION, error: `status ${response.status}: ${body}` };
+      return { ok: false, modelName, promptVersion: PROMPT_VERSION, error: `status ${response.status}` };
     }
 
     const payload = (await response.json()) as {

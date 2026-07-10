@@ -20,6 +20,7 @@ import {
 import { processAndExtractDocument } from "@/lib/ai/extract-document";
 import { bahtToSatang } from "@/lib/finance/money";
 import { getMockState } from "@/lib/data/mock-store";
+import { logSafeError } from "@/lib/observability/safe-diagnostics";
 
 export type DocumentActionState = {
   ok: boolean;
@@ -126,7 +127,14 @@ export async function uploadAndExtractAction(
       const isExpectedMockFailure =
         extractError instanceof Error && extractError.message.includes("Mocked Gemini Failure");
       if (process.env.NODE_ENV === "development" || !isExpectedMockFailure) {
-        console.error("Extraction failed but document row created:", extractError);
+        logSafeError("Extraction failed but document row created", {
+          operation: "document.uploadAndExtract",
+          stage: "extract",
+          documentId,
+          provider: "gemini",
+          modelName: process.env.GEMINI_MODEL || "gemini-3.1-flash-lite",
+          error: extractError,
+        });
       }
       // We do not rethrow because the document record is created and its status is marked 'failed' by processAndExtractDocument.
       // We still return ok: true so the client redirects to the review page.
@@ -135,7 +143,12 @@ export async function uploadAndExtractAction(
     revalidatePath("/transactions");
     return { ok: true, message: "อัปโหลดและประมวลผลสำเร็จ", documentId };
   } catch (error) {
-    console.error("Upload failed before document creation:", error);
+    logSafeError("Upload failed before document creation", {
+      operation: "document.uploadAndExtract",
+      stage: "upload",
+      documentId,
+      error,
+    });
     return {
       ok: false,
       message: error instanceof Error ? error.message : "การอัปโหลดไฟล์ล้มเหลว",
@@ -176,7 +189,12 @@ export async function deleteDocumentAction(documentId: string): Promise<Document
         .from("financial-documents")
         .remove([doc.storagePath]);
       if (removeError) {
-        console.error("Failed to delete storage file:", removeError.message);
+        logSafeError("Failed to delete storage file", {
+          operation: "document.delete",
+          stage: "storage-remove",
+          documentId,
+          error: removeError,
+        });
       }
     }
 
@@ -281,7 +299,12 @@ export async function confirmDocumentAction(
             await supabase.from("transaction_items").insert(rows);
           }
         } catch (e) {
-          console.error("Failed to save transaction items:", e);
+          logSafeError("Failed to save transaction items", {
+            operation: "document.confirm",
+            stage: "transaction-items",
+            documentId,
+            error: e,
+          });
         }
       }
 
@@ -401,7 +424,12 @@ export async function confirmDocumentAction(
 
     return { ok: true, message: "บันทึกข้อมูลเรียบร้อยแล้ว" };
   } catch (error) {
-    console.error("Confirmation error:", error);
+    logSafeError("Document confirmation failed", {
+      operation: "document.confirm",
+      stage: "commit",
+      documentId,
+      error,
+    });
     return { ok: false, message: error instanceof Error ? error.message : "การบันทึกข้อมูลล้มเหลว" };
   }
 }
