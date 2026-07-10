@@ -1,0 +1,6 @@
+-- Optional fictional demo values. Run only in an isolated demo user context.
+-- Salary: ฿38,920
+-- KTC Credit Card outstanding: ฿32,450
+-- Minimum payment: ฿3,200
+-- Due date: 18 July 2026
+-- GrabFood: ฿189, MRT: ฿45, Coffee: ฿80, Debt payment: ฿1,500

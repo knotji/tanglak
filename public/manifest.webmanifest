@@ -1,0 +1,17 @@
+{
+  "name": "ตั้งหลัก",
+  "short_name": "ตั้งหลัก",
+  "description": "เห็นเงินชัด จัดหนี้เป็น ใช้ชีวิตต่อได้",
+  "start_url": "/today",
+  "display": "standalone",
+  "background_color": "#f7f3ea",
+  "theme_color": "#31594a",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
