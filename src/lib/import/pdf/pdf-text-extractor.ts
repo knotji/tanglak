@@ -10,8 +10,39 @@ const LINE_Y_TOLERANCE = 2.5;
 const APPROX_CHAR_WIDTH = 4.5;
 
 let workerConfigured = false;
+let canvasPreloaded = false;
+
+/**
+ * pdfjs-dist's legacy Node build reaches for `@napi-rs/canvas` at runtime via
+ * a dynamically-constructed `require()` (see its node_utils.js), both to
+ * polyfill DOMMatrix/ImageData/Path2D and, unconditionally, inside its own
+ * internal canvas-backed page factory when a page contains embedded raster
+ * images (our synthetic test fixtures have none, but real bank-statement
+ * PDFs with a logo do) — this project never calls that rendering path
+ * itself. Because that `require()` call is built dynamically at runtime,
+ * Next.js's static output
+ * file tracer can't follow it into node_modules, so the package's native
+ * binary silently gets dropped from the deployed serverless bundle on
+ * Vercel — it works locally (full node_modules on disk) and fails in
+ * production with MODULE_NOT_FOUND. A plain, statically-analyzable import
+ * here (server-only; never imported from a client component) gives the
+ * tracer a reference it can follow, on top of the belt-and-suspenders
+ * `outputFileTracingIncludes` entry in next.config.ts.
+ */
+async function preloadNodeCanvas(): Promise<void> {
+  if (canvasPreloaded) return;
+  canvasPreloaded = true;
+  try {
+    await import("@napi-rs/canvas");
+  } catch {
+    // Non-fatal: pdfjs-dist itself already falls back to warnings for the
+    // DOMMatrix/ImageData/Path2D polyfills when canvas is unavailable. Only
+    // documents that require actual raster image decoding are affected.
+  }
+}
 
 export async function extractPdfDocument({ bytes }: { bytes: Uint8Array }): Promise<ExtractedDocument> {
+  await preloadNodeCanvas();
   const { getDocument, GlobalWorkerOptions } = await import("pdfjs-dist/legacy/build/pdf.mjs");
   if (!workerConfigured) {
     const { createRequire } = await import("node:module");
