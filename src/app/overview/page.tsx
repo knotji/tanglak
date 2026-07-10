@@ -71,7 +71,7 @@ export default async function OverviewPage() {
             </Link>
           </div>
           <div className="mt-3 divide-y divide-border/70">
-            {Object.entries(categories).map(([category, amount]) => (
+            {Object.entries(categories).filter(([, amount]) => amount !== 0).map(([category, amount]) => (
               <div key={category} className="flex items-center justify-between py-3 text-sm">
                 <span className="font-medium text-text-secondary">{category}</span>
                 <span className="tabular font-bold">{formatTHB(amount)}</span>

@@ -30,6 +30,7 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
   const transferCount = rows.filter(r => r.reviewStatus === "possible_transfer").length;
   const debtPaymentCount = rows.filter(r => r.reviewStatus === "possible_debt_payment").length;
   const skippedCount = rows.filter(r => r.importDecision === "skip").length;
+  const warningCount = rows.filter(r => r.validationWarnings.length > 0).length;
 
   // Filter rows based on activeTab
   const filteredRows = rows.filter(row => {
@@ -46,11 +47,24 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
         return row.reviewStatus === "possible_debt_payment";
       case "skip":
         return row.importDecision === "skip";
+      case "warnings":
+        return row.validationWarnings.length > 0;
       case "all":
       default:
         return true;
     }
   });
+
+  const statementMetadata = batch.statementMetadata as
+    | {
+        bankName?: { value?: string };
+        accountLastFour?: { value?: string };
+        statementType?: { value?: string };
+      }
+    | undefined;
+  const detectedLayout = batch.detectedLayout as
+    | { layoutId?: string; confidence?: number; needsReview?: boolean; warnings?: string[] }
+    | undefined;
 
   // Select handlers
   const handleSelectRow = (id: string) => {
@@ -203,6 +217,36 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
           ประเภทต้นทาง: {batch.sourceType} | ช่วงเวลา: {batch.periodStart || "-"} ถึง {batch.periodEnd || "-"}
         </p>
 
+        {(statementMetadata?.bankName?.value || statementMetadata?.accountLastFour?.value || batch.pageCount) && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px]">
+            {statementMetadata?.bankName?.value && (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-text-secondary">
+                🏦 {statementMetadata.bankName.value}
+              </span>
+            )}
+            {statementMetadata?.accountLastFour?.value && (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-text-secondary">
+                •••• {statementMetadata.accountLastFour.value}
+              </span>
+            )}
+            {batch.pageCount && (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-text-secondary">
+                {batch.pageCount} หน้า
+              </span>
+            )}
+            {detectedLayout?.layoutId && (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-text-secondary">
+                รูปแบบ {detectedLayout.layoutId} ({Math.round((detectedLayout.confidence ?? 0) * 100)}%)
+              </span>
+            )}
+            {detectedLayout?.needsReview && (
+              <span className="rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-700">
+                ควรตรวจสอบความแม่นยำ
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Staging stats overview */}
         <div className="mt-3 grid grid-cols-4 gap-2 text-center text-xs">
           <div className="rounded-lg bg-slate-50 p-2">
@@ -270,6 +314,7 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
           { id: "transfer", label: `คู่โอน (${transferCount})` },
           { id: "debt_payment", label: `ชำระหนี้ (${debtPaymentCount})` },
           { id: "skip", label: `ข้าม (${skippedCount})` },
+          { id: "warnings", label: `มีคำเตือนการอ่าน (${warningCount})` },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -357,6 +402,16 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
                       {row.reviewStatus === "possible_debt_payment" && (
                         <span className="rounded bg-amber-50 px-1 py-0.2 text-[8px] font-bold text-amber-600">
                           จ่ายหนี้
+                        </span>
+                      )}
+                      {row.pageNumber && (
+                        <span className="rounded bg-slate-100 px-1 py-0.2 text-[8px] font-semibold text-text-secondary">
+                          ดูจากหน้า {row.pageNumber}
+                        </span>
+                      )}
+                      {row.validationWarnings.length > 0 && (
+                        <span className="rounded bg-amber-50 px-1 py-0.2 text-[8px] font-bold text-amber-700">
+                          ⚠ คำเตือนการอ่าน
                         </span>
                       )}
                     </div>

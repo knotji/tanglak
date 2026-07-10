@@ -15,6 +15,12 @@ export interface ParsedTransaction {
   suggestedTransactionType?: TransactionType;
   suggestedCategory?: string;
   rawData?: unknown;
+  // Populated by the deterministic PDF parser; optional so CSV parsers are unaffected.
+  pageNumber?: number;
+  sourceLineStart?: number;
+  sourceLineEnd?: number;
+  parserSource?: "deterministic" | "gemini_assisted";
+  parserConfidence?: number;
 }
 
 export interface StatementPeriod {
@@ -30,6 +36,12 @@ export interface ParseResult {
   period?: StatementPeriod;
   accountLastFour?: string;
   totalRows: number;
+  // Optional PDF-specific metadata surfaced up to the import batch record.
+  statementMetadata?: unknown;
+  detectedLayout?: unknown;
+  pageCount?: number;
+  parserName?: string;
+  parserVersion?: string;
 }
 
 export interface ImportParser {

@@ -47,6 +47,12 @@ describe("money helpers", () => {
     expect(satangToBaht(123_450)).toBe(1234.5);
     expect(formatTHB(38_920_00)).toContain("38,920");
   });
+
+  it("formats negative zero as zero and only shows positive sign when asked", () => {
+    expect(formatTHB(-0)).toBe("฿0");
+    expect(formatTHB(0, { showPositiveSign: true })).toBe("฿0");
+    expect(formatTHB(12500, { showPositiveSign: true })).toBe("+฿125");
+  });
 });
 
 describe("monthly totals", () => {

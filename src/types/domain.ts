@@ -41,6 +41,14 @@ export type DebtPaymentMode =
   | "installment"
   | "one_time";
 
+export type AccountType =
+  | "bank_account"
+  | "cash"
+  | "credit_card"
+  | "e_wallet"
+  | "loan_account"
+  | "other";
+
 export type DebtScheduleStatus = "upcoming" | "partial" | "paid" | "overdue";
 
 export type DocumentStatus =
@@ -58,9 +66,19 @@ export type ReminderStatus =
 
 export type Account = {
   id: string;
+  userId?: string;
   name: string;
+  institutionName?: string;
+  accountType?: AccountType;
   isOwnedByUser: boolean;
+  lastFour?: string;
   accountLastFour?: string;
+  currency?: Currency;
+  isDefault?: boolean;
+  isActive?: boolean;
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type Transaction = {
@@ -195,11 +213,16 @@ export type ImportBatch = {
   parserName?: string;
   parserVersion?: string;
   modelName?: string;
+  statementMetadata?: unknown;
+  detectedLayout?: unknown;
+  pageCount?: number;
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
   rolledBackAt?: string;
 };
+
+export type ImportRowParserSource = "deterministic" | "gemini_assisted";
 
 export type ImportRow = {
   id: string;
@@ -230,6 +253,12 @@ export type ImportRow = {
   importDecision: ImportRowDecision;
   validationWarnings: string[];
   createdTransactionId?: string;
+  pageNumber?: number;
+  sourceLineStart?: number;
+  sourceLineEnd?: number;
+  parserSource: ImportRowParserSource;
+  parserConfidence?: number;
+  rowFingerprint?: string;
   createdAt: string;
   updatedAt: string;
 };

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { markDebtPaidOffAction, reopenDebtAction } from "@/app/actions/finance";
 import { AppShell } from "@/components/AppShell";
@@ -65,24 +66,28 @@ export function DebtsClient({ debts }: { debts: Debt[] }) {
           {message}
         </div>
       ) : null}
-      <section className="rounded-[16px] border border-border bg-surface p-5 shadow-[0_12px_30px_rgba(24,32,29,0.05)]">
-        <p className="text-sm font-semibold text-text-secondary">หนี้ทั้งหมด</p>
-        <p className="tabular mt-2 text-[40px] font-bold leading-none">{formatTHB(totalOutstanding)}</p>
-        <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
-          <div>
-            <p className="text-text-secondary">ต้องจ่ายเดือนนี้</p>
-            <p className="tabular mt-1 text-xl font-bold">{formatTHB(totalMinimum)}</p>
-          </div>
-          <div>
-            <p className="text-text-secondary">จ่ายแล้ว</p>
-            <p className="tabular mt-1 text-xl font-bold text-income">{formatTHB(totalPaid)}</p>
-          </div>
-        </div>
-        <div className="mt-4">
-          <ProgressBar value={totalMinimum ? (totalPaid / totalMinimum) * 100 : 0} tone="debt" />
-        </div>
-      </section>
-      <NextActionCard title={`ยังขาดขั้นต่ำ ${formatTHB(remainingMinimum)}`} body="ดูหนี้ที่ใกล้ครบกำหนดก่อน" />
+      {debts.length ? (
+        <>
+          <section className="rounded-[16px] border border-border bg-surface p-5 shadow-[0_12px_30px_rgba(24,32,29,0.05)]">
+            <p className="text-sm font-semibold text-text-secondary">หนี้ทั้งหมด</p>
+            <p className="tabular mt-2 text-[40px] font-bold leading-none">{formatTHB(totalOutstanding)}</p>
+            <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <p className="text-text-secondary">ต้องจ่ายเดือนนี้</p>
+                <p className="tabular mt-1 text-xl font-bold">{formatTHB(totalMinimum)}</p>
+              </div>
+              <div>
+                <p className="text-text-secondary">จ่ายแล้ว</p>
+                <p className="tabular mt-1 text-xl font-bold text-income">{formatTHB(totalPaid)}</p>
+              </div>
+            </div>
+            <div className="mt-4">
+              <ProgressBar value={totalMinimum ? (totalPaid / totalMinimum) * 100 : 0} tone="debt" />
+            </div>
+          </section>
+          <NextActionCard title={`ยังขาดขั้นต่ำ ${formatTHB(remainingMinimum)}`} body="ดูหนี้ที่ใกล้ครบกำหนดก่อน" />
+        </>
+      ) : null}
       <LocalImportReview />
       {debts.length ? (
         <div className="space-y-3">
@@ -121,15 +126,15 @@ export function DebtsClient({ debts }: { debts: Debt[] }) {
                     ปิดหนี้
                   </button>
                 )}
-                <button className="min-h-11 rounded-[16px] bg-muted text-sm font-bold text-text-secondary">
+                <Link href={`/debts/${debt.id}`} className="flex min-h-11 items-center justify-center rounded-[16px] bg-muted text-sm font-bold text-text-secondary">
                   ประวัติ
-                </button>
+                </Link>
               </div>
             </div>
           ))}
         </div>
       ) : (
-        <EmptyState title="ยังไม่มีรายการหนี้" body="เพิ่มยอดและวันครบกำหนด แล้วตั้งหลักจะช่วยเตือนให้" />
+        <EmptyState title="ยังไม่มีหนี้ที่ต้องจัดการ" body="เพิ่มยอดและวันครบกำหนด แล้วตั้งหลักจะช่วยเตือนให้" />
       )}
       <MobileBottomSheet title="เพิ่มหนี้" open={open === "create"} onClose={() => setOpen(null)}>
         <ManualDebtForm onSaved={() => closeAndRefresh("บันทึกหนี้แล้ว")} />

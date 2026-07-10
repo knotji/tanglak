@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  deleteAccount,
+  getAccountDeleteSafety,
+  listAccounts,
+  saveAccount,
+  setDefaultAccount,
+} from "@/lib/data/account-repository";
+import {
   addDebtPayment,
   createDebt,
   createTransaction,
@@ -25,6 +32,7 @@ describe("mocked Supabase repository isolation and debt recalculation", () => {
     const state = getMockState();
     state.transactions = [];
     state.debts = [];
+    state.accounts = [];
     state.users.clear();
   });
 
@@ -104,5 +112,49 @@ describe("mocked Supabase repository isolation and debt recalculation", () => {
     expect(updatedDebt?.status).toBe("active");
     expect(updatedDebt?.amountPaidThisCycleSatang).toBe(150000);
     expect(transactions[0]?.type).toBe("debt_payment");
+  });
+
+  it("keeps one active default account per user", async () => {
+    const first = await saveAccount("user-a", {
+      name: "Main",
+      accountType: "bank_account",
+      currency: "THB",
+      isOwnedByUser: true,
+      isDefault: true,
+    });
+    const second = await saveAccount("user-a", {
+      name: "Cash",
+      accountType: "cash",
+      currency: "THB",
+      isOwnedByUser: true,
+      isDefault: true,
+    });
+    await setDefaultAccount("user-a", first.id);
+
+    const accounts = await listAccounts("user-a");
+    expect(accounts.filter((account) => account.isDefault)).toHaveLength(1);
+    expect(accounts.find((account) => account.id === first.id)?.isDefault).toBe(true);
+    expect(accounts.find((account) => account.id === second.id)?.isDefault).toBe(false);
+  });
+
+  it("blocks deleting an account linked to confirmed transactions", async () => {
+    const account = await saveAccount("user-a", {
+      name: "Main",
+      accountType: "bank_account",
+      currency: "THB",
+      isOwnedByUser: true,
+      isDefault: true,
+    });
+    await createTransaction("user-a", {
+      type: "expense",
+      amountSatang: 1000,
+      occurredAt: "2026-07-10T12:00:00+07:00",
+      merchant: "A",
+      sourceAccountId: account.id,
+    });
+
+    const safety = await getAccountDeleteSafety("user-a", account.id);
+    expect(safety.safe).toBe(false);
+    await expect(deleteAccount("user-a", account.id)).rejects.toThrow("ผูกอยู่");
   });
 });

@@ -166,28 +166,28 @@ export async function updateTransaction(
     .eq("id", id)
     .eq("user_id", userId)
     .maybeSingle();
+  const payload: Record<string, unknown> = {};
+  if (input.type !== undefined) payload.type = input.type;
+  if (input.amountSatang !== undefined) payload.amount_satang = input.amountSatang;
+  if (input.occurredAt !== undefined) payload.occurred_at = input.occurredAt;
+  if (input.merchant !== undefined) payload.merchant = input.merchant;
+  if (input.category !== undefined) payload.category_label = input.category;
+  if (input.debtId !== undefined) payload.debt_id = input.debtId;
+  if (input.documentId !== undefined) payload.document_id = input.documentId;
+  if (input.note !== undefined) payload.note = input.note;
+  if (input.paymentMethod !== undefined) payload.payment_method = input.paymentMethod;
+  if (input.accountLastFour !== undefined) payload.account_last_four = input.accountLastFour;
+  if (input.destinationAccountLastFour !== undefined) payload.destination_account_last_four = input.destinationAccountLastFour;
+  if (input.bank !== undefined) payload.bank = input.bank;
+  if (input.source !== undefined) payload.source = input.source;
+  if (input.sourceAccountId !== undefined) payload.source_account_id = input.sourceAccountId;
+  if (input.destinationAccountId !== undefined) payload.destination_account_id = input.destinationAccountId;
+  if (input.importBatchId !== undefined) payload.import_batch_id = input.importBatchId;
+  if (input.importRowId !== undefined) payload.import_row_id = input.importRowId;
+  if (input.isHistorical !== undefined) payload.is_historical = input.isHistorical;
   const { data, error } = await supabase
     .from("transactions")
-    .update({
-      type: input.type,
-      amount_satang: input.amountSatang,
-      occurred_at: input.occurredAt,
-      merchant: input.merchant,
-      category_label: input.category,
-      debt_id: input.debtId,
-      document_id: input.documentId,
-      note: input.note,
-      payment_method: input.paymentMethod,
-      account_last_four: input.accountLastFour,
-      destination_account_last_four: input.destinationAccountLastFour,
-      bank: input.bank,
-      source: input.source,
-      source_account_id: input.sourceAccountId,
-      destination_account_id: input.destinationAccountId,
-      import_batch_id: input.importBatchId,
-      import_row_id: input.importRowId,
-      is_historical: input.isHistorical,
-    })
+    .update(payload)
     .eq("id", id)
     .eq("user_id", userId)
     .select("*")
@@ -197,6 +197,32 @@ export async function updateTransaction(
   if (previous?.debt_id) await recalculateDebtPaidThisCycle(userId, previous.debt_id);
   if (transaction.debtId) await recalculateDebtPaidThisCycle(userId, transaction.debtId);
   return transaction;
+}
+
+export async function listDebtPaymentHistory(userId: string, debtId: string): Promise<Transaction[]> {
+  if (isMockAuthEnabled()) {
+    return getMockState().transactions
+      .filter(
+        (transaction) =>
+          transaction.userId === userId &&
+          transaction.debtId === debtId &&
+          transaction.type === "debt_payment" &&
+          transaction.status === "confirmed",
+      )
+      .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("debt_id", debtId)
+    .eq("type", "debt_payment")
+    .eq("status", "confirmed")
+    .order("occurred_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []).map(mapTransaction);
 }
 
 export async function deleteTransaction(userId: string, id: string) {
@@ -778,6 +804,11 @@ export async function updateImportBatch(
   if (input.periodEnd !== undefined) payload.period_end = input.periodEnd;
   if (input.completedAt !== undefined) payload.completed_at = input.completedAt;
   if (input.rolledBackAt !== undefined) payload.rolled_back_at = input.rolledBackAt;
+  if (input.parserName !== undefined) payload.parser_name = input.parserName;
+  if (input.parserVersion !== undefined) payload.parser_version = input.parserVersion;
+  if (input.statementMetadata !== undefined) payload.statement_metadata = input.statementMetadata;
+  if (input.detectedLayout !== undefined) payload.detected_layout = input.detectedLayout;
+  if (input.pageCount !== undefined) payload.page_count = input.pageCount;
 
   const { data, error } = await supabase
     .from("import_batches")
@@ -868,6 +899,12 @@ export async function createImportRows(
     review_status: r.reviewStatus,
     import_decision: r.importDecision,
     validation_warnings: r.validationWarnings,
+    page_number: r.pageNumber,
+    source_line_start: r.sourceLineStart,
+    source_line_end: r.sourceLineEnd,
+    parser_source: r.parserSource,
+    parser_confidence: r.parserConfidence,
+    row_fingerprint: r.rowFingerprint,
   }));
 
   const { data, error } = await supabase
@@ -1265,5 +1302,4 @@ export async function createAccount(
     accountLastFour: data.account_last_four ?? undefined,
   };
 }
-
 

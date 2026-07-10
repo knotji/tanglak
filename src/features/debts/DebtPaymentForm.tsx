@@ -29,7 +29,7 @@ export function DebtPaymentForm({
         />
       </label>
       {state.message ? <p className="mt-3 text-sm text-overdue">{state.message}</p> : null}
-      <button className="mt-4 min-h-11 w-full rounded-[16px] bg-primary px-4 font-bold text-white">
+      <button disabled={pending} className="mt-4 min-h-11 w-full rounded-[16px] bg-primary px-4 font-bold text-white disabled:opacity-60">
         {pending ? "กำลังบันทึก..." : "บันทึกการชำระ"}
       </button>
     </form>

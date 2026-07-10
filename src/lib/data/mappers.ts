@@ -194,6 +194,9 @@ interface ImportBatchRow {
   parser_name?: string | null;
   parser_version?: string | null;
   model_name?: string | null;
+  statement_metadata?: unknown;
+  detected_layout?: unknown;
+  page_count?: number | null;
   created_at: string;
   updated_at: string;
   completed_at?: string | null;
@@ -229,6 +232,12 @@ interface ImportRowRow {
   import_decision: ImportRow["importDecision"];
   validation_warnings: string[];
   created_transaction_id?: string | null;
+  page_number?: number | null;
+  source_line_start?: number | null;
+  source_line_end?: number | null;
+  parser_source: ImportRow["parserSource"];
+  parser_confidence?: number | string | null;
+  row_fingerprint?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -259,6 +268,9 @@ export function mapImportBatch(row: ImportBatchRow): ImportBatch {
     parserName: row.parser_name ?? undefined,
     parserVersion: row.parser_version ?? undefined,
     modelName: row.model_name ?? undefined,
+    statementMetadata: row.statement_metadata ?? undefined,
+    detectedLayout: row.detected_layout ?? undefined,
+    pageCount: row.page_count ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     completedAt: row.completed_at ?? undefined,
@@ -296,6 +308,12 @@ export function mapImportRow(row: ImportRowRow): ImportRow {
     importDecision: row.import_decision,
     validationWarnings: row.validation_warnings ?? [],
     createdTransactionId: row.created_transaction_id ?? undefined,
+    pageNumber: row.page_number ?? undefined,
+    sourceLineStart: row.source_line_start ?? undefined,
+    sourceLineEnd: row.source_line_end ?? undefined,
+    parserSource: row.parser_source,
+    parserConfidence: toNumber(row.parser_confidence),
+    rowFingerprint: row.row_fingerprint ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

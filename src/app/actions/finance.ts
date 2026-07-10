@@ -9,6 +9,7 @@ import {
   createTransaction,
   deleteTransaction,
   markDebtPaidOff,
+  listDebtPaymentHistory,
   reopenDebt,
   updateDebt,
   updateTransaction,
@@ -27,6 +28,7 @@ const transactionSchema = z.object({
   label: z.string().min(1),
   category: z.string().optional(),
   date: z.string().min(1),
+  sourceAccountId: z.string().optional(),
 });
 
 const debtSchema = z.object({
@@ -45,6 +47,14 @@ const debtSchema = z.object({
 const paymentSchema = z.object({
   debtId: z.string().min(1),
   amount: z.string().min(1),
+});
+
+const debtPaymentUpdateSchema = z.object({
+  id: z.string().min(1),
+  debtId: z.string().min(1),
+  amount: z.string().min(1),
+  date: z.string().min(1),
+  note: z.string().optional(),
 });
 
 function revalidateFinance() {
@@ -68,6 +78,7 @@ export async function saveTransactionAction(
     occurredAt: `${parsed.data.date}T12:00:00+07:00`,
     merchant: parsed.data.label,
     category: parsed.data.category,
+    sourceAccountId: parsed.data.sourceAccountId || undefined,
   };
 
   try {
@@ -136,6 +147,46 @@ export async function addDebtPaymentAction(
     return { ok: true, message: "บันทึกการชำระแล้ว" };
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : "เพิ่มการชำระไม่สำเร็จ" };
+  }
+}
+
+export async function updateDebtPaymentAction(
+  _state: FinanceActionState,
+  formData: FormData,
+): Promise<FinanceActionState> {
+  const user = await requireUser();
+  const parsed = debtPaymentUpdateSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { ok: false, message: "กรอกข้อมูลการชำระให้ครบ" };
+
+  try {
+    await updateTransaction(user.id, parsed.data.id, {
+      type: "debt_payment",
+      debtId: parsed.data.debtId,
+      amountSatang: bahtToSatang(parsed.data.amount),
+      occurredAt: `${parsed.data.date}T12:00:00+07:00`,
+      note: parsed.data.note,
+    });
+    revalidateFinance();
+    revalidatePath(`/debts/${parsed.data.debtId}`);
+    return { ok: true, message: "บันทึกการชำระแล้ว" };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "บันทึกการชำระไม่สำเร็จ" };
+  }
+}
+
+export async function deleteDebtPaymentAction(id: string, debtId: string): Promise<FinanceActionState> {
+  const user = await requireUser();
+  try {
+    const payments = await listDebtPaymentHistory(user.id, debtId);
+    if (!payments.some((payment) => payment.id === id)) {
+      return { ok: false, message: "ไม่พบรายการชำระหนี้นี้" };
+    }
+    await deleteTransaction(user.id, id);
+    revalidateFinance();
+    revalidatePath(`/debts/${debtId}`);
+    return { ok: true, message: "ลบการชำระแล้ว ยอดจ่ายเดือนนี้คำนวณใหม่แล้ว" };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "ลบการชำระไม่สำเร็จ" };
   }
 }
 

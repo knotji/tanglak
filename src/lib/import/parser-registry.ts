@@ -4,6 +4,7 @@ import { GenericCreditCardCSVParser } from "./adapters/generic-credit-card-csv";
 import { GenericBankPDFParser } from "./adapters/generic-bank-pdf";
 import { GenericCreditCardPDFParser } from "./adapters/generic-credit-card-pdf";
 import { validateRunningBalance } from "./validators";
+import { computeRowFingerprint } from "./row-fingerprint";
 import { listRecentConfirmedTransactions } from "../data/finance-repository";
 import type { ImportRow, ImportRowDecision, ImportRowStatus } from "@/types/domain";
 
@@ -184,6 +185,12 @@ export async function processStagingRows(
       reviewStatus,
       importDecision,
       validationWarnings,
+      pageNumber: parsed.pageNumber,
+      sourceLineStart: parsed.sourceLineStart,
+      sourceLineEnd: parsed.sourceLineEnd,
+      parserSource: parsed.parserSource ?? "deterministic",
+      parserConfidence: parsed.parserConfidence,
+      rowFingerprint: computeRowFingerprint(batchId, parsed),
     });
   }
 

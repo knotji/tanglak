@@ -32,8 +32,6 @@ export default async function TodayPage() {
   const debtPaidToday = todayTransactions
     .filter((transaction) => transaction.type === "debt_payment")
     .reduce((sum, transaction) => sum + transaction.amountSatang, 0);
-  const dailyBudget = 48_600;
-  const remainingToday = Math.max(0, dailyBudget - spentToday);
   const nextDebt = debts[0];
 
   return (
@@ -42,15 +40,13 @@ export default async function TodayPage() {
       <FinancialHero
         label="วันนี้ใช้ไป"
         amountSatang={spentToday}
-        budgetLabel={`จากงบวันนี้ ${formatTHB(dailyBudget)}`}
-        remainingLabel={`เหลือใช้ ${formatTHB(remainingToday)}`}
-        progress={(spentToday / dailyBudget) * 100}
+        budgetLabel="ยังไม่ได้ตั้งงบวันนี้"
         stats={[
           { label: "รายรับ", amountSatang: incomeToday, tone: "income" },
           { label: "จ่ายหนี้", amountSatang: debtPaidToday, tone: "debt" },
-          { label: "เหลือใช้", amountSatang: remainingToday },
         ]}
       />
+      <NextActionCard title="ยังไม่ได้ตั้งงบวันนี้" body="ตั้งงบรายเดือนเพื่อเห็นกรอบใช้เงินรายวัน" action="ตั้งงบเดือนนี้" />
       {nextDebt ? (
         <NextActionCard
           title={`${nextDebt.name} ยังขาดขั้นต่ำ ${formatTHB(remainingToMinimum(nextDebt))}`}

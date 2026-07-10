@@ -6,7 +6,8 @@ import { useActionState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { saveTransactionAction } from "@/app/actions/finance";
-import type { Transaction } from "@/types/domain";
+import { AccountSelector } from "@/features/accounts/AccountSelector";
+import type { Account, Transaction } from "@/types/domain";
 
 const schema = z.object({
   type: z.enum(["income", "expense", "debt_payment", "transfer", "refund"]),
@@ -14,15 +15,18 @@ const schema = z.object({
   label: z.string().min(1, "ใส่ชื่อรายการ"),
   category: z.string().optional(),
   date: z.string().min(1),
+  sourceAccountId: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof schema>;
 
 export function ManualTransactionForm({
   transaction,
+  accounts = [],
   onSaved,
 }: {
   transaction?: Transaction;
+  accounts?: Account[];
   onSaved?: () => void;
 }) {
   const [state, action, pending] = useActionState(saveTransactionAction, { ok: false });
@@ -34,6 +38,7 @@ export function ManualTransactionForm({
       label: transaction?.merchant ?? "",
       category: transaction?.category ?? "อาหาร",
       date: transaction?.occurredAt.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+      sourceAccountId: transaction?.sourceAccountId ?? "",
     },
   });
 
@@ -84,6 +89,12 @@ export function ManualTransactionForm({
           <input type="date" className="min-h-11 w-full rounded-[16px] border border-border bg-white px-3" {...register("date")} name="date" />
         </label>
       </div>
+      {accounts.length ? (
+        <label className="mt-3 block space-y-1 text-sm">
+          <span className="font-medium">บัญชี</span>
+          <AccountSelector accounts={accounts} name="sourceAccountId" defaultValue={transaction?.sourceAccountId} />
+        </label>
+      ) : null}
       <input type="hidden" value="อาหาร" {...register("category")} name="category" />
       {formState.errors.amount || formState.errors.label ? (
         <p className="mt-3 text-sm text-overdue">กรอกข้อมูลขั้นต่ำให้ครบก่อนบันทึก</p>

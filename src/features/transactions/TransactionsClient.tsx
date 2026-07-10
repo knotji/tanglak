@@ -15,9 +15,11 @@ import type { Transaction, TransactionType } from "@/types/domain";
 
 export function TransactionsClient({
   transactions,
+  accounts,
   monthLabel,
 }: {
   transactions: Transaction[];
+  accounts: import("@/types/domain").Account[];
   monthLabel: string;
 }) {
   const router = useRouter();
@@ -108,6 +110,7 @@ export function TransactionsClient({
       >
         <ManualTransactionForm
           transaction={editing}
+          accounts={accounts}
           onSaved={() => {
             setOpen(false);
             setEditing(undefined);

@@ -170,6 +170,11 @@ export async function uploadStatementAction(
       periodStart: parseResult.period?.periodStart,
       periodEnd: parseResult.period?.periodEnd,
       accountId: parseResult.accountLastFour ? accountId : batch.accountId,
+      parserName: parseResult.parserName,
+      parserVersion: parseResult.parserVersion,
+      statementMetadata: parseResult.statementMetadata,
+      detectedLayout: parseResult.detectedLayout,
+      pageCount: parseResult.pageCount,
     });
 
     revalidatePath("/history-import");

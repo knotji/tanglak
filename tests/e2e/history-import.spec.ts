@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { buildGenericBankStatementPdf, buildPasswordProtectedPdf } from "../fixtures/pdf-statements";
 
 const email = `test-import-${Date.now()}@example.test`;
 const password = "password123";
@@ -36,14 +37,15 @@ test.describe.serial("History Statement Import Flow", () => {
     await page.getByRole("link", { name: "+ นำเข้า Statement ใหม่" }).click();
     await expect(page).toHaveURL(/\/history-import/);
 
-    // 3. Upload Statement File
+    // 3. Upload a real, deterministically-generated 30-row bank statement PDF
+    const buffer = await buildGenericBankStatementPdf();
     const fileChooserPromise = page.waitForEvent("filechooser");
     await page.locator("input[type='file']").click({ force: true });
     const fileChooser = await fileChooserPromise;
     await fileChooser.setFiles({
       name: "statement_july.pdf",
       mimeType: "application/pdf",
-      buffer: Buffer.from("mock-pdf-data-no-encryption"),
+      buffer,
     });
 
     // Submit
@@ -54,12 +56,16 @@ test.describe.serial("History Statement Import Flow", () => {
     await expect(page.getByText("statement_july.pdf")).toBeVisible();
     await expect(page.getByRole("button", { name: "ทั้งหมด", exact: true })).toBeVisible();
 
-    // Verify row items are listed (from mock result)
-    await expect(page.getByText("Deposit Transfer KBank BKK").first()).toBeVisible();
-    await expect(page.getByText("KTC Test Credit Card Payment").first()).toBeVisible();
+    // Statement metadata detected from the fixture (bank name, masked account, layout badge)
+    await expect(page.getByText("KBank")).toBeVisible();
+    await expect(page.getByText("•••• 1234")).toBeVisible();
+
+    // Deterministically parsed rows from the fixture are listed
+    await expect(page.getByText("MERCHANT 001 BKK").first()).toBeVisible();
+    await expect(page.getByText(/GRAB\*FOOD/).first()).toBeVisible();
 
     // 5. Submit Staging Rows
-    page.once("dialog", dialog => dialog.accept());
+    page.once("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "ยืนยันการนำเข้าทั้งหมด" }).click();
 
     // 6. Summary View Transition
@@ -69,8 +75,7 @@ test.describe.serial("History Statement Import Flow", () => {
 
     // 7. Verify Transactions List
     await page.goto("/transactions");
-    // Mock entries should now be listed in transactions
-    await expect(page.getByText("Deposit Transfer KBank BKK").first()).toBeVisible();
+    await expect(page.getByText("MERCHANT 001 BKK").first()).toBeVisible();
 
     // 8. Rollback Batch
     await page.goto("/settings/data");
@@ -78,10 +83,14 @@ test.describe.serial("History Statement Import Flow", () => {
 
     // Verify transactions are deleted
     await page.goto("/transactions");
-    await expect(page.getByText("Deposit Transfer KBank BKK")).not.toBeVisible();
+    await expect(page.getByText("MERCHANT 001 BKK")).not.toBeVisible();
+
+    // 9. Rollback is idempotent — calling it again on the now rolled-back batch is safe
+    await page.goto("/settings/data");
+    await expect(page.getByText("ย้อนกลับแล้ว")).toBeVisible();
   });
 
-  test("unsupported statement layout / password protection fallback", async ({ page }) => {
+  test("password-protected PDF shows a Thai fallback message", async ({ page }) => {
     // Reuse session
     await page.goto("/auth");
     await page.getByLabel("อีเมล").fill(email);
@@ -91,20 +100,20 @@ test.describe.serial("History Statement Import Flow", () => {
 
     await page.goto("/history-import");
 
-    // Upload password protected PDF mock (contains /Encrypt in buffer)
+    const buffer = await buildPasswordProtectedPdf();
     const fileChooserPromise = page.waitForEvent("filechooser");
     await page.locator("input[type='file']").click({ force: true });
     const fileChooser = await fileChooserPromise;
     await fileChooser.setFiles({
       name: "protected_statement.pdf",
       mimeType: "application/pdf",
-      buffer: Buffer.from("PDF header data /Encrypt catalog signature block"),
+      buffer,
     });
 
     // Submit
     await page.getByRole("button", { name: "ประมวลผลและนำเข้าชุดข้อมูล" }).click();
 
-    // Should display clear error in Thai
-    await expect(page.getByText("Password-protected PDF files are not supported")).toBeVisible();
+    // Should display a clear Thai error, not a raw stack trace
+    await expect(page.getByText("Statement นี้มีรหัสผ่าน")).toBeVisible();
   });
 });

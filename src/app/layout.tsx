@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist_Mono, Noto_Sans_Thai } from "next/font/google";
+import { ToastProvider } from "@/components/feedback/ToastProvider";
 import "./globals.css";
 
 const thaiSans = Noto_Sans_Thai({
@@ -34,7 +35,9 @@ export default function RootLayout({
       lang="th"
       className={`${thaiSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <ToastProvider>{children}</ToastProvider>
+      </body>
     </html>
   );
 }

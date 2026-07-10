@@ -16,11 +16,16 @@ export function satangToBaht(satang: number): number {
   return satang / 100;
 }
 
-export function formatTHB(satang: number): string {
-  const sign = satang < 0 ? "-" : "";
+function normalizeSatang(satang: number): number {
+  return Object.is(satang, -0) ? 0 : satang;
+}
+
+export function formatTHB(satang: number, options: { showPositiveSign?: boolean } = {}): string {
+  const normalized = normalizeSatang(satang);
+  const sign = normalized < 0 ? "-" : options.showPositiveSign && normalized > 0 ? "+" : "";
   const amount = new Intl.NumberFormat("th-TH", {
-    maximumFractionDigits: satang % 100 === 0 ? 0 : 2,
-  }).format(Math.abs(satangToBaht(satang)));
+    maximumFractionDigits: normalized % 100 === 0 ? 0 : 2,
+  }).format(Math.abs(satangToBaht(normalized)));
 
   return `${sign}฿${amount}`;
 }

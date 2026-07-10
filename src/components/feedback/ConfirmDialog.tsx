@@ -1,0 +1,37 @@
+"use client";
+
+export function ConfirmDialog({
+  open,
+  title,
+  body,
+  confirmLabel = "ยืนยัน",
+  cancelLabel = "ยกเลิก",
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  title: string;
+  body: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-end bg-foreground/30 p-4 sm:items-center sm:justify-center">
+      <section className="w-full rounded-[16px] bg-surface p-4 shadow-[0_18px_50px_rgba(24,32,29,0.18)] sm:max-w-sm">
+        <h2 className="text-lg font-bold">{title}</h2>
+        <p className="mt-2 text-sm leading-6 text-text-secondary">{body}</p>
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <button onClick={onCancel} className="min-h-11 rounded-[16px] bg-muted px-4 font-bold text-primary">
+            {cancelLabel}
+          </button>
+          <button onClick={onConfirm} className="min-h-11 rounded-[16px] bg-overdue px-4 font-bold text-white">
+            {confirmLabel}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
