@@ -1,5 +1,5 @@
 import { AppShell } from "@/components/AppShell";
-import { RouteSkeleton } from "@/components/feedback/RouteSkeleton";
+import { DelayedLoadingMessage } from "@/components/feedback/DelayedLoadingMessage";
 import { PageHeader } from "@/components/PageHeader";
 
 export default function TransactionsLoading() {
@@ -11,6 +11,7 @@ export default function TransactionsLoading() {
           + เพิ่มรายการ
         </button>
       </div>
+      <DelayedLoadingMessage message="กำลังดึงรายการล่าสุด..." />
       <div className="flex gap-2">
         {["ทั้งหมด", "รายจ่าย", "รายรับ"].map((label) => (
           <span key={label} className="rounded-full bg-muted px-3 py-2 text-xs font-bold text-text-secondary">
@@ -18,7 +19,24 @@ export default function TransactionsLoading() {
           </span>
         ))}
       </div>
-      <RouteSkeleton rows={3} />
+      <section aria-hidden="true" className="space-y-4">
+        {[0, 1, 2].map((group) => (
+          <div key={group} className="space-y-2">
+            <div className="h-4 w-24 rounded bg-muted" />
+            {[0, 1].map((row) => (
+              <div key={row} className="rounded-[14px] border border-border bg-white p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="h-4 w-3/4 rounded bg-muted" />
+                    <div className="mt-3 h-3 w-32 rounded bg-muted" />
+                  </div>
+                  <div className="h-5 w-20 rounded bg-muted" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ))}
+      </section>
     </AppShell>
   );
 }

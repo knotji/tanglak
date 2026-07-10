@@ -5,10 +5,18 @@ import { useRouter } from "next/navigation";
 import { uploadStatementAction } from "@/app/actions/history-import";
 import type { Account } from "@/types/domain";
 import Link from "next/link";
+import { StepProgress } from "@/components/feedback/StepProgress";
 
 interface HistoryImportClientProps {
   accounts: Account[];
 }
+
+const importSteps = [
+  { id: "upload_file", label: "อัปโหลดไฟล์" },
+  { id: "read_statement", label: "อ่าน Statement" },
+  { id: "check_rows", label: "ตรวจรายการ" },
+  { id: "prepare_review", label: "เตรียมหน้าตรวจสอบ" },
+];
 
 export function HistoryImportClient({ accounts: initialAccounts }: HistoryImportClientProps) {
   const router = useRouter();
@@ -18,6 +26,7 @@ export function HistoryImportClient({ accounts: initialAccounts }: HistoryImport
   const [newAccountName, setNewAccountName] = useState<string>("");
   const [newAccountLastFour, setNewAccountLastFour] = useState<string>("");
   const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [progressStep, setProgressStep] = useState(importSteps[0].id);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -35,6 +44,7 @@ export function HistoryImportClient({ accounts: initialAccounts }: HistoryImport
     }
 
     setIsUploading(true);
+    setProgressStep("upload_file");
     setErrorMsg(null);
 
     try {
@@ -63,8 +73,11 @@ export function HistoryImportClient({ accounts: initialAccounts }: HistoryImport
         fd.append("accountId", accountId);
       }
 
+      setProgressStep("read_statement");
       const res = await uploadStatementAction({ ok: true }, fd);
+      setProgressStep("check_rows");
       if (res.ok && res.batchId) {
+        setProgressStep("prepare_review");
         router.push(`/history-import/${res.batchId}/review`);
       } else {
         setErrorMsg(res.message || "การนำเข้าไฟล์ล้มเหลว");
@@ -183,16 +196,22 @@ export function HistoryImportClient({ accounts: initialAccounts }: HistoryImport
 
       {/* Actions */}
       <div className="flex flex-col gap-3">
+        {isUploading && (
+          <StepProgress
+            steps={importSteps}
+            currentStep={progressStep}
+            canRetry={false}
+          />
+        )}
+
         <button
           type="submit"
           disabled={isUploading}
+          aria-busy={isUploading}
           className="flex min-h-12 items-center justify-center rounded-xl bg-primary text-sm font-bold text-white shadow-sm hover:bg-primary-dark disabled:opacity-50"
         >
           {isUploading ? (
-            <div className="flex items-center gap-2">
-              <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-              <span>กำลังประมวลผลข้อมูล...</span>
-            </div>
+            <span aria-live="polite">กำลังโหลดข้อมูล...</span>
           ) : (
             "ประมวลผลและนำเข้าชุดข้อมูล"
           )}

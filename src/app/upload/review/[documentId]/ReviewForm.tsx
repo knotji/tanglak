@@ -297,9 +297,8 @@ export function ReviewForm({
 
         {/* Loading Overlay */}
         {(isSubmitting || isDeleting || isRetrying) && (
-          <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/40 backdrop-blur-sm text-white">
-            <RefreshCw size={48} className="animate-spin text-primary" />
-            <p className="mt-4 font-bold text-lg">กำลังประมวลผล...</p>
+          <div className="fixed inset-x-4 top-4 z-50 mx-auto max-w-xl rounded-[16px] border border-primary/20 bg-white px-4 py-3 text-sm font-bold text-primary shadow-lg">
+            <p aria-live="polite" aria-busy="true">กำลังโหลดข้อมูล...</p>
           </div>
         )}
 
@@ -1203,6 +1202,7 @@ export function ReviewForm({
                   <button
                     type="submit"
                     disabled={isSubmitting}
+                    aria-busy={isSubmitting}
                     className="flex-1 rounded-[16px] bg-primary py-3.5 text-center text-sm font-bold text-white shadow-md hover:bg-primary-dark disabled:opacity-50"
                   >
                     {isSubmitting ? "กำลังบันทึก..." : "ยืนยันความถูกต้อง"}

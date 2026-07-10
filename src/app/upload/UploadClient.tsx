@@ -13,10 +13,10 @@ import {
   UploadCloud,
   FileIcon,
   Trash2,
-  RefreshCw,
   AlertTriangle,
 } from "lucide-react";
 import { uploadAndExtractAction } from "@/app/actions/documents";
+import { StepProgress } from "@/components/feedback/StepProgress";
 
 const documentTypes = [
   { label: "เงินเดือน", icon: Banknote, value: "salary_slip" },
@@ -29,11 +29,19 @@ const documentTypes = [
   { label: "อื่น ๆ", icon: UploadCloud, value: "other" },
 ];
 
+const uploadSteps = [
+  { id: "upload_evidence", label: "อัปโหลดหลักฐาน" },
+  { id: "ai_reading", label: "AI กำลังอ่าน" },
+  { id: "checking_data", label: "กำลังตรวจข้อมูล" },
+  { id: "ready_to_confirm", label: "พร้อมให้คุณยืนยัน" },
+];
+
 export function UploadClient() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [docType, setDocType] = useState<string>("other");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [progressStep, setProgressStep] = useState(uploadSteps[0].id);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleCardClick = () => {
@@ -67,6 +75,7 @@ export function UploadClient() {
     if (!selectedFile) return;
 
     setIsProcessing(true);
+    setProgressStep("upload_evidence");
     setErrorMessage(null);
 
     const formData = new FormData();
@@ -74,15 +83,18 @@ export function UploadClient() {
     formData.append("documentType", docType);
 
     try {
+      setProgressStep("ai_reading");
       const res = await uploadAndExtractAction({ ok: false }, formData);
+      setProgressStep("checking_data");
       if (res.ok && res.documentId) {
+        setProgressStep("ready_to_confirm");
         // Successful extraction redirect to review
         window.location.href = `/upload/review/${res.documentId}`;
       } else {
         setErrorMessage(res.message || "เกิดข้อผิดพลาดในการวิเคราะห์ข้อมูล");
         setIsProcessing(false);
       }
-    } catch (err) {
+    } catch (_err) {
       setErrorMessage("เกิดข้อผิดพลาดในการอัปโหลด กรุณาลองใหม่อีกครั้ง");
       setIsProcessing(false);
     }
@@ -140,6 +152,7 @@ export function UploadClient() {
                 type="button"
                 onClick={handleRemoveFile}
                 className="text-red-500 hover:text-red-700 p-2"
+                aria-label="ลบไฟล์ที่เลือก"
               >
                 <Trash2 size={20} />
               </button>
@@ -151,6 +164,16 @@ export function UploadClient() {
             <div className="mt-4 rounded-[12px] border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-600 flex items-center gap-2">
               <AlertTriangle size={14} className="shrink-0" />
               <span>{errorMessage}</span>
+            </div>
+          )}
+
+          {isProcessing && (
+            <div className="mt-4">
+              <StepProgress
+                steps={uploadSteps}
+                currentStep={progressStep}
+                canRetry={false}
+              />
             </div>
           )}
 
@@ -168,15 +191,20 @@ export function UploadClient() {
                 <button
                   type="button"
                   onClick={handleUploadAndProcess}
+                  disabled={isProcessing}
+                  aria-busy={isProcessing}
                   className="flex-1 rounded-[16px] bg-primary py-3 text-center text-sm font-bold text-white shadow-md hover:bg-primary-dark"
                 >
                   วิเคราะห์ด้วย AI
                 </button>
               </>
             ) : (
-              <div className="flex-1 flex items-center justify-center gap-2 rounded-[16px] bg-primary-soft py-3.5 text-center text-sm font-extrabold text-primary shadow-inner">
-                <RefreshCw size={16} className="animate-spin" />
-                กำลังอัปโหลดและวิเคราะห์ด้วย AI...
+              <div
+                aria-live="polite"
+                aria-busy="true"
+                className="flex-1 rounded-[16px] bg-primary-soft py-3.5 text-center text-sm font-extrabold text-primary shadow-inner"
+              >
+                กำลังโหลดข้อมูล...
               </div>
             )}
           </div>
