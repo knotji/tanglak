@@ -14,6 +14,7 @@ import {
   createAccount,
 } from "@/lib/data/finance-repository";
 import { parseStatement, processStagingRows } from "@/lib/import/parser-registry";
+import { PdfImportError } from "@/lib/import/pdf/types";
 import type { TransactionType } from "@/types/domain";
 
 const ALLOWED_MIME_TYPES = [
@@ -103,7 +104,8 @@ export async function uploadStatementAction(
   const storagePath = `${user.id}/history-imports/${batchId}/${safeName}`;
 
   try {
-    const fileBuffer = Buffer.from(await file.arrayBuffer());
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const fileBuffer = Buffer.from(bytes);
 
     // Upload to private Supabase storage bucket
     if (!isMockAuthEnabled()) {
@@ -138,15 +140,31 @@ export async function uploadStatementAction(
     // Parse statement deterministic rows
     let parseResult;
     try {
-      parseResult = await parseStatement(file.name, file.type, fileBuffer);
+      parseResult = await parseStatement(file.name, file.type, fileBuffer, {
+        bytes,
+        originalFilename: file.name,
+        mimeType: file.type,
+        fileSize: file.size,
+        storagePath,
+      });
     } catch (parseError) {
-      console.error("Statement parsing pipeline failed:", parseError);
+      if (process.env.NODE_ENV === "development") {
+        console.error("Statement parsing pipeline failed:", parseError);
+      }
       await updateImportBatch(user.id, batch.id, {
         status: "failed",
       });
+      const isPdf = extension === "pdf" || file.type === "application/pdf";
       return {
         ok: false,
-        message: parseError instanceof Error ? parseError.message : "การอ่านไฟล์ประวัติการเงินล้มเหลว",
+        message:
+          parseError instanceof PdfImportError
+            ? parseError.message
+            : isPdf
+              ? "อ่าน Statement ไม่สำเร็จ\nลองอัปโหลดใหม่ หรือใช้ไฟล์ CSV แทน"
+              : parseError instanceof Error
+                ? parseError.message
+                : "การอ่านไฟล์ประวัติการเงินล้มเหลว",
       };
     }
 
@@ -180,7 +198,9 @@ export async function uploadStatementAction(
     revalidatePath("/history-import");
     return { ok: true, batchId: batch.id };
   } catch (error) {
-    console.error("Statement import failed:", error);
+    if (process.env.NODE_ENV === "development") {
+      console.error("Statement import failed:", error);
+    }
     return { ok: false, message: error instanceof Error ? error.message : "การนำเข้าข้อมูลชุดประวัติล้มเหลว" };
   }
 }

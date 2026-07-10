@@ -1,4 +1,6 @@
 // @vitest-environment node
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildGenericBankStatementPdf,
@@ -18,6 +20,20 @@ import { parseGenericStatement } from "@/lib/import/pdf/generic-statement-parser
 import { validatePdfRunningBalance } from "@/lib/import/pdf/row-validator";
 import { computeRowFingerprint } from "@/lib/import/row-fingerprint";
 import { parseThaiBuddhistYearDate, parseAmountSatang } from "@/lib/import/normalize";
+
+function extractInput(buffer: Buffer) {
+  return { bytes: new Uint8Array(buffer) };
+}
+
+function parseInput(buffer: Buffer) {
+  return {
+    bytes: new Uint8Array(buffer),
+    originalFilename: "statement.pdf",
+    mimeType: "application/pdf",
+    fileSize: buffer.byteLength,
+    storagePath: "user/history-imports/batch/statement.pdf",
+  };
+}
 
 describe("pdf file validation", () => {
   it("rejects a non-PDF buffer", () => {
@@ -46,7 +62,7 @@ describe("pdf file validation", () => {
 describe("pdf text extraction", () => {
   it("extracts per-page lines with a text layer from a generated statement", async () => {
     const buffer = await buildGenericBankStatementPdf();
-    const doc = await extractPdfDocument(buffer);
+    const doc = await extractPdfDocument(extractInput(buffer));
     expect(doc.hasTextLayer).toBe(true);
     expect(doc.pageCount).toBeGreaterThanOrEqual(3);
     expect(doc.pages[0].lines.length).toBeGreaterThan(5);
@@ -54,24 +70,39 @@ describe("pdf text extraction", () => {
 
   it("throws no_text_layer for an image-only PDF", async () => {
     const buffer = await buildNoTextLayerPdf();
-    await expect(extractPdfDocument(buffer)).rejects.toMatchObject({ code: "no_text_layer" });
+    await expect(extractPdfDocument(extractInput(buffer))).rejects.toMatchObject({ code: "no_text_layer" });
   });
 
   it("throws password_protected_pdf for a real encrypted PDF", async () => {
     const buffer = await buildPasswordProtectedPdf();
-    await expect(extractPdfDocument(buffer)).rejects.toMatchObject({ code: "password_protected_pdf" });
+    await expect(extractPdfDocument(extractInput(buffer))).rejects.toMatchObject({ code: "password_protected_pdf" });
   });
 
   it("throws malformed_pdf for a corrupted document", async () => {
     const buffer = buildMalformedPdf();
-    await expect(extractPdfDocument(buffer)).rejects.toMatchObject({ code: "malformed_pdf" });
+    await expect(extractPdfDocument(extractInput(buffer))).rejects.toMatchObject({ code: "malformed_pdf" });
+  });
+
+  it("passes uploaded bytes to pdfjs as a Uint8Array data source, not a numeric path", async () => {
+    const source = readFileSync(join(process.cwd(), "src/lib/import/pdf/pdf-text-extractor.ts"), "utf8");
+    expect(source).toContain("getDocument(pdfSource)");
+    expect(source).toContain("data: bytes");
+    expect(source).not.toContain("createRequire(import.meta.url)");
+    expect(source).not.toContain("readFile");
+  });
+
+  it("does not use numeric file size as a filesystem path", () => {
+    const source = readFileSync(join(process.cwd(), "src/lib/import/pdf/index.ts"), "utf8");
+    expect(source).toContain("fileSize");
+    expect(source).not.toMatch(/readFile\([^)]*fileSize/);
+    expect(source).not.toMatch(/path\.(resolve|join)\([^)]*fileSize/);
   });
 });
 
 describe("page normalization", () => {
   it("strips repeated header lines from pages after the first", async () => {
     const buffer = await buildGenericBankStatementPdf();
-    const raw = await extractPdfDocument(buffer);
+    const raw = await extractPdfDocument(extractInput(buffer));
     const normalized = normalizeExtractedDocument(raw);
     const headerOccurrences = normalized.pages
       .flatMap((p) => p.lines)
@@ -83,7 +114,7 @@ describe("page normalization", () => {
 describe("statement metadata detection", () => {
   it("detects bank name, account last four, and period", async () => {
     const buffer = await buildGenericBankStatementPdf();
-    const doc = normalizeExtractedDocument(await extractPdfDocument(buffer));
+    const doc = normalizeExtractedDocument(await extractPdfDocument(extractInput(buffer)));
     const metadata = detectStatementMetadata(doc);
     expect(metadata.bankName.value).toBe("KBank");
     expect(metadata.accountLastFour.value).toBe("1234");
@@ -95,7 +126,7 @@ describe("statement metadata detection", () => {
 describe("generic layout detection", () => {
   it("detects a debit/credit/balance header with reasonable confidence", async () => {
     const buffer = await buildGenericBankStatementPdf();
-    const doc = normalizeExtractedDocument(await extractPdfDocument(buffer));
+    const doc = normalizeExtractedDocument(await extractPdfDocument(extractInput(buffer)));
     const layout = detectGenericLayout(doc);
     expect(layout.layoutId).toBe("A");
     expect(layout.confidence).toBeGreaterThan(0.4);
@@ -106,7 +137,7 @@ describe("generic layout detection", () => {
 
   it("returns unsupported for a non-tabular document", async () => {
     const buffer = await buildUnsupportedLayoutPdf();
-    const doc = normalizeExtractedDocument(await extractPdfDocument(buffer));
+    const doc = normalizeExtractedDocument(await extractPdfDocument(extractInput(buffer)));
     const layout = detectGenericLayout(doc);
     expect(layout.layoutId).toBe("unsupported");
   });
@@ -115,7 +146,7 @@ describe("generic layout detection", () => {
 describe("full deterministic pipeline", () => {
   it("parses 30+ rows from the generated statement", async () => {
     const buffer = await buildGenericBankStatementPdf();
-    const result = await parsePdfStatement(buffer);
+    const result = await parsePdfStatement(parseInput(buffer));
     expect(result.rows.length).toBeGreaterThanOrEqual(30);
     expect(result.parserName).toBe("generic-pdf-statement");
     expect(result.accountLastFour).toBe("1234");
@@ -127,7 +158,7 @@ describe("full deterministic pipeline", () => {
 
   it("merges the multiline GRAB*FOOD row instead of splitting it", async () => {
     const buffer = await buildGenericBankStatementPdf();
-    const result = await parsePdfStatement(buffer);
+    const result = await parsePdfStatement(parseInput(buffer));
     const merged = result.rows.find((r) => r.description.includes("GRAB*FOOD"));
     expect(merged).toBeDefined();
     expect(merged?.description).toContain("BANGKOK TH");
@@ -135,7 +166,7 @@ describe("full deterministic pipeline", () => {
 
   it("infers the missing year from the statement period", async () => {
     const buffer = await buildGenericBankStatementPdf();
-    const result = await parsePdfStatement(buffer);
+    const result = await parsePdfStatement(parseInput(buffer));
     const inferredRow = result.rows.find((r) => (r.rawData as { validationWarnings?: string[] })?.validationWarnings?.some((w) => w.includes("อนุมานปี")));
     expect(inferredRow).toBeDefined();
     expect(inferredRow?.occurredAt.slice(0, 4)).toBe("2026");
@@ -143,13 +174,13 @@ describe("full deterministic pipeline", () => {
 
   it("rejects an unsupported-layout document with a Thai fallback message", async () => {
     const buffer = await buildUnsupportedLayoutPdf();
-    await expect(parsePdfStatement(buffer)).rejects.toMatchObject({ code: "unsupported_layout" });
+    await expect(parsePdfStatement(parseInput(buffer))).rejects.toMatchObject({ code: "unsupported_layout" });
   });
 
   it("rejects a password-protected PDF with a Thai message", async () => {
     const buffer = await buildPasswordProtectedPdf();
     try {
-      await parsePdfStatement(buffer);
+      await parsePdfStatement(parseInput(buffer));
       throw new Error("expected parsePdfStatement to reject");
     } catch (err) {
       expect(err).toBeInstanceOf(PdfImportError);
@@ -162,8 +193,8 @@ describe("full deterministic pipeline", () => {
 describe("row fingerprint stability", () => {
   it("produces the same fingerprint for identical parses and different ones for different rows", async () => {
     const buffer = await buildGenericBankStatementPdf();
-    const resultA = await parsePdfStatement(buffer);
-    const resultB = await parsePdfStatement(buffer);
+    const resultA = await parsePdfStatement(parseInput(buffer));
+    const resultB = await parsePdfStatement(parseInput(buffer));
 
     const fingerprintsA = resultA.rows.map((r) => computeRowFingerprint("batch-1", r));
     const fingerprintsB = resultB.rows.map((r) => computeRowFingerprint("batch-1", r));
@@ -180,7 +211,7 @@ describe("row fingerprint stability", () => {
 describe("running balance validation", () => {
   it("flags rows where the running balance does not follow debit/credit direction", async () => {
     const buffer = await buildGenericBankStatementPdf();
-    const doc = normalizeExtractedDocument(await extractPdfDocument(buffer));
+    const doc = normalizeExtractedDocument(await extractPdfDocument(extractInput(buffer)));
     const layout = detectGenericLayout(doc);
     const metadata = detectStatementMetadata(doc);
     const rows = parseGenericStatement(doc, layout, metadata);

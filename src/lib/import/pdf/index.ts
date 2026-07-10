@@ -13,8 +13,18 @@ import type { ParseResult, ParsedTransaction } from "../types";
 export const PDF_PARSER_NAME = "generic-pdf-statement";
 export const PDF_PARSER_VERSION = "2.0.0";
 
-export async function parsePdfStatement(buffer: Buffer): Promise<ParseResult> {
-  const { looksEncrypted } = validatePdfBuffer(buffer, buffer.length);
+export type ParsePdfStatementInput = {
+  bytes: Uint8Array;
+  originalFilename: string;
+  mimeType: string;
+  fileSize: number;
+  storagePath: string;
+  password?: string;
+};
+
+export async function parsePdfStatement(input: ParsePdfStatementInput): Promise<ParseResult> {
+  const { bytes } = input;
+  const { looksEncrypted } = validatePdfBuffer(Buffer.from(bytes), input.fileSize);
   if (looksEncrypted) {
     // Fast path: skip the full pdfjs parse attempt for a document we can
     // already tell is encrypted from its raw bytes (pdfjs would throw the
@@ -22,7 +32,7 @@ export async function parsePdfStatement(buffer: Buffer): Promise<ParseResult> {
     throw new PdfImportError("password_protected_pdf", "buffer contains an /Encrypt marker");
   }
 
-  const rawDoc = await extractPdfDocument(buffer);
+  const rawDoc = await extractPdfDocument({ bytes });
   const doc = normalizeExtractedDocument(rawDoc);
 
   const metadata = detectStatementMetadata(doc);

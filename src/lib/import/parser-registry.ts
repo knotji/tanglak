@@ -1,4 +1,4 @@
-import type { ImportParser, ParseResult } from "./types";
+import type { ImportParser, ParseResult, ParseStatementFileContext } from "./types";
 import { GenericBankCSVParser } from "./adapters/generic-bank-csv";
 import { GenericCreditCardCSVParser } from "./adapters/generic-credit-card-csv";
 import { GenericBankPDFParser } from "./adapters/generic-bank-pdf";
@@ -19,6 +19,7 @@ export async function parseStatement(
   filename: string,
   mimeType: string,
   fileData: Buffer,
+  context?: ParseStatementFileContext,
 ): Promise<ParseResult> {
   const extension = filename.split(".").pop()?.toLowerCase() || "";
   const firstBytes = fileData.toString("utf8", 0, Math.min(fileData.length, 1000));
@@ -35,7 +36,7 @@ export async function parseStatement(
     throw new Error("Unsupported statement file format or layout");
   }
 
-  return await selectedParser.parse(fileData);
+  return await selectedParser.parse(fileData, context);
 }
 
 export async function processStagingRows(

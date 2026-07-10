@@ -123,7 +123,11 @@ export async function uploadAndExtractAction(
     try {
       await processAndExtractDocument(user.id, documentId);
     } catch (extractError) {
-      console.error("Extraction failed but document row created:", extractError);
+      const isExpectedMockFailure =
+        extractError instanceof Error && extractError.message.includes("Mocked Gemini Failure");
+      if (process.env.NODE_ENV === "development" || !isExpectedMockFailure) {
+        console.error("Extraction failed but document row created:", extractError);
+      }
       // We do not rethrow because the document record is created and its status is marked 'failed' by processAndExtractDocument.
       // We still return ok: true so the client redirects to the review page.
     }

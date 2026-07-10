@@ -11,18 +11,13 @@ const APPROX_CHAR_WIDTH = 4.5;
 
 let workerConfigured = false;
 
-export async function extractPdfDocument(buffer: Buffer): Promise<ExtractedDocument> {
+export async function extractPdfDocument({ bytes }: { bytes: Uint8Array }): Promise<ExtractedDocument> {
   const { getDocument, GlobalWorkerOptions } = await import("pdfjs-dist/legacy/build/pdf.mjs");
-
-  // Under Next.js/Turbopack's server bundle, pdfjs's runtime dynamic
-  // `import("./pdf.worker.mjs")` can't resolve relative to the bundled
-  // chunk (the worker file isn't copied alongside it). Pointing workerSrc
-  // at the real on-disk module (resolved via Node's own module resolution,
-  // not the bundler's) sidesteps that and lets pdfjs run as intended.
   if (!workerConfigured) {
     const { createRequire } = await import("node:module");
+    const { join } = await import("node:path");
     const { pathToFileURL } = await import("node:url");
-    const require = createRequire(import.meta.url);
+    const require = createRequire(join(process.cwd(), "package.json"));
     const workerPath = require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs");
     GlobalWorkerOptions.workerSrc = pathToFileURL(workerPath).href;
     workerConfigured = true;
@@ -30,17 +25,21 @@ export async function extractPdfDocument(buffer: Buffer): Promise<ExtractedDocum
 
   let doc;
   try {
-    const loadingTask = getDocument({
-      data: new Uint8Array(buffer),
+    const pdfSource = {
+      data: bytes,
       useSystemFonts: true,
       disableFontFace: true,
       isEvalSupported: false,
-    });
+      verbosity: 0,
+    } as unknown as Parameters<typeof getDocument>[0];
+    const loadingTask = getDocument(pdfSource);
     doc = await loadingTask.promise;
   } catch (err) {
     const name = err instanceof Error ? err.name : "";
     const message = err instanceof Error ? err.message : String(err);
-    console.error("DEBUG pdfjs getDocument failed", name, message, err);
+    if (process.env.NODE_ENV === "development") {
+      console.error("PDF text extraction failed", { name, message });
+    }
     if (name === "PasswordException") {
       throw new PdfImportError("password_protected_pdf", message);
     }

@@ -353,6 +353,7 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
         ) : (
           filteredRows.map((row) => {
             const isExpanded = expandedRowId === row.id;
+            const fieldIdBase = `import-row-${row.id}`;
             const isSelected = selectedRowIds.has(row.id);
             const dateObj = new Date(row.occurredAt);
             const displayTime = dateObj.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
@@ -448,8 +449,9 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
                     <div className="grid grid-cols-2 gap-3">
                       {/* Name Edit */}
                       <div className="flex flex-col gap-1">
-                        <label className="text-[10px] font-bold text-text-secondary">ชื่อธุรกรรม / ร้านค้า</label>
+                        <label htmlFor={`${fieldIdBase}-merchant`} className="text-[10px] font-bold text-text-secondary">ชื่อธุรกรรม / ร้านค้า</label>
                         <input
+                          id={`${fieldIdBase}-merchant`}
                           type="text"
                           value={row.merchant || ""}
                           onChange={(e) => handleUpdateRowField(row.id, "merchant", e.target.value)}
@@ -459,8 +461,9 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
 
                       {/* Occurred At Date Edit */}
                       <div className="flex flex-col gap-1">
-                        <label className="text-[10px] font-bold text-text-secondary">วันเวลาธุรกรรม</label>
+                        <label htmlFor={`${fieldIdBase}-occurred-at`} className="text-[10px] font-bold text-text-secondary">วันเวลาธุรกรรม</label>
                         <input
+                          id={`${fieldIdBase}-occurred-at`}
                           type="datetime-local"
                           value={row.occurredAt.slice(0, 16)}
                           onChange={(e) => handleUpdateRowField(row.id, "occurredAt", new Date(e.target.value).toISOString())}
@@ -470,8 +473,9 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
 
                       {/* Type Select */}
                       <div className="flex flex-col gap-1">
-                        <label className="text-[10px] font-bold text-text-secondary">ประเภทรายการ</label>
+                        <label htmlFor={`${fieldIdBase}-type`} className="text-[10px] font-bold text-text-secondary">ประเภทรายการ</label>
                         <select
+                          id={`${fieldIdBase}-type`}
                           value={row.suggestedTransactionType || "expense"}
                           onChange={(e) => handleUpdateRowField(row.id, "suggestedTransactionType", e.target.value)}
                           className="h-8 rounded border border-border bg-white px-2"
@@ -485,8 +489,9 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
 
                       {/* Category Select */}
                       <div className="flex flex-col gap-1">
-                        <label className="text-[10px] font-bold text-text-secondary">หมวดหมู่</label>
+                        <label htmlFor={`${fieldIdBase}-category`} className="text-[10px] font-bold text-text-secondary">หมวดหมู่</label>
                         <select
+                          id={`${fieldIdBase}-category`}
                           value={row.suggestedCategory || "อื่น ๆ"}
                           onChange={(e) => handleUpdateRowField(row.id, "suggestedCategory", e.target.value)}
                           className="h-8 rounded border border-border bg-white px-2"
@@ -502,8 +507,9 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
                       {/* Debt Selector if Type is debt_payment */}
                       {row.suggestedTransactionType === "debt_payment" && (
                         <div className="flex flex-col gap-1 col-span-2">
-                          <label className="text-[10px] font-bold text-text-secondary">บัญชีหนี้สินที่ชำระ</label>
+                          <label htmlFor={`${fieldIdBase}-debt`} className="text-[10px] font-bold text-text-secondary">บัญชีหนี้สินที่ชำระ</label>
                           <select
+                            id={`${fieldIdBase}-debt`}
                             value={row.suggestedDebtId || ""}
                             onChange={(e) => handleUpdateRowField(row.id, "suggestedDebtId", e.target.value)}
                             className="h-8 rounded border border-border bg-white px-2 font-semibold"

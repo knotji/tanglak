@@ -44,9 +44,18 @@ export interface ParseResult {
   parserVersion?: string;
 }
 
+export type ParseStatementFileContext = {
+  bytes?: Uint8Array;
+  originalFilename: string;
+  mimeType: string;
+  fileSize: number;
+  storagePath: string;
+  password?: string;
+};
+
 export interface ImportParser {
   name: string;
   version: string;
   canParse(fileExtension: string, mimeType: string, firstBytes: string): Promise<boolean>;
-  parse(fileData: Buffer | string): Promise<ParseResult>;
+  parse(fileData: Buffer | string, context?: ParseStatementFileContext): Promise<ParseResult>;
 }
