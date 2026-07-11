@@ -16,11 +16,13 @@ import { DebtPaymentForm } from "@/features/debts/DebtPaymentForm";
 import { ManualDebtForm } from "@/features/debts/ManualDebtForm";
 import { remainingToMinimum } from "@/lib/finance/calculations";
 import { formatTHB } from "@/lib/finance/money";
-import type { Debt } from "@/types/domain";
+import { getBangkokMonthString } from "@/lib/finance/date";
+import { buildMonthlyDebtSummary } from "@/lib/finance/debt-summary";
+import type { Debt, Transaction } from "@/types/domain";
 
 type SheetState = "create" | "edit" | "payment" | null;
 
-export function DebtsClient({ debts }: { debts: Debt[] }) {
+export function DebtsClient({ debts, transactions = [] }: { debts: Debt[]; transactions?: Transaction[] }) {
   const router = useRouter();
   const [open, setOpen] = useState<SheetState>(null);
   const [selectedDebt, setSelectedDebt] = useState<Debt | null>(null);
@@ -29,6 +31,7 @@ export function DebtsClient({ debts }: { debts: Debt[] }) {
   const totalMinimum = debts.reduce((sum, debt) => sum + (debt.minimumPaymentSatang ?? 0), 0);
   const totalPaid = debts.reduce((sum, debt) => sum + debt.amountPaidThisCycleSatang, 0);
   const remainingMinimum = debts.reduce((sum, debt) => sum + remainingToMinimum(debt), 0);
+  const monthlySummary = buildMonthlyDebtSummary(debts, transactions, getBangkokMonthString());
 
   function closeAndRefresh(success?: string) {
     setOpen(null);
@@ -73,12 +76,22 @@ export function DebtsClient({ debts }: { debts: Debt[] }) {
             <p className="tabular mt-2 text-[40px] font-bold leading-none">{formatTHB(totalOutstanding)}</p>
             <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
               <div>
+                <p className="text-text-secondary">ต้องจ่ายเดือนนี้</p>
+                <p className="tabular mt-1 text-xl font-bold">{formatTHB(monthlySummary.totalDueThisMonthSatang)}</p>
+              </div>
+              <div>
                 <p className="text-text-secondary">ขั้นต่ำเดือนนี้</p>
                 <p className="tabular mt-1 text-xl font-bold">{formatTHB(totalMinimum)}</p>
               </div>
               <div>
                 <p className="text-text-secondary">จ่ายแล้วรอบนี้</p>
                 <p className="tabular mt-1 text-xl font-bold text-income">{formatTHB(totalPaid)}</p>
+              </div>
+              <div>
+                <p className="text-text-secondary">เหลือขั้นต่ำเดือนนี้</p>
+                <p className="tabular mt-1 text-xl font-bold text-debt">
+                  {formatTHB(monthlySummary.totalRemainingMinimumSatang)}
+                </p>
               </div>
             </div>
             <div className="mt-4">

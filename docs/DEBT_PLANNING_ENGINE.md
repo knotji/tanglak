@@ -25,6 +25,63 @@ Debt payments still count as `debtPaymentSatang` in monthly cash-flow totals. Th
 
 Minimum remaining is `max(0, minimum_payment_satang - amount_paid_this_cycle_satang)`. Full-cycle remaining is `max(0, amount_due_satang - amount_paid_this_cycle_satang)`. Missing minimum or amount-due fields are not treated as paid.
 
+## Due-date and payment-satisfaction status (display only)
+
+`src/lib/finance/debt-status.ts` computes a single `DebtDueStatus` per debt
+for UI display: `not_yet_due` (ยังไม่ถึงกำหนด), `due_soon` (ใกล้ครบกำหนด,
+within 3 days), `due_today` (ครบกำหนดวันนี้), `overdue` (เกินกำหนด),
+`minimum_paid` (จ่ายขั้นต่ำแล้ว), `cycle_paid_in_full` (จ่ายครบยอดรอบนี้แล้ว).
+Payment satisfaction is checked first and wins over date urgency: a debt
+whose `amount_paid_this_cycle_satang` already meets `amount_due_satang` or
+`minimum_payment_satang` reports as paid even if its due date has passed.
+
+This status is **never** persisted and **never** triggers a transition of
+the stored `debts.status` column (`active`/`paid_off`/`overdue`/`paused`) —
+closing a debt always requires the existing explicit
+`markDebtPaidOff`/"ปิดหนี้" user action. `debtDueStatus` reaching
+`cycle_paid_in_full` or the outstanding balance reaching zero must never be
+read as "the debt is closed."
+
+## Interest-rate display (approximation only)
+
+`src/lib/finance/debt-interest.ts` formats `ดอกเบี้ย X% ต่อปี (ประมาณ Y%
+ต่อเดือน)`, where the monthly figure is a simple `annualRate / 12` average —
+not a compounding model — and is always labeled "ประมาณ" (approximate). The
+disclaimer `ดอกเบี้ยโดยประมาณ อาจต่างจากยอดที่สถาบันการเงินเรียกเก็บจริง` is
+exposed as `INTEREST_APPROXIMATION_DISCLAIMER_TH` for any surface that shows
+an interest figure. Nothing in this codebase uses `interest_rate_annual` in
+a payoff, amortization, or projected-interest-charge calculation — it is
+display-only.
+
+## Monthly debt obligation summary
+
+`src/lib/finance/debt-summary.ts` (`buildMonthlyDebtSummary`) computes, for
+a given Bangkok month:
+
+- **หนี้ทั้งหมด** (`totalOutstandingSatang`) — sum of `outstandingBalanceSatang`
+  across every debt passed in, independent of due date.
+- **ต้องจ่ายเดือนนี้** (`totalDueThisMonthSatang`) — sum of `amountDueSatang`
+  for debts whose `dueDate` falls within the target month.
+- **ขั้นต่ำรวม** (`totalMinimumThisMonthSatang`) — sum of
+  `minimumPaymentSatang` for the same due-this-month debts.
+- **จ่ายแล้วเดือนนี้** (`totalPaidThisMonthSatang`) — sum, per debt, of
+  confirmed `debt_payment` transactions whose `occurredAt` falls inside that
+  debt's own cycle window (`cycleStartDate`/`cycleEndDate` via
+  `getDebtCycleWindow`, falling back to the calendar month when cycle dates
+  are unset). Computed per-`debtId`, so one payment can never be
+  double-counted across two debts.
+- **เหลือขั้นต่ำ** (`totalRemainingMinimumSatang`) — sum of
+  `max(0, minimumPaymentSatang - paidThisCycle)` per due-this-month debt,
+  floored at zero per debt before summing (an overpayment on one debt never
+  offsets another debt's remaining minimum).
+
+This function is pure and read-only: it never writes to the database, never
+changes `debts.status`, and **never derives anything from
+`outstandingBalanceSatang` minus a payment amount** — a recorded payment can
+only ever change `totalPaidThisMonthSatang`/`totalRemainingMinimumSatang`,
+consistent with the product rule that payments never auto-reduce total
+outstanding balance.
+
 ## Security
 
 Repository writes validate caller-supplied debt IDs and account IDs against the current user before inserting or updating transactions/import batches. The import commit RPC also validates source and destination account ownership before writing transaction links, so direct RPC calls cannot attach another user's account.
