@@ -89,11 +89,24 @@ describe("financial UI primitives", () => {
     cleanup(root, container);
   });
 
-  it("shows a non-color cue for zero budget with spending", () => {
+  it("treats zero budget with spending as overspent, not no_budget, with a non-color cue", () => {
     const { container, root } = render(<BudgetProgress label="เดินทาง" spentSatang={5000} budgetSatang={0} />);
+    // Canonical engine semantics: budgeted <= 0 && spent > 0 is "overspent"
+    // (see statusForCategory in budget-calculations.ts), never "no_budget".
+    expect(container.textContent).toContain("เกินงบ");
+    expect(container.textContent).not.toContain("ยังไม่ตั้งงบ");
+    const progress = container.querySelector('[role="progressbar"]');
+    expect(progress?.getAttribute("aria-valuenow")).toBe("100");
+    expect(progress?.getAttribute("aria-valuetext")).toContain("เกินงบ");
+    cleanup(root, container);
+  });
+
+  it("shows no_budget only when a zero budget has zero spending", () => {
+    const { container, root } = render(<BudgetProgress label="บันเทิง" spentSatang={0} budgetSatang={0} />);
     expect(container.textContent).toContain("ยังไม่ตั้งงบ");
-    expect(container.textContent).toContain("แต่มีการใช้จ่ายแล้ว");
-    expect(container.querySelector('[role="progressbar"]')?.getAttribute("aria-valuetext")).toContain("ยังไม่ตั้งงบ");
+    expect(container.textContent).not.toContain("เกินงบ");
+    const progress = container.querySelector('[role="progressbar"]');
+    expect(progress?.getAttribute("aria-valuenow")).toBe("0");
     cleanup(root, container);
   });
 

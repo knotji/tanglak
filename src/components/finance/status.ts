@@ -6,6 +6,7 @@ import {
   CircleSlash,
   TrendingDown,
 } from "lucide-react";
+import { statusForCategory } from "@/lib/finance/budget-calculations";
 
 export type FinancialStatus =
   | "healthy"
@@ -66,10 +67,15 @@ export const financialStatusMeta = {
   icon: typeof Circle;
 }>;
 
+/**
+ * Canonical budget status for UI display, delegating to the budget domain
+ * layer's `statusForCategory` (src/lib/finance/budget-calculations.ts) --
+ * the single source of truth for thresholds (80% near-limit, 100% overspent
+ * boundary, zero-budget-with-spending is always "overspent"). No threshold
+ * logic is duplicated here. Note the argument order is flipped relative to
+ * `statusForCategory` to match this module's existing (spent, budget) call
+ * sites.
+ */
 export function statusForBudget(spentSatang: number, budgetSatang: number): FinancialStatus {
-  if (budgetSatang <= 0) return "no_budget";
-  const percentage = (spentSatang / budgetSatang) * 100;
-  if (percentage > 100) return "overspent";
-  if (percentage >= 85) return "near_limit";
-  return "healthy";
+  return statusForCategory(budgetSatang, spentSatang);
 }

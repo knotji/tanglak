@@ -132,38 +132,100 @@ describe("budget engine -> finance primitives contract", () => {
     cleanup(root, container);
   });
 
-  it("documents the zero-budget-with-spending status divergence between the engine and BudgetProgress/CategoryBudgetRow", () => {
-    // The engine deliberately classifies a zero-budget category with actual
-    // spending as "overspent", never "no_budget" or "healthy" -- see
-    // statusForCategory in budget-calculations.ts and
-    // docs/MONTHLY_BUDGET_ENGINE.md.
+  it("agrees with the engine on zero-budget-with-spending: BudgetStatusBadge, BudgetProgress, and CategoryBudgetRow all show overspent", () => {
+    // The engine classifies a zero-budget category with actual spending as
+    // "overspent", never "no_budget" or "healthy" -- see statusForCategory
+    // in budget-calculations.ts. The finance UI primitives now derive their
+    // status from the same canonical helper (statusForBudget in status.ts
+    // delegates to statusForCategory), so all three components must agree.
     const summary = summarizeCategory("เดินทาง", 0, 500);
     expect(summary.status).toBe("overspent");
 
-    // BudgetStatusBadge takes the engine's status directly and is fully
-    // consistent with it -- rendering the badge with the engine's own
-    // "overspent" status shows overspent styling/copy, with no translation.
     const badge = render(<BudgetStatusBadge status={summary.status} />);
     expect(badge.container.textContent).toContain("เกินงบ");
     cleanup(badge.root, badge.container);
 
-    // BudgetProgress and CategoryBudgetRow, however, do NOT accept a status
-    // prop -- they recompute status internally from raw spent/budget
-    // numbers via `statusForBudget` (status.ts), which classifies this same
-    // zero-budget-with-spending case as "no_budget", not "overspent". This
-    // is a real, currently undocumented-in-code contract mismatch between
-    // the engine and these two specific primitives (BudgetStatusBadge is
-    // unaffected because it takes status directly). This test exists so the
-    // divergence cannot silently regress or silently disappear -- it must
-    // be deliberately resolved (e.g. by giving BudgetProgress a
-    // status-override prop) in a future change, not fixed by editing
-    // thresholds quietly.
+    const progress = render(
+      <BudgetProgress label={summary.label} spentSatang={summary.spentSatang} budgetSatang={summary.budgetedSatang} />,
+    );
+    expect(progress.container.textContent).toContain("เกินงบ");
+    expect(progress.container.textContent).not.toContain("ยังไม่ตั้งงบ");
+    expect(progress.container.querySelector('[role="progressbar"]')?.getAttribute("aria-valuenow")).toBe("100");
+    cleanup(progress.root, progress.container);
+
+    const row = render(
+      <CategoryBudgetRow category={summary.label} spentSatang={summary.spentSatang} budgetSatang={summary.budgetedSatang} />,
+    );
+    expect(row.container.textContent).toContain("เกินงบ");
+    cleanup(row.root, row.container);
+  });
+
+  it("agrees with the engine on zero-budget-with-zero-spending: BudgetStatusBadge, BudgetProgress, and CategoryBudgetRow all show no_budget", () => {
+    const summary = summarizeCategory("บันเทิง", 0, 0);
+    expect(summary.status).toBe("no_budget");
+
+    const badge = render(<BudgetStatusBadge status={summary.status} />);
+    expect(badge.container.textContent).toContain("ยังไม่ตั้งงบ");
+    cleanup(badge.root, badge.container);
+
     const progress = render(
       <BudgetProgress label={summary.label} spentSatang={summary.spentSatang} budgetSatang={summary.budgetedSatang} />,
     );
     expect(progress.container.textContent).toContain("ยังไม่ตั้งงบ");
     expect(progress.container.textContent).not.toContain("เกินงบ");
     cleanup(progress.root, progress.container);
+
+    const row = render(
+      <CategoryBudgetRow category={summary.label} spentSatang={summary.spentSatang} budgetSatang={summary.budgetedSatang} />,
+    );
+    expect(row.container.textContent).toContain("ยังไม่ตั้งงบ");
+    cleanup(row.root, row.container);
+  });
+
+  it("agrees with the engine at the exact 80% near-limit boundary (integer satang)", () => {
+    // budgeted = 10,000 satang; 79.99% (7,999) is healthy, exactly 80%
+    // (8,000) is near_limit, per BUDGET_NEAR_LIMIT_THRESHOLD = 0.8.
+    const belowBoundary = summarizeCategory("อาหาร", 10_000, 7_999);
+    expect(belowBoundary.status).toBe("healthy");
+    const atBoundary = summarizeCategory("อาหาร", 10_000, 8_000);
+    expect(atBoundary.status).toBe("near_limit");
+
+    const below = render(<BudgetStatusBadge status={belowBoundary.status} />);
+    expect(below.container.textContent).toContain("ปกติ");
+    cleanup(below.root, below.container);
+
+    const at = render(<BudgetStatusBadge status={atBoundary.status} />);
+    expect(at.container.textContent).toContain("ใกล้ถึงงบ");
+    cleanup(at.root, at.container);
+
+    const progressBelow = render(<BudgetProgress label="อาหาร" spentSatang={7_999} budgetSatang={10_000} />);
+    expect(progressBelow.container.textContent).not.toContain("เกินงบ");
+    cleanup(progressBelow.root, progressBelow.container);
+
+    const progressAt = render(<BudgetProgress label="อาหาร" spentSatang={8_000} budgetSatang={10_000} />);
+    expect(progressAt.container.querySelector('[role="progressbar"]')?.getAttribute("aria-valuetext")).toContain("80%");
+    cleanup(progressAt.root, progressAt.container);
+  });
+
+  it("agrees with the engine at the exact 100% overspent boundary (integer satang)", () => {
+    // Exactly 100% (10,000 / 10,000) is still near_limit (inclusive upper
+    // bound); one satang above (10,001) is overspent.
+    const atBoundary = summarizeCategory("อาหาร", 10_000, 10_000);
+    expect(atBoundary.status).toBe("near_limit");
+    const aboveBoundary = summarizeCategory("อาหาร", 10_000, 10_001);
+    expect(aboveBoundary.status).toBe("overspent");
+
+    const at = render(<BudgetStatusBadge status={atBoundary.status} />);
+    expect(at.container.textContent).toContain("ใกล้ถึงงบ");
+    cleanup(at.root, at.container);
+
+    const above = render(<BudgetStatusBadge status={aboveBoundary.status} />);
+    expect(above.container.textContent).toContain("เกินงบ");
+    cleanup(above.root, above.container);
+
+    const progressAbove = render(<BudgetProgress label="อาหาร" spentSatang={10_001} budgetSatang={10_000} />);
+    expect(progressAbove.container.textContent).toContain("เกินงบ");
+    cleanup(progressAbove.root, progressAbove.container);
   });
 
   it("renders uncategorized spend via FinancialMetricCard", () => {

@@ -13,7 +13,10 @@ export function CategoryBudgetRow({
   budgetSatang: number;
 }) {
   const percentage = calculateBudgetPercentage(spentSatang, budgetSatang);
+  // Canonical status from the budget domain layer (via statusForBudget) --
+  // zero budget with spending > 0 is "overspent", never "no_budget".
   const status = statusForBudget(spentSatang, budgetSatang);
+  const percentLabel = status === "no_budget" ? "ยังไม่ตั้งงบ" : Number.isFinite(percentage) ? `${percentage}%` : "เกินงบ";
 
   return (
     <article className="border-b border-border py-3 last:border-b-0">
@@ -21,7 +24,7 @@ export function CategoryBudgetRow({
         <div className="min-w-0">
           <h3 className="truncate text-sm font-bold text-foreground">{category}</h3>
           <p className="mt-0.5 text-xs text-text-secondary">
-            {Number.isFinite(percentage) ? `${percentage}%` : "ยังไม่ตั้งงบ"} · <MoneyAmount satang={spentSatang} />
+            {percentLabel} · <MoneyAmount satang={spentSatang} />
           </p>
         </div>
         <BudgetStatusBadge status={status} />

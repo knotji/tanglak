@@ -20,14 +20,21 @@ export function BudgetProgress({
 }) {
   const percentage = calculateBudgetPercentage(spentSatang, budgetSatang);
   const remaining = budgetSatang - spentSatang;
+  // Canonical status from the budget domain layer: a zero budget with
+  // spending > 0 is always "overspent", never "no_budget" (see
+  // statusForCategory in src/lib/finance/budget-calculations.ts).
   const status = statusForBudget(spentSatang, budgetSatang);
-  const isNoBudget = budgetSatang <= 0;
-  const isOverspent = !isNoBudget && percentage > 100;
-  const progressValue = Number.isFinite(percentage) ? Math.max(0, Math.min(100, percentage)) : 0;
+  const isNoBudget = status === "no_budget";
+  const isOverspent = status === "overspent";
+  const isZeroBudget = budgetSatang <= 0;
+  // percentage is Infinity for zero-budget-with-spending -- treat that as a
+  // fully-overspent (100%) bar rather than dividing by zero or collapsing
+  // to an empty bar.
+  const progressValue = Number.isFinite(percentage) ? Math.max(0, Math.min(100, percentage)) : 100;
   const barTone = status === "overspent" ? "bg-overdue" : status === "near_limit" ? "bg-debt" : "bg-income";
-  const valueText = isNoBudget
+  const valueText = isZeroBudget
     ? spentSatang > 0
-      ? `ยังไม่ตั้งงบ ใช้ไป ${spentSatang} สตางค์`
+      ? `เกินงบ ยังไม่ได้ตั้งงบสำหรับหมวดนี้ ใช้ไปแล้ว ${spentSatang} สตางค์`
       : "ยังไม่ตั้งงบ"
     : `${percentage}% ใช้ไป ${spentSatang} จาก ${budgetSatang} สตางค์`;
 
@@ -55,12 +62,18 @@ export function BudgetProgress({
       </div>
       {isOverspent ? (
         <p className="text-xs font-bold text-overdue">
-          ใช้เกินงบ {percentage - 100}% (<MoneyAmount satang={Math.abs(remaining)} tone="expense" />)
+          {isZeroBudget ? (
+            <>
+              ยังไม่ได้ตั้งงบสำหรับหมวดนี้ — เกินงบไปแล้ว <MoneyAmount satang={spentSatang} tone="expense" />
+            </>
+          ) : (
+            <>
+              ใช้เกินงบ {percentage - 100}% (<MoneyAmount satang={Math.abs(remaining)} tone="expense" />)
+            </>
+          )}
         </p>
       ) : isNoBudget ? (
-        <p className="text-xs font-bold text-text-secondary">
-          ยังไม่ตั้งงบสำหรับหมวดนี้{spentSatang > 0 ? " แต่มีการใช้จ่ายแล้ว" : ""}
-        </p>
+        <p className="text-xs font-bold text-text-secondary">ยังไม่ตั้งงบสำหรับหมวดนี้</p>
       ) : (
         <p className="text-xs font-medium text-text-secondary">
           คงเหลือ <MoneyAmount satang={Math.max(remaining, 0)} />

@@ -342,42 +342,35 @@ this integration to make these three totals agree — that would require a
 deliberate, separately-scoped reconciliation decision, not a byproduct of
 integrating already-built features.
 
-### Status-threshold divergence between the engine and `BudgetProgress`/`CategoryBudgetRow`
+### Status semantics are shared between the engine and the finance UI primitives
 
-The finance UI primitives (`feat/finance-ui-primitives`) were built with
-their own `statusForBudget` (`src/components/finance/status.ts`), used
-internally by `BudgetProgress` and (through it) `CategoryBudgetRow`. It
-disagrees with this engine's `statusForCategory` in two ways:
+The finance UI primitives (`src/components/finance/status.ts`,
+`BudgetProgress`, `CategoryBudgetRow`) consume this engine's status
+semantics as their single source of truth. `statusForBudget` (used
+internally by `BudgetProgress` and, through it, `CategoryBudgetRow`) is a
+thin wrapper that delegates directly to `statusForCategory` from
+`budget-calculations.ts` — no threshold constant is duplicated in the UI
+layer. This guarantees the same category, at the same spend and budget
+values, always gets the same status everywhere it's shown:
 
-1. **Near-limit threshold**: the engine's `BUDGET_NEAR_LIMIT_THRESHOLD` is
-   80%; `statusForBudget` uses 85%. A category at 82% usage is `near_limit`
-   per the engine but `healthy` per `BudgetProgress`.
-2. **Zero-budget-with-spending**: the engine's `statusForCategory` returns
-   `overspent` when `budgeted <= 0 && spent > 0` (spending anything against
-   a zero allocation is, by definition, over it — see "Status thresholds"
-   above). `statusForBudget` returns `no_budget` for any `budgetSatang <=
-   0`, regardless of spend. `BudgetProgress` does soften this with dedicated
-   copy ("ยังไม่ตั้งงบสำหรับหมวดนี้ แต่มีการใช้จ่ายแล้ว" — "no budget set for
-   this category, but there has been spending") rather than looking
-   `healthy`, so it is not silently misleading — but its `status` value
-   still disagrees with the engine's.
+- **healthy** — usage below 80%.
+- **near_limit** — usage from 80% up to and including 100%.
+- **overspent** — usage strictly above 100%, **and** any spending against a
+  zero budget (`budgeted <= 0 && spent > 0`).
+- **no_budget** — zero budget and zero spending.
 
-`BudgetStatusBadge` is unaffected: it accepts a `status: FinancialStatus`
-prop directly rather than recomputing it, so passing the engine's own
-`CategorySummary.status`/`BudgetSummary.status` into it is fully
-consistent with zero translation needed. Only `BudgetProgress` and
-`CategoryBudgetRow` recompute status internally from raw satang numbers.
+`BudgetProgress` renders the zero-budget-with-spending case as a clearly
+labeled overspend (Thai copy, a full/red progress bar via
+`aria-valuenow="100"`, and the actual amount spent shown via
+`MoneyAmount`) rather than as "no budget set" — consistent with the
+engine's `overspent` classification, with no division-by-zero. This
+agreement is asserted directly, including at the exact 80%/100% integer-
+satang boundaries, in `tests/unit/budget-finance-contract.test.tsx`.
 
-This divergence is asserted directly (so it cannot silently regress or
-silently disappear) in
-`tests/unit/budget-finance-contract.test.tsx`. It was deliberately **not**
-fixed by editing either module's thresholds during this integration pass —
-doing so would be a silent business-semantics change, and the task scope
-for this integration explicitly excludes a Dashboard/Budget UI overhaul.
-Resolving it (for example, by giving `BudgetProgress`/`CategoryBudgetRow`
-an optional `status` override prop that defaults to their current
-self-computed behavior) is a recommended follow-up, not part of this
-integration.
+`BudgetStatusBadge` accepts a `status: FinancialStatus` prop directly
+rather than recomputing it, so passing the engine's own
+`CategorySummary.status`/`BudgetSummary.status` into it has always been
+fully consistent with zero translation needed.
 
 ## Remaining limitations
 
