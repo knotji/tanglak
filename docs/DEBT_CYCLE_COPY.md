@@ -1,115 +1,105 @@
 # TangLak: Today Dashboard & Debt Copy Registry
 
-This document registers the exact Thai copy, labels, CTAs, and accessibility tags for the `/today` dashboard and interest display rules.
+This document registers the exact Thai copy, labels, CTAs, accessibility tags, and disclaimers for the `/today` screen and debt management flows.
 
 ---
 
-## 1. Today Screen Next-Action Cards
+## 1. Today Screen Prioritized Next-Action Copy
 
-The `/today` dashboard displays a single, prioritized next-action card for each active debt to guide users on their immediate next step.
+To maintain a clean and focused layout, the `/today` dashboard displays **exactly one primary next-action card** for the highest-priority debt. 
 
-### Copy Registry by State
-
-#### 1. Overdue Minimum (เกินกำหนดชำระขั้นต่ำ)
-*   **Card Title**: `❌ ค้างชำระเกินกำหนด!`
-*   **Supporting Text**: "กรุณาชำระยอดขั้นต่ำโดยด่วนเพื่อหลีกเลี่ยงเบี้ยปรับและประวัติค้างชำระ"
-*   **Amount Label**: `ยอดขั้นต่ำที่ต้องจ่าย: ฿[จำนวนเงิน]`
-*   **Primary CTA**: `บันทึกการชำระเงิน` (Log Payment)
-*   **Secondary CTA**: `ดูประวัติบัญชี` (View History)
-*   **Accessibility Label**: "สถานะ เกินกำหนดชำระ ยอดขั้นต่ำที่ค้างอยู่คือ [จำนวนเงิน] บาท กดปุ่มบันทึกการชำระเงินเพื่อดำเนินการต่อ"
-
-#### 2. Due Today (ครบกำหนดชำระวันนี้)
-*   **Card Title**: `🚨 ครบกำหนดชำระวันนี้!`
-*   **Supporting Text**: "วันนี้เป็นวันสุดท้ายในการชำระเพื่อรักษาประวัติการเงินที่ดีของคุณ"
-*   **Amount Label**: `ยอดเรียกเก็บรอบนี้: ฿[จำนวนเงิน]`
-*   **Primary CTA**: `บันทึกการชำระเงิน` (Log Payment)
-*   **Secondary CTA**: -
-*   **Accessibility Label**: "สถานะ ครบกำหนดชำระวันนี้ ยอดเรียกเก็บรอบนี้คือ [จำนวนเงิน] บาท กดปุ่มบันทึกการชำระเงินเพื่อบันทึกรายการ"
-
-#### 3. Due Within 3 Days (ใกล้ครบกำหนดชำระ)
-*   **Card Title**: `⚠️ ใกล้ครบกำหนดชำระ`
-*   **Supporting Text**: "เหลือเวลาอีก [N] วันจะถึงวันครบกำหนดชำระตามบิล"
-*   **Amount Label**: `ยอดเรียกเก็บรอบนี้: ฿[จำนวนเงิน]`
-*   **Primary CTA**: `บันทึกการชำระเงิน` (Log Payment)
-*   **Secondary CTA**: -
-*   **Accessibility Label**: "สถานะ ใกล้ครบกำหนดชำระ เหลือเวลาอีก [N] วัน ยอดเรียกเก็บรอบนี้คือ [จำนวนเงิน] บาท กดปุ่มบันทึกการชำระเงินเพื่อใส่รายการ"
-
-#### 4. Minimum Not Met (ยังชำระไม่ถึงขั้นต่ำ)
-*   **Card Title**: `⏳ รอการชำระเงิน`
-*   **Supporting Text**: "คุณยังไม่ได้ชำระยอดขั้นต่ำในรอบบิลนี้ แนะนำให้ชำระเพื่อป้องกันค่าปรับล่าช้า"
-*   **Amount Label**: `ยอดขั้นต่ำคงเหลือ: ฿[จำนวนเงิน]`
-*   **Primary CTA**: `บันทึกการชำระเงิน` (Log Payment)
-*   **Secondary CTA**: -
-*   **Accessibility Label**: "สถานะ รอการชำระเงิน ยอดชำระขั้นต่ำคงเหลือคือ [จำนวนเงิน] บาท กดปุ่มบันทึกการชำระเงินเพื่อป้อนข้อมูล"
-
-#### 5. Minimum Met but Amount Due Remains (ชำระขั้นต่ำแล้ว แต่ยังไม่ครบยอดเรียกเก็บ)
-*   **Card Title**: `✓ ปลอดภัยจากค่าปรับ`
-*   **Supporting Text**: "ชำระยอดขั้นต่ำครบแล้ว คุณสามารถเลือกชำระยอดเรียกเก็บที่เหลือเพื่อหลีกเลี่ยงดอกเบี้ยสะสม"
-*   **Amount Label**: `ยอดเรียกเก็บคงเหลือ: ฿[จำนวนเงิน]`
-*   **Primary CTA**: `บันทึกการชำระเงิน` (Log Payment)
-*   **Secondary CTA**: -
-*   **Accessibility Label**: "สถานะ ปลอดภัยจากค่าปรับ ยอดเรียกเก็บคงเหลือในรอบนี้คือ [จำนวนเงิน] บาท กดปุ่มบันทึกการชำระเงินเพื่อจ่ายส่วนที่เหลือ"
-
-#### 6. Full Amount Due Paid (ชำระยอดเรียกเก็บครบถ้วนแล้ว)
-*   **Card Title**: `🎉 ชำระยอดเรียกเก็บครบถ้วน`
-*   **Supporting Text**: "คุณชำระยอดเรียกเก็บรอบนี้เต็มจำนวนแล้ว ยอดเงินส่วนนี้ปลอดดอกเบี้ยสำหรับรอบนี้"
-*   **Amount Label**: `ยอดหนี้ทั้งหมดคงเหลือ: ฿[จำนวนเงิน]`
-*   **Primary CTA**: `ตรวจสอบยอด` (Review Balance)
-*   **Secondary CTA**: -
-*   **Accessibility Label**: "สถานะ ชำระยอดเรียกเก็บครบถ้วน ยอดหนี้คงเหลือรวมคือ [จำนวนเงิน] บาท กดปุ่มตรวจสอบยอดเพื่อดูรายละเอียดบัญชี"
-
-#### 7. New Cycle Needs Updating (รอบบิลใหม่รอการอัปเดต)
-*   **Card Title**: `📅 ถึงวันเริ่มต้นรอบบิลใหม่`
-*   **Supporting Text**: "ระบบตรวจพบการข้ามรอบบัญชีใหม่ โปรดระบุยอดเรียกเก็บและวันครบกำหนดล่าสุดจากบิลใบใหม่"
-*   **Amount Label**: `ยอดหนี้ทั้งหมดล่าสุด: ฿[จำนวนเงิน]`
-*   **Primary CTA**: `อัปเดตข้อมูลรอบบิล` (Update Cycle)
-*   **Secondary CTA**: `ข้ามไปก่อน` (Skip for Now)
-*   **Accessibility Label**: "สถานะ ถึงรอบบัญชีใหม่ โปรดกดปุ่มอัปเดตข้อมูลรอบบิลเพื่อกรอกข้อมูลยอดเรียกเก็บล่าสุด"
-
-#### 8. No Due-Date Data (ไม่มีข้อมูลวันครบกำหนด)
-*   **Card Title**: `ℹ️ รออัปเดตข้อมูลการชำระ`
-*   **Supporting Text**: "บัญชีหนี้นี้ยังไม่ได้ระบุวันครบกำหนดชำระ คุณสามารถกรอกข้อมูลเพื่อเปิดใช้ระบบแจ้งเตือน"
-*   **Amount Label**: `ยอดหนี้ทั้งหมด: ฿[จำนวนเงิน]`
-*   **Primary CTA**: `ระบุวันชำระเงิน` (Set Due Date)
-*   **Secondary CTA**: -
-*   **Accessibility Label**: "สถานะ ยังไม่มีข้อมูลวันครบกำหนดชำระ กดปุ่มระบุวันชำระเงินเพื่อบันทึกข้อมูล"
-
-#### 9. Debt Closed (ปิดหนี้เรียบร้อยแล้ว)
-*   **Card Title**: `🏆 ปลุกพลังการเงิน: ปิดหนี้แล้ว!`
-*   **Supporting Text**: "ยินดีด้วย! บัญชีหนี้นี้ได้รับการชำระครบถ้วนและปิดบัญชีเรียบร้อยแล้ว"
-*   **Amount Label**: `ยอดหนี้คงเหลือ: ฿0.00`
-*   **Primary CTA**: `ปิดหนี้สำเร็จ` (Debt Cleared)
-*   **Secondary CTA**: -
-*   **Accessibility Label**: "สถานะ ปิดหนี้เรียบร้อยแล้ว ยอดหนี้คงเหลือเป็นศูนย์บาท บัญชีปิดถาวร"
+### Secondary Debts Summary Bar
+When multiple debts are active and require attention:
+*   *Text Copy*: `"ยังมีอีก [N] รายการที่ต้องจัดการ"`
+*   *Primary Action Link*: `"ดูหนี้สินทั้งหมด"` (Navigates to `/debts` summary list)
+*   *Aria Label*: `"คุณมีรายการหนี้สินอื่น ๆ ที่ต้องจัดการอีก [N] รายการ กดเพื่อดูหนี้สินทั้งหมด"`
 
 ---
 
-## 2. Interest Rate Display & Disclaimer Wording
+## 2. Priority Copy Registry
 
-TangLak does **not** compute exact daily interest. The interest displayed is strictly for planning and comparison.
+#### Priority 1: Overdue Minimum (เกินกำหนดชำระขั้นต่ำ)
+*   *Title*: `"ค้างชำระเกินกำหนด"`
+*   *Supporting Text*: `"กรุณาชำระยอดขั้นต่ำโดยเร็วเพื่อหลีกเลี่ยงเบี้ยปรับล่าช้าและผลกระทบต่อบัญชี"`
+*   *Amount Label*: `"ยอดขั้นต่ำคงค้าง: ฿[จำนวนเงิน]"`
+*   *Primary CTA*: `"บันทึกการชำระเงิน"`
+*   *Secondary CTA*: `"ดูรายละเอียด"`
+*   *Accessibility Label*: `"สถานะ เกินกำหนดชำระ ยอดชำระขั้นต่ำคงค้างคือ [จำนวนเงิน] บาท กดปุ่มบันทึกการชำระเงินเพื่อบันทึกสลิป"`
+*   *Fallback behavior*: If `minimumPayment` is missing, display outstanding balance instead: `"ยอดหนี้ทั้งหมด: ฿[จำนวนเงิน]"`.
 
-### Copy Formats
+#### Priority 2: Due Today (ครบกำหนดชำระวันนี้)
+*   *Title*: `"ครบกำหนดชำระวันนี้"`
+*   *Supporting Text*: `"วันสุดท้ายสำหรับรอบบัญชีนี้ โปรดบันทึกการชำระเงินเพื่อรักษาสถานะบัญชีให้เป็นปกติ"`
+*   *Amount Label*: `"ยอดเรียกเก็บรอบนี้: ฿[จำนวนเงิน]"`
+*   *Primary CTA*: `"บันทึกการชำระเงิน"`
+*   *Secondary CTA*: -
+*   *Accessibility Label*: `"สถานะ ครบกำหนดชำระวันนี้ ยอดเรียกเก็บรอบนี้คือ [จำนวนเงิน] บาท กดปุ่มบันทึกการชำระเงิน"`
+*   *Fallback behavior*: If `statementAmount` is missing, display minimum payment: `"ยอดขั้นต่ำที่ต้องชำระ: ฿[จำนวนเงิน]"`.
 
-```
-+-----------------------------------------------------------+
-|  อัตราดอกเบี้ย: 15% ต่อปี                                    |
-|  (ประมาณ 1.25% ต่อเดือน)                                   |
-|                                                           |
-|  * เป็นการคำนวณประมาณการเพื่อช่วยวางแผน                    |
-|    ยอดจริงอาจแตกต่างจากที่สถาบันการเงินเรียกเก็บจริง           |
-+-----------------------------------------------------------+
-```
+#### Priority 3: Due Soon (ใกล้ครบกำหนดชำระ)
+*   *Title*: `"ใกล้ครบกำหนดชำระ"`
+*   *Supporting Text*: `"เหลือเวลาอีก [N] วันจะถึงวันครบกำหนดชำระเงินตามใบแจ้งยอด"`
+*   *Amount Label*: `"ยอดเรียกเก็บรอบนี้: ฿[จำนวนเงิน]"`
+*   *Primary CTA*: `"บันทึกการชำระเงิน"`
+*   *Secondary CTA*: -
+*   *Accessibility Label*: `"สถานะ ใกล้ครบกำหนดชำระ เหลือเวลาอีก [N] วัน ยอดเรียกเก็บรอบนี้คือ [จำนวนเงิน] บาท กดปุ่มบันทึกการชำระเงิน"`
+*   *Fallback behavior*: If `statementAmount` is missing, show outstanding balance: `"ยอดหนี้ทั้งหมด: ฿[จำนวนเงิน]"`.
 
-*   **Display Text**:
-    `ดอกเบี้ย [X]% ต่อปี (ประมาณ [Y]% ต่อเดือน)`
-*   **Static Disclaimer Copy**:
-    > "เป็นการประมาณเพื่อช่วยวางแผน ยอดจริงอาจต่างจากที่สถาบันการเงินเรียกเก็บ"
+#### Priority 4: Minimum Not Met (ยังชำระไม่ถึงยอดขั้นต่ำ)
+*   *Title*: `"ยังชำระไม่ถึงยอดขั้นต่ำ"`
+*   *Supporting Text*: `"รอบบัญชีปัจจุบันยังไม่มียอดชำระถึงเกณฑ์ขั้นต่ำที่กำหนด"`
+*   *Amount Label*: `"ยอดขั้นต่ำคงเหลือ: ฿[จำนวนเงิน]"`
+*   *Primary CTA*: `"บันทึกการชำระเงิน"`
+*   *Secondary CTA*: -
+*   *Accessibility Label*: `"สถานะ ยังชำระไม่ถึงยอดขั้นต่ำ ยอดขั้นต่ำคงเหลือคือ [จำนวนเงิน] บาท กดปุ่มบันทึกการชำระเงิน"`
+*   *Fallback behavior*: If `minimumPayment` is missing, default to statement balance: `"ยอดเรียกเก็บรอบนี้: ฿[จำนวนเงิน]"`.
+
+#### Priority 5: Cycle Update (ถึงเวลาอัปเดตรอบบิล)
+*   *Title*: `"ถึงเวลาอัปเดตรอบบิล"`
+*   *Supporting Text*: `"รอบบัญชีเดิมสิ้นสุดแล้ว โปรดกรอกข้อมูลยอดเรียกเก็บและวันครบกำหนดล่าสุดจากใบแจ้งหนี้ใหม่"`
+*   *Amount Label*: `"ยอดหนี้ทั้งหมดล่าสุด: ฿[จำนวนเงิน]"`
+*   *Primary CTA*: `"อัปเดตรอบบิลใหม่"`
+*   *Secondary CTA*: `"ข้ามไปก่อน"`
+*   *Accessibility Label*: `"สถานะ ถึงรอบบัญชีใหม่ โปรดกดปุ่มอัปเดตรอบบิลใหม่เพื่อกรอกข้อมูลใบแจ้งหนี้ล่าสุด"`
+*   *Fallback behavior*: If outstanding balance is missing, show label: `"โปรดเพิ่มข้อมูลยอดหนี้ล่าสุด"`.
+
+#### Priority 6: No Due Date (ยังไม่ได้ตั้งวันครบกำหนด)
+*   *Title*: `"ยังไม่ได้ตั้งวันครบกำหนด"`
+*   *Supporting Text*: `"บัญชีนี้ยังไม่มีข้อมูลวันครบกำหนดชำระเงิน กรุณากรอกข้อมูลเพื่อใช้ระบบแจ้งเตือน"`
+*   *Amount Label*: `"ยอดหนี้ทั้งหมด: ฿[จำนวนเงิน]"`
+*   *Primary CTA*: `"ตั้งวันครบกำหนด"`
+*   *Secondary CTA*: -
+*   *Accessibility Label*: `"สถานะ ยังไม่มีข้อมูลวันครบกำหนดชำระ กดปุ่มตั้งวันครบกำหนดเพื่อระบุข้อมูลการชำระเงิน"`
+*   *Fallback behavior*: -
 
 ---
 
-## 3. Accessibility Labels for Payment Progress Indicators
+## 3. Explanatory Disclaimer & Audit Copy
 
-For visual progress bars and circles, screen readers must receive explicit numeric and contextual descriptions:
+### Manual Outstanding Warning (Mandatory Copy)
+To be displayed on the payment review screen and debt details screen:
+> `"การบันทึกการชำระจะไม่ปรับยอดหนี้ทั้งหมดอัตโนมัติ กรุณาอัปเดตยอดล่าสุดจากแอปหรือใบแจ้งหนี้ของผู้ให้บริการ"`
 
-*   *Visual element*: Progress bar showing ฿2,000 paid out of ฿5,000 statement balance.
-*   *Screen reader copy (`aria-label`)*: `ความคืบหน้าการจ่าย ชำระแล้ว 2,000 บาท จากยอดเรียกเก็บทั้งหมด 5,000 บาท คิดเป็น 40 เปอร์เซ็นต์`
+### Late-Linked Payment Audit Note
+To be displayed next to any retroactive linked payment in the history:
+> `"รายการนี้ถูกเพิ่มย้อนหลัง สถานะรอบบิลอาจเปลี่ยนตามวันที่ชำระ ค่าปรับหรือดอกเบี้ยที่เกิดขึ้นจริงให้ตรวจสอบจากผู้ให้บริการ"`
+
+---
+
+## 4. Debt Closure Confirmation Prompt
+
+This modal displays when a user triggers `ตรวจสอบปิดหนี้` on an account with a `0` outstanding balance or completed installments.
+
+*   *Modal Title*: `"ตรวจสอบยอดล่าสุดจากผู้ให้บริการแล้วหรือยัง"`
+*   *Modal Body*: `"อาจยังมีดอกเบี้ย ค่าธรรมเนียม หรือรายการรอดำเนินการค้างอยู่ กรุณายืนยันเมื่อยอดหนี้จริงเป็นศูนย์"`
+*   *Primary Action Button (CTA)*: `"ยืนยันปิดหนี้"`
+*   *Secondary Action Button (CTA)*: `"กลับไปตรวจสอบ"`
+
+---
+
+## 5. Interest Rate Display Formats
+
+Interest rate copy must explicitly show that calculations are planning approximations.
+
+*   *Standard Rate Format*: `"ดอกเบี้ย [X]% ต่อปี (ประมาณ [Y]% ต่อเดือน)"`
+*   *Subtext Disclaimer*: `"เป็นการประมาณเพื่อช่วยวางแผน ยอดจริงอาจต่างจากที่สถาบันการเงินเรียกเก็บ"`

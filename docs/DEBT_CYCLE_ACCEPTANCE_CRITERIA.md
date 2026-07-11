@@ -1,69 +1,87 @@
 # TangLak: Debt Cycle Acceptance Criteria
 
-This document defines the Quality Gates and Acceptance Criteria (AC) for the lifecycle states, new cycle transitions, payment linking, and accessibility compliance.
+This document defines the Quality Gates and Acceptance Criteria (AC) to validate the safe payment semantics and manual cycle controls in TangLak.
 
 ---
 
-## 1. Functional Acceptance Criteria
+## 1. Dashboard Action & Urgency Logic
 
-### AC 1.1: Creating the First Cycle
-*   **Trigger**: A new debt is created. The UI must prompt the user to configure their first billing cycle.
-*   **Behavior**: Saving the cycle fields (`ยอดเรียกเก็บ`, `ยอดขั้นต่ำ`, `วันตัดรอบ`, `วันครบกำหนด`) creates the first active cycle entry under the debt record, initializing the `amountPaidThisCycle` to `0`.
+### AC 1.1: Single Primary Action Card
+*   **Condition**: Multiple debts have active or urgent notifications.
+*   **Behavior**: The `/today` screen must render exactly **one** next-action card representing the single highest-priority debt.
+*   **Priority ranking**:
+    1. Overdue Minimum
+    2. Due Today
+    3. Due Soon
+    4. Minimum Not Met
+    5. Cycle Update Required
+    6. No Due Date Data
+*   **Tie-breaking**: Tie-breaks must resolve using: (1) larger remaining minimum, (2) earlier due date, (3) higher interest, (4) debt creation order.
 
-### AC 1.2: Partial Payment State
-*   **Condition**: User logs a transaction of type `debt_payment` with an amount greater than `0` but strictly less than `minimumPayment`.
-*   **Behavior**: The system updates the status of the current billing cycle to `จ่ายบางส่วน` (Partially Paid). 
-*   **Dashboard Visual**: The progress bar updates to display the partial progress but the warning alert "ยังชำระไม่ถึงยอดขั้นต่ำ" remains visible.
-
-### AC 1.3: Minimum Met State
-*   **Condition**: User logs payments where the sum of `amount` is `>= minimumPayment` but `< statementBalance`.
-*   **Behavior**: The cycle status updates to `จ่ายขั้นต่ำแล้ว` (Minimum Met).
-*   **Notification**: The warning alerts for late fees are dismissed. A positive visual badge "✓ ชำระขั้นต่ำแล้ว" displays on the dashboard.
-
-### AC 1.4: Amount Due Fully Paid State
-*   **Condition**: Sum of payments `amount` logged in the active cycle is `>= statementBalance`.
-*   **Behavior**: The cycle status updates to `จ่ายยอดเรียกเก็บครบแล้ว` (Fully Paid).
-*   **Net Worth update**: The outstanding balance decreases by the total paid amount.
-
-### AC 1.5: Overdue State
-*   **Condition**: The system clock surpasses the cycle's `dueDate` and the sum of payments made is `< minimumPayment`.
-*   **Behavior**: The cycle status triggers as `เกินกำหนด` (Overdue).
-*   **Dashboard Visual**: A high-visibility critical alert banner (rose background, red text) is injected on `/today` and `/debts`.
-
-### AC 1.6: Cycle Rollover Confirmation
-*   **Trigger**: Current date passes the active cycle's statement/cycle date.
-*   **Behavior**: The UI must display an "อัปเดตรอบบิลใหม่" action card. It must **not** auto-rollover.
-*   **Rollover Submission**: When the user enters the new cycle metrics and submits:
-    *   The previous cycle status, payments, and statement details must be locked and appended to the **History table**.
-    *   A new active cycle is instantiated with a clean `paidThisCycle = 0` counter.
-    *   Past payments are **not** deleted or modified.
-
-### AC 1.7: No Statement Yet State
-*   **Trigger**: User taps "ยังไม่มีใบแจ้งหนี้รอบใหม่" during rollover.
-*   **Behavior**: The rollover action card collapses. The UI extends the current cycle parameters temporarily for up to 7 days, maintaining existing payment access.
-
-### AC 1.8: Editing an Active/Historical Cycle
-*   **Behavior**: Editing values of an active cycle updates all current calculations. Editing a historical cycle:
-    *   Must not modify current cycle dates.
-    *   Recalculates the historical row data.
-    *   Adjusts the current total outstanding balance relative to the difference in the edited historical amounts.
-
-### AC 1.9: Linking a Late Payment
-*   **Condition**: A user logs a payment check slip that occurred in a previous cycle's date range, but links it after that cycle is closed.
-*   **Behavior**: The system matches the transaction timestamp, assigns it to the historical cycle, and updates the historical cycle's `paid` total. The outstanding balance is adjusted down, and a note "ชำระย้อนหลัง" is appended.
-
-### AC 1.10: Closing a Debt Account
-*   **Condition**: User pays off the debt completely (`outstandingBalance <= 0`).
-*   **Behavior**: The status changes to `ปิดหนี้แล้ว`. The account is archived from the active dashboard and no longer triggers cycle alerts.
+### AC 1.2: Secondary Debt Summary Bar
+*   **Condition**: Multiple debts require action, and the primary card is rendered.
+*   **Behavior**: A secondary text bar must be displayed below the primary card showing: `"ยังมีอีก [N] รายการที่ต้องจัดการ"`.
+*   **Action**: Clicking the bar must navigate the user directly to the `/debts` summary list page. No competing cards can be shown.
 
 ---
 
-## 2. Accessibility (WCAG 2.1 AA Compliance)
+## 2. Safe Payment Semantics
 
-*   **Semantic Headings**: Summary headers must use a hierarchical structure starting with `<h1>` for page titles and sequential `<h2>`/`<h3>` for nested cards.
-*   **Non-Color Status Cues**: Status alerts must not rely solely on color to communicate urgency:
-    *   *Correct*: `❌ เกินกำหนดชำระ! (เกินมา 3 วัน)` (Combines icon, warning prefix, and clear duration).
-    *   *Violation*: Just showing a red dot next to the due date.
-*   **Touch Targets**: All buttons, form fields, and clickable cells in the history grid must be at least `44px by 44px`.
-*   **Aria-live Announcements**: Form errors and validation status blocks must dynamically alert screen readers using `aria-live="assertive"`.
-*   **Screen Reader Copy for Progress**: Progress indicators must define an explicit `aria-label` stating: `ชำระแล้ว [X] บาท จากยอดเรียกเก็บ [Y] บาท`.
+### AC 2.1: Total Outstanding Balance Preservation
+*   **Condition**: User records a payment (full, partial, or overpaid) linked to a debt.
+*   **Behavior**: The payment must **never** automatically decrease or change the debt's `outstandingBalance`, `creditLimit`, `interestRate`, or next cycle's statement amount.
+*   **Recalculation Scope**: The payment updates only:
+    *   `paidThisCycle`
+    *   `remainingMinimum`
+    *   `remainingStatement`
+    *   Cycle payment status badge (e.g. `จ่ายขั้นต่ำแล้ว`)
+
+### AC 2.2: Explanatory Copy Prominence
+*   **Behavior**: The transaction review screen and debt details screen must prominently display:
+    `"การบันทึกการชำระจะไม่ปรับยอดหนี้ทั้งหมดอัตโนมัติ กรุณาอัปเดตยอดล่าสุดจากแอปหรือใบแจ้งหนี้ของผู้ให้บริการ"`
+
+---
+
+## 3. Late-Linked Payments
+
+### AC 3.1: Historical Recalculation Only
+*   **Condition**: User retroactively links a payment matching a closed billing cycle's date range.
+*   **Behavior**:
+    *   The transaction is mapped to the historical cycle.
+    *   The historical cycle's `paid` total, `remainingMinimum`, and `remainingStatement` are recalculated.
+    *   The historical cycle's status badge is updated (e.g. from `จ่ายบางส่วน` to `จ่ายขั้นต่ำแล้ว`).
+*   **Scope Boundaries**: The current cycle's statement balance, due date, cycle dates, and the overall debt's total outstanding balance must remain completely unaffected.
+*   **Metadata tracking**: System logs: `transactionDate`, `dateLinked`, `affectedCycleId`, `previousStatus`, `recalculatedStatus`.
+*   **Audit Note display**: An audit alert must display next to the retroactive payment:
+    `"รายการนี้ถูกเพิ่มย้อนหลัง สถานะรอบบิลอาจเปลี่ยนตามวันที่ชำระ ค่าปรับหรือดอกเบี้ยที่เกิดขึ้นจริงให้ตรวจสอบจากผู้ให้บริการ"`
+
+---
+
+## 4. Manual Debt Closure & Completed Installments
+
+### AC 4.1: No Auto-Closure
+*   **Behavior**: An active debt account must **never** transition to closed automatically, even if `outstandingBalance == 0`, `paidThisCycle >= statementAmount`, or remaining installments reaches `0`.
+*   **Transition to Pending Review**: When `outstandingBalance` becomes `0` or `remainingInstallments` becomes `0`, the account state shifts to `pending_close_review` (`รอตรวจสอบปิดหนี้`).
+
+### AC 4.2: Explicit Closure Confirmation Modal
+*   **Trigger**: User taps the `ตรวจสอบปิดหนี้` button.
+*   **Modal Behavior**: Opens a confirmation dialog.
+*   **Modal Copy**:
+    *   Title: `"ตรวจสอบยอดล่าสุดจากผู้ให้บริการแล้วหรือยัง"`
+    *   Body: `"อาจยังมีดอกเบี้ย ค่าธรรมเนียม หรือรายการรอดำเนินการค้างอยู่ กรุณายืนยันเมื่อยอดหนี้จริงเป็นศูนย์"`
+    *   Primary CTA: `"ยืนยันปิดหนี้"`
+    *   Secondary CTA: `"กลับไปตรวจสอบ"`
+*   **Closure Execution**: Tapping `ยืนยันปิดหนี้` transitions the account state to `closed` (read-only).
+
+### AC 4.3: Negative Outstanding Balance Rejection
+*   **Behavior**: If a user attempts to update the outstanding balance to a negative value ($< 0$), the form input must reject the value and throw a validation error: `"ยอดหนี้ไม่สามารถติดลบได้"`.
+
+### AC 4.4: Post-Closure Properties
+*   **Visibility**: Closed debt profiles and full cycle history records must remain visible under the history section for audit.
+*   **Late Linkage**: Users can link payments retroactively to a closed debt, but the UI must warn: `"บัญชีหนี้ปิดแล้ว"`.
+*   **Reopening Block**: Reopening a closed debt is disabled in Phase 1 (displays: `"TangLak ยังไม่รองรับการเปิดบัญชีหนี้ใหม่จากการปิดไปแล้ว ในเวอร์ชันนี้"`).
+
+---
+
+## 5. Billing Cycle Rollovers
+*   **AC 5.1: Manual Rollovers**: Rolling over to a new cycle requires manual input. The system must not auto-reset or pre-calculate statement values for subsequent periods.

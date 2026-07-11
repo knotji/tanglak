@@ -1,148 +1,170 @@
 # TangLak: Debt Cycle Lifecycle UX Specification
 
-This document defines the complete lifecycle, billing cycle rollover flows, transition rules, payment semantics, and layout guidelines for debt management in TangLak.
+This document defines the complete debt lifecycle state model, billing cycle rollover flows, transition rules, payment semantics, and layout guidelines for debt management in TangLak.
 
 ---
 
-## 1. Debt Lifecycle States
+## 1. Lifecycle State Model
 
-A debt account transitions through various states based on date boundaries, payment records, and user actions. The system must never auto-reset values or infer that a debt is "fully paid" simply because the minimum payment was met.
+To handle overlapping states, TangLak separates the state of a debt into four orthogonal dimensions. This avoids a flat, mutually exclusive enum and allows for richer, more context-aware UI messaging.
 
-### Lifecycle State Matrix & Primary CTAs
-
-| State (English) | Thai UI Term | Definition & Condition | Single Primary CTA |
-| :--- | :--- | :--- | :--- |
-| **New Debt Created** | **สร้างหนี้ใหม่** | Debt created but onboarding forms are incomplete. | `กรอกข้อมูลรอบบิล` (Fill Cycle Info) |
-| **No Cycle Data** | **ยังไม่มีข้อมูลรอบบิล** | Debt active but no billing statement has been added yet. | `เพิ่มข้อมูลรอบบิล` (Add Billing Info) |
-| **Current Cycle** | **รอบปัจจุบัน** | Statement active; current date is between cycle date and due date. | `บันทึกการจ่าย` (Log Payment) |
-| **Near Cycle Date** | **ใกล้วันตัดรอบ** | Current date is within 3 days before the statement cycle date. | `บันทึกการจ่าย` (Log Payment) |
-| **Pending Update** | **รออัปเดตรอบใหม่** | Statement cycle date has passed; new statement is expected from bank. | `อัปเดตรอบบิลใหม่` (Update New Cycle) |
-| **Cycle Updated** | **อัปเดตรอบใหม่แล้ว** | User confirmed new statement details; now awaiting payment. | `บันทึกการจ่าย` (Log Payment) |
-| **Partially Paid** | **จ่ายบางส่วน** | Payment logged is > 0 but less than the minimum required. | `จ่ายขั้นต่ำ` (Pay Minimum) |
-| **Minimum Met** | **จ่ายขั้นต่ำแล้ว** | Payment logged is >= minimum but less than statement balance. | `บันทึกการจ่าย` (Log Payment) |
-| **Statement Paid** | **จ่ายยอดเรียกเก็บครบแล้ว** | Current-cycle payment is >= statement balance. | `ตรวจสอบยอด` (Review Balance) |
-| **Overdue** | **เกินกำหนด** | Current date is past due date, and payment is < minimum. | `บันทึกการจ่าย` (Log Payment) |
-| **Debt Paid Off** | **ปิดหนี้แล้ว** | Total outstanding balance is `0` (or negative). | `ปิดบัญชีหนี้` (Archive/Close Debt) |
-
----
-
-## 2. New Billing-Cycle Update Flow
-
-Billing cycles **must never reset automatically**. When a billing cycle rollover arrives, the user is notified and must explicitly confirm the new cycle values.
-
-### Mobile Step-by-Step Rollover Flow
+### The Four State Dimensions
 
 ```
-[1. Alert: ถึงรอบบิลใหม่] 
-   --> User receives notification or banner on /today: "ถึงรอบบิลใหม่ของ บัตรเครดิต KTC แล้ว"
+                       +---------------------------+
+                       |   Account Lifecycle State |
+                       |   (active/review/closed)  |
+                       +-------------+-------------+
+                                     |
+      +------------------------------+------------------------------+
+      |                              |                              |
++-----+-----+                  +-----+-----+                  +-----+-----+
+| Cycle State |                | Payment State |                |   Urgency   |
+| (missing/   |                | (unpaid/      |                | (none/soon/ |
+| current/    |                | partial/      |                | today/      |
+| pending)    |                | met/paid)     |                | overdue)    |
++-------------+                  +-----------+                  +-----------+
+```
+
+1.  **Account Lifecycle State**:
+    *   `active`: The account is active and open.
+    *   `pending_close_review` (รอตรวจสอบปิดหนี้): Total outstanding is 0, or installment count is 0, waiting for explicit user closure.
+    *   `closed`: Explicitly closed by the user. Read-only.
+2.  **Cycle State**:
+    *   `missing`: Active debt, but no statement cycle data has been entered yet.
+    *   `current`: Inside an active, unexpired cycle.
+    *   `pending_update`: Statement cycle date has passed; waiting for the user to enter the next cycle's details.
+3.  **Payment State**:
+    *   `unpaid`: `paidThisCycle == 0`.
+    *   `partial`: `0 < paidThisCycle < minimumPayment`.
+    *   `minimum_met`: `minimumPayment <= paidThisCycle < statementAmount`.
+    *   `statement_paid`: `statementAmount <= paidThisCycle < (statementAmount + epsilon)`.
+    *   `overpaid`: `paidThisCycle > statementAmount`.
+4.  **Urgency**:
+    *   `none`: Current date is well before the due date.
+    *   `due_soon`: Current date is within 3 days of `dueDate`.
+    *   `due_today`: Current date is equal to `dueDate` (Bangkok Timezone).
+    *   `overdue`: Current date is past `dueDate`, and payment state is `unpaid` or `partial`.
+
+### Composite Badge Resolution
+
+A single primary badge is displayed on the debt card and details page. It is resolved using the following priority:
+
+```mermaid
+graph TD
+    A[Resolve Account State] -->|closed| B(ปิดหนี้แล้ว)
+    A -->|pending_close_review| C(รอตรวจสอบปิดหนี้)
+    A -->|active| D[Resolve Urgency]
+    D -->|overdue| E(เกินกำหนดชำระ)
+    D -->|due_today| F(ครบกำหนดชำระวันนี้)
+    D -->|due_soon| G(ใกล้ครบกำหนดชำระ)
+    D -->|none| H[Resolve Cycle State]
+    H -->|pending_update| I(รออัปเดตรอบใหม่)
+    H -->|missing| J(ยังไม่มีข้อมูลรอบบิล)
+    H -->|current| K[Resolve Payment State]
+    K -->|statement_paid / overpaid| L(จ่ายครบถ้วนแล้ว)
+    K -->|minimum_met| M(จ่ายขั้นต่ำแล้ว)
+    K -->|partial| N(จ่ายบางส่วน)
+    K -->|unpaid| O(ยังไม่ชำระเงิน)
+```
+
+---
+
+## 2. Today Screen Next-Action Priority Logic
+
+To prevent overwhelming the user, the `/today` screen displays **exactly one primary next-action card** (the highest priority across all debts). 
+
+### Multi-Debt Urgency Resolution
+*   If multiple debts require attention, the UI renders the single highest-priority next-action card.
+*   Directly below the primary card, a small secondary text bar summarizes the remainder (e.g., `ยังมีอีก 2 รายการที่ต้องจัดการ`).
+*   The text bar links directly to `/debts` (the monthly debt summary list).
+
+### Action Priority Order
+1.  **Overdue Minimum**: Urgency is `overdue` (Priority 1).
+2.  **Due Today**: Urgency is `due_today` (Priority 2).
+3.  **Due Within 3 Days**: Urgency is `due_soon` (Priority 3).
+4.  **Minimum Not Yet Met**: Cycle state is `current` and Payment state is `unpaid` or `partial` (Priority 4).
+5.  **New Cycle Waiting for Update**: Cycle state is `pending_update` (Priority 5).
+6.  **No Due-Date Data**: Cycle state is `missing` (Priority 6).
+7.  **Informational/Clean States**: Cycle state is `current` and Payment state is `minimum_met` or `statement_paid` (Priority 7).
+
+### Tie-Break Rules
+If two or more debts have the same priority status, resolve the tie-breaker in this strict order:
+1.  **Larger remaining minimum** (ยอดขั้นต่ำคงเหลือมากกว่า).
+2.  **Earlier due date** (วันครบกำหนดชำระมาถึงก่อน หรือเลยกำหนดมานานกว่า).
+3.  **Higher annual interest rate** (อัตราดอกเบี้ยต่อปีสูงกว่า).
+4.  **Deterministic stable fallback** (Creation order of the debt account in database).
+
+---
+
+## 3. Safe Payment Semantics (Phase 1 Rules)
+
+In Phase 1, payments logged by the user **must not automatically reduce the total outstanding balance, credit limit, or interest rates**. All overall debt values must remain manual to prevent mismatch with actual bank interest charges.
+
+### Formula Registry
+The system calculates cycle-level metrics using these strict formulas:
+
+$$\text{paidThisCycle} = \sum (\text{confirmed linked payments within cycle boundaries})$$
+
+$$\text{remainingMinimum} = \max(\text{minimumPayment} - \text{paidThisCycle}, 0)$$
+
+$$\text{remainingStatement} = \max(\text{statementAmount} - \text{paidThisCycle}, 0)$$
+
+$$\text{overMinimum} = \max(\text{paidThisCycle} - \text{minimumPayment}, 0)$$
+
+$$\text{overStatement} = \max(\text{paidThisCycle} - \text{statementAmount}, 0)$$
+
+### Explanatory Disclaimer Copy
+Because the total outstanding balance is not automatically updated, the UI must display the following explanatory text on the payment confirmation screen and the debt details page:
+> "การบันทึกการชำระจะไม่ปรับยอดหนี้ทั้งหมดอัตโนมัติ กรุณาอัปเดตยอดล่าสุดจากแอปหรือใบแจ้งหนี้ของผู้ให้บริการ"
+
+---
+
+## 4. Late-Linked Payments
+
+When a user retroactively links a payment to a closed cycle (e.g. mapping a forgotten bank slip from last month):
+
+1.  **Recalculation Scope**: The system assigns the payment to the historical cycle based on the transaction date, recalculating `paidThisCycle`, `remainingMinimum`, and `remainingStatement` for that cycle.
+2.  **Date/Amount Preservation**: The current active cycle's dates, statement amount, and minimum due remain completely unchanged.
+3.  **No Balance Change**: The total outstanding balance must **not** change automatically.
+4.  **Preserved Metadata**: The database must track:
+    *   `transactionDate` (วันที่ทำรายการจริง)
+    *   `dateLinked` (วันที่บันทึก/เชื่อมโยง)
+    *   `affectedCycleId` (รอบบิลที่ได้รับผลกระทบ)
+    *   `previousStatus` (สถานะรอบบิลเดิม)
+    *   `recalculatedStatus` (สถานะหลังคำนวณใหม่)
+5.  **Audit Copy**: The UI must display this audit warning label next to the late-linked payment:
+    > "รายการนี้ถูกเพิ่มย้อนหลัง สถานะรอบบิลอาจเปลี่ยนตามวันที่ชำระ ค่าปรับหรือดอกเบี้ยที่เกิดขึ้นจริงให้ตรวจสอบจากผู้ให้บริการ"
+
+---
+
+## 5. Debt Closure & Installment Completion
+
+A debt account must **never** auto-close under any circumstances (even if total outstanding reaches 0, remaining installments reaches 0, or AI labels suggest it).
+
+### Closure Flow
+```
+[Total Outstanding is 0]
+   --> Account state shifts to: pending_close_review (รอตรวจสอบปิดหนี้)
    
-[2. Click: อัปเดตรอบบิล]
-   --> User taps the primary CTA button "อัปเดตรอบบิลใหม่"
+[User Taps: ตรวจสอบปิดหนี้]
+   --> Displays confirmation modal.
    
-[3. Review: ตรวจข้อมูลรอบเดิม]
-   --> Displays summary of the previous cycle: statement balance, total paid, and outstanding balance carried over.
+[Confirmation Modal Displays warning]
+   --> Wording: "ตรวจสอบยอดล่าสุดจากผู้ให้บริการแล้วหรือยัง? อาจยังมีดอกเบี้ย ค่าธรรมเนียม หรือรายการรอดำเนินการ กรุณายืนยันเมื่อยอดหนี้จริงเป็นศูนย์"
    
-[4. Input: กรอกข้อมูลรอบใหม่]
-   --> Form fields display:
-       - ยอดเรียกเก็บรอบใหม่ (New statement balance) [Required]
-       - ยอดจ่ายขั้นต่ำ (New minimum due) [Required]
-       - วันตัดรอบบัญชีถัดไป (Next cycle date) [Required]
-       - วันครบกำหนดชำระถัดไป (Next due date) [Required]
-       - ยอดหนี้ทั้งหมดล่าสุด (New total outstanding) [Required]
-       - ดอกเบี้ยต่อปี (%) (Annual interest rate - defaults to last cycle value) [Required]
-       - หมายเหตุเพิ่มเติม (Optional notes) [Optional]
-       
-[5. Confirm: ยืนยันข้อมูล]
-   --> User clicks "ยืนยันความถูกต้องรอบใหม่"
-   
-[6. Transition: ปิดรอบเดิม & เริ่มรอบใหม่]
-   --> Previous cycle details are archived to history.
-   --> New cycle begins. Past payments are preserved in history.
+[User clicks: ยืนยันปิดหนี้]
+   --> Account state changes to: closed.
+   --> Account becomes read-only.
 ```
 
----
+### Installment Completion Rules
+*   When `remainingInstallments` reaches `0`, the system does **not** close the account.
+*   The account transitions to `pending_close_review` (รอตรวจสอบปิดหนี้).
+*   The user is prompted to verify if there is any real remaining balance. If yes, the user can update the balance and cycle dates. If no, they explicitly trigger the confirmation modal to close the debt.
 
-## 3. Cycle Transition Rules
-
-*   **Early Updates (ก่อนครบกำหนด)**: If a user updates their billing cycle early, the system must warn the user: "รอบบิลเก่ายังไม่หมดอายุ การอัปเดตตอนนี้จะปิดยอดรอบบิลนี้ทันที" and request confirmation.
-*   **Late Updates (หลังเลยวันตัดรอบ/วันกำหนดชำระ)**: If a user updates cycle details late, all payments logged in the interim are automatically evaluated against the cycle date to map them correctly.
-*   **No New Statement Yet**: If a bank cycle date passes but the user has not received their statement, they can tap "ยังไม่มีใบแจ้งหนี้รอบใหม่" to keep the current cycle active in a temporary grace state.
-*   **Amount Due / Minimum is 0**: If the statement balance is `0`, the minimum is automatically set to `0`. The cycle updates instantly to `จ่ายยอดเรียกเก็บครบแล้ว`.
-*   **Validation: Minimum > Amount Due**: The form blocks submission and highlights: "ยอดชำระขั้นต่ำไม่สามารถมากกว่ายอดเรียกเก็บในรอบนี้ได้".
-*   **Validation: Outstanding Balance < Amount Due**: System flags a warning: "ยอดเรียกเก็บมากกว่ายอดหนี้ทั้งหมด กรุณาตรวจสอบยอดหนี้ล่าสุดของคุณ" but allows saving to cover cases where temporary fees exceed principal.
-*   **Credit Cards vs. Installments**:
-    *   *Credit Cards*: Total outstanding is floating and depends on user purchases.
-    *   *Installments*: Total outstanding decrements strictly by the statement amount each cycle. The system auto-calculates remaining installments: `remaining = remaining - 1`.
-*   **Debt Without a Cycle Date** (e.g. Informal peer-to-peer loans): The lifecycle skips rollover states. It remains in an active `รอบปัจจุบัน` state until the outstanding balance reaches `0`.
-
----
-
-## 4. Payment Semantics
-
-To ensure clarity, the UI distinguishes payments using explicit Thai labeling:
-
-```
-+-------------------------------------------------------+
-|  ยอดหนี้ทั้งหมด: ฿85,000.00                              |
-|  ยอดเรียกเก็บรอบนี้: ฿12,000.00 | จ่ายแล้วรอบนี้: ฿5,000.00 |
-+-------------------------------------------------------+
-|  [ PROGRESS BAR: จ่ายแล้ว ฿5,000 / ขั้นต่ำ ฿2,000 ]      |
-|  เหลือยอดขั้นต่ำที่ต้องชำระ: ฿0.00 (จ่ายขั้นต่ำครบแล้ว)   |
-|  เหลือยอดเรียกเก็บที่ต้องชำระ: ฿7,000.00                 |
-+-------------------------------------------------------+
-```
-
-### Visual Labels & Semantics
-1.  **จ่ายแล้วรอบนี้ (Paid This Cycle)**: Total amount of payments logged within the start and end dates of the active cycle.
-2.  **เหลือขั้นต่ำ (Remaining Minimum)**: Calculated as `max(0, minimumPayment - paidThisCycle)`. If `0`, displays as "ครบเกณฑ์ขั้นต่ำแล้ว".
-3.  **เหลือยอดเรียกเก็บ (Remaining Statement Balance)**: Calculated as `max(0, statementBalance - paidThisCycle)`.
-4.  **ยอดหนี้ทั้งหมด (Total Outstanding)**: Total balance remaining on the account.
-5.  **จ่ายเกินยอดขั้นต่ำ (Paid Over Minimum)**: Displays when `paidThisCycle > minimumPayment` but `< statementBalance`. Shows positive feedback: "จ่ายเกินขั้นต่ำมาแล้ว ฿X.XX" (encouraging debt payoff).
-6.  **จ่ายเกินยอดเรียกเก็บ (Paid Over Statement)**: Displays when `paidThisCycle > statementBalance`. Shows: "จ่ายเกินยอดเรียกเก็บมาแล้ว ฿X.XX" and automatically reduces the `outstandingBalance` by the overpaid amount.
-
-### Linking Payments After Cycle is Closed
-*   **Late Linkage**: If a payment is linked retroactively to a closed cycle:
-    *   The transaction is marked with the historical cycle ID.
-    *   The historical record recalculates its `paid` amount.
-    *   The current cycle outstanding balance is adjusted to reflect the change.
-    *   The UI displays a label on that historical transaction: "ชำระย้อนหลังเข้าสู่งวด [เดือน]".
-
----
-
-## 5. Debt History Presentation
-
-The debt details page contains a compact, tabular history view. It must not use decorative charts unless actual historical data exists.
-
-```
-+--------------------------------------------------------------------------------+
-|                               ประวัติการชำระเงิน                                |
-+--------------------------------------------------------------------------------+
-| รอบบิล (เดือน) | ยอดเรียกเก็บ | ยอดขั้นต่ำ | ชำระแล้ว | สถานะรอบบิล | วันครบกำหนดชำระ |
-+---------------+-------------+----------+----------+-------------+------------------+
-| มิ.ย. 2569    | ฿12,000.00  | ฿2,000   | ฿12,000  | จ่ายครบแล้ว  | 25 มิ.ย. 2569    |
-| พ.ค. 2569    | ฿15,000.00  | ฿2,500   | ฿2,500   | จ่ายขั้นต่ำ  | 25 พ.ค. 2569    |
-| เม.ย. 2569   | ฿10,000.00  | ฿2,000   | ฿0.00    | เกินกำหนด   | 25 เม.ย. 2569   |
-+--------------------------------------------------------------------------------+
-```
-
----
-
-## 6. Mobile Layout Behavior
-
-### 360px Viewport (e.g., Samsung Galaxy S20)
-*   **History Table**: Horizontal tables reflow into vertical cards (Cycle Cards) to prevent text clipping:
-    ```
-    +------------------------------------------+
-    | รอบบิล: มิ.ย. 2569 (จ่ายครบแล้ว)          |
-    | ยอดเรียกเก็บ: ฿12,000  |  ชำระแล้ว: ฿12,000 |
-    +------------------------------------------+
-    ```
-*   **Typography**: Currency values auto-scale down (e.g., `text-base` instead of `text-lg`) to fit on one line.
-*   **Spacing**: Form padding reduces from `p-4` to `p-2` with inputs stacking vertically in a single column.
-
-### 390px Viewport (e.g., iPhone 12/13/14)
-*   **Standard Forms**: Inputs use a full-width block layout.
-*   **Actions**: The primary CTA occupies the full screen width at the bottom, locked to a sticky panel with `pb-safe` to prevent keyboard collision.
-
-### 430px Viewport (e.g., iPhone 15 Pro Max)
-*   **Dashboard Grid**: History lists can show status badges with text descriptions simultaneously without causing horizontal overflow.
+### Post-Closure State
+*   **Validation**: Negative outstanding balances are invalid and must be blocked upon entry.
+*   **Visibility**: The closed debt remains visible under a "ประวัติบัญชีหนี้ที่ปิดแล้ว" (Closed Debts) tab on the debts page for audit records.
+*   **Linking payments**: Late payments can still be linked to a closed debt but the UI must warn the user that the account is closed.
+*   **Reopening**: Reopening closed debts is **not supported in Phase 1** (deferred to a future release).
