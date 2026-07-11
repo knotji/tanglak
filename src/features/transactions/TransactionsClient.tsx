@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { deleteTransactionAction } from "@/app/actions/finance";
 import { AppShell } from "@/components/AppShell";
@@ -24,6 +24,7 @@ export function TransactionsClient({
 }) {
   const router = useRouter();
   const [filter, setFilter] = useState("all");
+  const [isPending, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Transaction | undefined>();
   const [message, setMessage] = useState<string | null>(null);
@@ -72,7 +73,7 @@ export function TransactionsClient({
       ) : null}
       <FilterChips
         value={filter}
-        onChange={(value) => setFilter(value as TransactionType | "all")}
+        onChange={(value) => startTransition(() => setFilter(value as TransactionType | "all"))}
         options={[
           { label: "ทั้งหมด", value: "all" },
           { label: "รายจ่าย", value: "expense" },
@@ -82,7 +83,7 @@ export function TransactionsClient({
       />
       <LocalImportReview />
       {sortedDays.length ? (
-        <div className="space-y-3">
+        <div className={`space-y-3 transition-opacity duration-200 ${isPending ? "opacity-60 pointer-events-none" : ""}`}>
           {sortedDays.map((day) => (
             <TransactionGroup
               key={day}

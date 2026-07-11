@@ -45,8 +45,8 @@ export function parseThaiBuddhistYearDate(dateStr: string): string {
 
   // Try parsing month by name
   let monthIdx = -1;
-  // Check Thai short month name
-  monthIdx = TH_MONTHS.findIndex(m => monthStr.includes(m.replace(".", "")));
+  const cleanMonthStr = monthStr.replace(/\./g, "");
+  monthIdx = TH_MONTHS.findIndex(m => cleanMonthStr.includes(m.replace(/\./g, "")));
   if (monthIdx === -1) {
     // Check Thai full month name
     monthIdx = TH_FULL_MONTHS.findIndex(m => monthStr.includes(m));

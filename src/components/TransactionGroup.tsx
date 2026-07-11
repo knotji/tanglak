@@ -1,6 +1,7 @@
 import { TransactionRow } from "@/components/TransactionRow";
 import { formatTHB } from "@/lib/finance/money";
 import type { Transaction } from "@/types/domain";
+import { getBangkokTodayString } from "@/lib/finance/date";
 
 function dayLabel(date: string) {
   const value = new Date(date);
@@ -8,7 +9,8 @@ function dayLabel(date: string) {
     day: "numeric",
     month: "short",
   }).format(value);
-  return date.startsWith("2026-07-10") ? `วันนี้ · ${formatted}` : formatted;
+  const todayStr = getBangkokTodayString();
+  return date.startsWith(todayStr) ? `วันนี้ · ${formatted}` : formatted;
 }
 
 export function TransactionGroup({

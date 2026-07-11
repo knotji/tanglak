@@ -40,8 +40,8 @@ export function DelayedLoadingMessage({
   if (!visible) return null;
 
   return (
-    <div aria-live="polite" className="text-xs font-semibold text-text-secondary">
-      <span>{retryVisible ? slowMessage : slow ? message : message}</span>
+    <div className="text-xs font-semibold text-text-secondary">
+      <span aria-live="polite">{retryVisible ? slowMessage : slow ? slowMessage : message}</span>
       {retryVisible ? (
         <button
           type="button"

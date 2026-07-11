@@ -10,13 +10,13 @@ import { listDebts, listTransactions } from "@/lib/data/finance-repository";
 import { remainingToMinimum } from "@/lib/finance/calculations";
 import { formatTHB } from "@/lib/finance/money";
 import { timePage } from "@/lib/observability/timing";
+import { getBangkokTodayString, getBangkokMonthString } from "@/lib/finance/date";
 
 export default async function TodayPage() {
   return timePage("/today", async () => {
     const user = await requireUser();
-    const today = new Date();
-    const todayKey = today.toISOString().slice(0, 10);
-    const month = today.toISOString().slice(0, 7);
+    const todayKey = getBangkokTodayString();
+    const month = getBangkokMonthString();
     const [, transactions, debts] = await Promise.all([
       requireCompletedOnboarding(user),
       listTransactions(user.id, month),
