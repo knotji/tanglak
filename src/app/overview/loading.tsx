@@ -18,7 +18,7 @@ export default function OverviewLoading() {
           </div>
         </div>
       </div>
-      <section aria-hidden="true" className="rounded-[16px] border border-border bg-white p-4">
+      <section aria-hidden="true" className="rounded-[16px] border border-border bg-surface p-4">
         <div className="h-4 w-28 rounded bg-muted" />
         {[0, 1, 2, 3].map((index) => (
           <div key={index} className="mt-4 flex items-center justify-between gap-4">

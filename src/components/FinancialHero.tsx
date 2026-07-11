@@ -22,7 +22,7 @@ export function FinancialHero({
   }>;
 }) {
   return (
-    <section className="rounded-[16px] border border-border bg-surface p-5 shadow-[0_12px_30px_rgba(24,32,29,0.05)]">
+    <section className="rounded-[16px] border border-border bg-surface p-5">
       <p className="text-sm font-semibold text-text-secondary">{label}</p>
       <MoneyAmount satang={amountSatang} className="mt-2 block text-[40px] font-bold leading-none text-foreground" />
       {(budgetLabel || remainingLabel) && (

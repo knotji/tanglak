@@ -1,69 +1,110 @@
 import { AppShell } from "@/components/AppShell";
-import { FinancialHero } from "@/components/FinancialHero";
+import { CompactStat } from "@/components/CompactStat";
+import { FloatingActionButton } from "@/components/FloatingActionButton";
 import { NextActionCard } from "@/components/NextActionCard";
 import { PageHeader } from "@/components/PageHeader";
-import { TransactionGroup } from "@/components/TransactionGroup";
 import { EmptyState } from "@/components/EmptyState";
+import { MoneyAmount } from "@/components/MoneyAmount";
+import { CompactTransactionRow } from "@/components/finance/CompactTransactionRow";
 import { requireCompletedOnboarding } from "@/lib/auth/onboarding";
 import { requireUser } from "@/lib/auth/session";
-import { listDebts, listTransactions } from "@/lib/data/finance-repository";
-import { remainingToMinimum } from "@/lib/finance/calculations";
-import { formatTHB } from "@/lib/finance/money";
+import {
+  getMonthlyBudget,
+  listBudgetCategories,
+  listDebts,
+  listTransactions,
+} from "@/lib/data/finance-repository";
+import { buildBudgetSummary } from "@/lib/finance/budget-calculations";
+import { determineNextAction } from "@/lib/finance/next-action";
 import { timePage } from "@/lib/observability/timing";
 import { getBangkokTodayString, getBangkokMonthString } from "@/lib/finance/date";
+
+function formatTodayHeading(todayKey: string) {
+  const date = new Date(`${todayKey}T00:00:00+07:00`);
+  return new Intl.DateTimeFormat("th-TH-u-ca-gregory", {
+    timeZone: "Asia/Bangkok",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  }).format(date);
+}
 
 export default async function TodayPage() {
   return timePage("/today", async () => {
     const user = await requireUser();
     const todayKey = getBangkokTodayString();
     const month = getBangkokMonthString();
-    const [, transactions, debts] = await Promise.all([
+    const [, transactions, debts, monthlyBudget] = await Promise.all([
       requireCompletedOnboarding(user),
       listTransactions(user.id, month),
       listDebts(user.id),
+      getMonthlyBudget(user.id, month),
     ]);
-  const todayTransactions = transactions.filter((transaction) =>
-    transaction.occurredAt.startsWith(todayKey),
-  );
-  const spentToday = todayTransactions
-    .filter((transaction) => transaction.type === "expense")
-    .reduce((sum, transaction) => sum + transaction.amountSatang, 0);
-  const incomeToday = todayTransactions
-    .filter((transaction) => transaction.type === "income")
-    .reduce((sum, transaction) => sum + transaction.amountSatang, 0);
-  const debtPaidToday = todayTransactions
-    .filter((transaction) => transaction.type === "debt_payment")
-    .reduce((sum, transaction) => sum + transaction.amountSatang, 0);
-  const nextDebt = debts[0];
+    const categories = monthlyBudget ? await listBudgetCategories(user.id, monthlyBudget.id) : [];
+    const budgetSummary = buildBudgetSummary(month, monthlyBudget, categories, transactions);
+
+    const todayTransactions = transactions
+      .filter((transaction) => transaction.occurredAt.startsWith(todayKey))
+      .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
+    const spentToday = todayTransactions
+      .filter((transaction) => transaction.type === "expense")
+      .reduce((sum, transaction) => sum + transaction.amountSatang, 0);
+    const monthlySpent = budgetSummary.spentTotalSatang;
+    const overspentCategory = budgetSummary.categories.find((c) => c.status === "overspent");
+    const nearLimitCategory = budgetSummary.categories.find((c) => c.status === "near_limit");
+
+    const nextAction = determineNextAction({
+      debts,
+      hasBudget: budgetSummary.hasBudget,
+      overspentCategoryLabel: overspentCategory?.label,
+      nearLimitCategoryLabel: nearLimitCategory?.label,
+      hasAnyTransaction: transactions.length > 0,
+    });
 
     return (
-    <AppShell>
-      <PageHeader title="วันนี้" subtitle="ดูเงินวันนี้แบบไม่ต้องคิดเยอะ" />
-      <FinancialHero
-        label="วันนี้ใช้ไป"
-        amountSatang={spentToday}
-        budgetLabel="ยังไม่ได้ตั้งงบวันนี้"
-        stats={[
-          { label: "รายรับ", amountSatang: incomeToday, tone: "income" },
-          { label: "จ่ายหนี้", amountSatang: debtPaidToday, tone: "debt" },
-        ]}
-      />
-      <NextActionCard title="ยังไม่ได้ตั้งงบวันนี้" body="ตั้งงบรายเดือนเพื่อเห็นกรอบใช้เงินรายวัน" action="ตั้งงบเดือนนี้" />
-      {nextDebt ? (
-        <NextActionCard
-          title={`${nextDebt.name} ยังขาดขั้นต่ำ ${formatTHB(remainingToMinimum(nextDebt))}`}
-          body="กันเงินให้ครบขั้นต่ำก่อนวันครบกำหนด"
-          action="ดูแผนหนี้"
-        />
-      ) : (
-        <NextActionCard title="เริ่มจากบันทึกรายการแรก" body="เพิ่มรายรับ รายจ่าย หรือหนี้ที่อยากให้ช่วยเตือน" />
-      )}
-      {todayTransactions.length ? (
-        <TransactionGroup date={todayKey} transactions={todayTransactions} />
-      ) : (
-        <EmptyState title="วันนี้ยังไม่มีรายการ" body="เพิ่มเองหรืออัปโหลดสลิปแรกของวันนี้" />
-      )}
-    </AppShell>
+      <AppShell>
+        <PageHeader title="วันนี้" subtitle={formatTodayHeading(todayKey)} />
+
+        <section className="rounded-[16px] border border-border bg-surface p-5">
+          <p className="text-sm font-semibold text-text-secondary">วันนี้ใช้ไป</p>
+          {spentToday > 0 ? (
+            <MoneyAmount
+              satang={spentToday}
+              tone="expense"
+              className="mt-2 block text-[40px] font-bold leading-none text-foreground"
+            />
+          ) : (
+            <p className="mt-2 text-lg font-bold leading-snug text-text-secondary">ยังไม่มีรายจ่ายวันนี้</p>
+          )}
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <CompactStat label="เดือนนี้ใช้ไป" amountSatang={monthlySpent} />
+            <CompactStat
+              label="งบที่เหลือ"
+              amountSatang={budgetSummary.hasBudget ? budgetSummary.remainingTotalSatang : 0}
+              tone={budgetSummary.remainingTotalSatang < 0 ? "debt" : "income"}
+            />
+          </div>
+        </section>
+
+        <NextActionCard {...nextAction} />
+
+        <section aria-label="รายการล่าสุด" className="rounded-[16px] border border-border bg-surface px-4 py-1">
+          <h2 className="py-3 text-sm font-bold text-foreground">รายการวันนี้</h2>
+          {todayTransactions.length ? (
+            <div>
+              {todayTransactions.map((transaction) => (
+                <CompactTransactionRow key={transaction.id} transaction={transaction} />
+              ))}
+            </div>
+          ) : (
+            <div className="pb-4">
+              <EmptyState title="วันนี้ยังไม่มีรายการ" body="เพิ่มเองหรืออัปโหลดสลิปแรกของวันนี้" />
+            </div>
+          )}
+        </section>
+
+        <FloatingActionButton label="สแกน/อัปโหลด" href="/upload" />
+      </AppShell>
     );
   });
 }
