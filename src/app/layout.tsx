@@ -36,6 +36,9 @@ export default function RootLayout({
       className={`${thaiSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        <a href="#main-content" className="skip-link">
+          ข้ามไปยังเนื้อหา
+        </a>
         <ToastProvider>{children}</ToastProvider>
       </body>
     </html>
