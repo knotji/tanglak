@@ -123,6 +123,7 @@ export function ReviewForm({
   const [accountLastFour, setAccountLastFour] = useState(initialDebt.accountLastFour || "");
   const [debtActionType, setDebtActionType] = useState<"create" | "update">("create");
   const [existingDebtId, setExistingDebtId] = useState<string>("");
+  const reviewFieldId = (field: string) => `review-${doc.id}-${docType}-${field}`;
 
   // Confidence Calculation
   const confidence = extraction?.confidence ?? 1.0;
@@ -310,11 +311,11 @@ export function ReviewForm({
               <div className="font-bold text-sm text-text-secondary">รูปหลักฐานต้นฉบับ</div>
               <div className="sticky top-4 overflow-hidden rounded-[16px] border border-border bg-surface shadow-sm">
                 {doc.mimeType === "application/pdf" ? (
-                  <iframe src={previewUrl} className="h-[500px] w-full border-0" />
+                  <iframe src={previewUrl} title="ตัวอย่างเอกสาร PDF สำหรับตรวจสอบ" className="h-[500px] w-full border-0" />
                 ) : (
                   <img
                     src={previewUrl}
-                    alt={doc.originalFilename}
+                    alt="ภาพถ่ายหรือสแกนเอกสารหลักฐานสำหรับตรวจสอบ"
                     className="w-full object-contain max-h-[600px]"
                   />
                 )}
@@ -420,8 +421,9 @@ export function ReviewForm({
               >
                 {/* Document Type Selector */}
                 <div>
-                  <label className="block text-sm font-bold text-foreground mb-1">ประเภทเอกสาร</label>
+                  <label htmlFor={reviewFieldId("docType")} className="block text-sm font-bold text-foreground mb-1">ประเภทเอกสาร</label>
                   <select
+                    id={reviewFieldId("docType")}
                     className="w-full rounded-[12px] border border-border bg-white p-3 text-sm font-medium"
                     value={docType}
                     onChange={(e) => setDocType(e.target.value)}
@@ -441,10 +443,11 @@ export function ReviewForm({
                     <h3 className="font-bold text-primary text-sm">ข้อมูลสลิปเงินเดือน</h3>
 
                     <div>
-                      <label className="block text-xs text-text-secondary font-semibold mb-1">
+                      <label htmlFor={reviewFieldId("employer")} className="block text-xs text-text-secondary font-semibold mb-1">
                         นายจ้าง / บริษัท
                       </label>
                       <input
+                        id={reviewFieldId("employer")}
                         type="text"
                         name="employer"
                         className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
@@ -456,10 +459,11 @@ export function ReviewForm({
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("payPeriod")} className="block text-xs text-text-secondary font-semibold mb-1">
                           งวดเงินเดือน (เช่น 07/2026)
                         </label>
                         <input
+                          id={reviewFieldId("payPeriod")}
                           type="text"
                           name="payPeriod"
                           className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
@@ -469,10 +473,11 @@ export function ReviewForm({
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("paymentDate")} className="block text-xs text-text-secondary font-semibold mb-1">
                           วันที่จ่ายเงิน
                         </label>
                         <input
+                          id={reviewFieldId("paymentDate")}
                           type="date"
                           name="paymentDate"
                           className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
@@ -485,10 +490,11 @@ export function ReviewForm({
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("grossIncome")} className="block text-xs text-text-secondary font-semibold mb-1">
                           รายได้ก่อนหัก (Gross)
                         </label>
                         <input
+                          id={reviewFieldId("grossIncome")}
                           type="number"
                           step="0.01"
                           name="grossIncome"
@@ -498,10 +504,11 @@ export function ReviewForm({
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("netIncome")} className="block text-xs text-text-secondary font-semibold mb-1">
                           รายได้สุทธิ (Net Income - บันทึกเข้าบัญชี)
                         </label>
                         <input
+                          id={reviewFieldId("netIncome")}
                           type="number"
                           step="0.01"
                           name="netIncome"
@@ -515,10 +522,11 @@ export function ReviewForm({
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("tax")} className="block text-xs text-text-secondary font-semibold mb-1">
                           ภาษีหัก ณ ที่จ่าย
                         </label>
                         <input
+                          id={reviewFieldId("tax")}
                           type="number"
                           step="0.01"
                           name="tax"
@@ -528,10 +536,11 @@ export function ReviewForm({
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("socialSecurity")} className="block text-xs text-text-secondary font-semibold mb-1">
                           ประกันสังคม (SSO)
                         </label>
                         <input
+                          id={reviewFieldId("socialSecurity")}
                           type="number"
                           step="0.01"
                           name="socialSecurity"
@@ -550,10 +559,11 @@ export function ReviewForm({
                     <h3 className="font-bold text-primary text-sm">ข้อมูลใบเสร็จรับเงิน</h3>
 
                     <div>
-                      <label className="block text-xs text-text-secondary font-semibold mb-1">
+                      <label htmlFor={reviewFieldId("merchant")} className="block text-xs text-text-secondary font-semibold mb-1">
                         ชื่อร้านค้า / แพลตฟอร์ม
                       </label>
                       <input
+                        id={reviewFieldId("merchant")}
                         type="text"
                         name="merchant"
                         className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
@@ -565,10 +575,11 @@ export function ReviewForm({
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("occurredAt")} className="block text-xs text-text-secondary font-semibold mb-1">
                           วันและเวลาทำรายการ
                         </label>
                         <input
+                          id={reviewFieldId("occurredAt")}
                           type="datetime-local"
                           name="occurredAt"
                           className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
@@ -578,10 +589,11 @@ export function ReviewForm({
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("paymentMethod")} className="block text-xs text-text-secondary font-semibold mb-1">
                           ช่องทางการจ่ายเงิน
                         </label>
                         <input
+                          id={reviewFieldId("paymentMethod")}
                           type="text"
                           name="paymentMethod"
                           className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
@@ -593,10 +605,11 @@ export function ReviewForm({
 
                     <div className="grid grid-cols-4 gap-2">
                       <div>
-                        <label className="block text-[10px] text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("subtotal")} className="block text-[10px] text-text-secondary font-semibold mb-1">
                           ยอดรวมย่อย (Sub)
                         </label>
                         <input
+                          id={reviewFieldId("subtotal")}
                           type="number"
                           step="0.01"
                           className="w-full rounded-[12px] border border-border bg-white p-2 text-xs"
@@ -605,10 +618,11 @@ export function ReviewForm({
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("deliveryFee")} className="block text-[10px] text-text-secondary font-semibold mb-1">
                           ค่าส่ง (Delivery)
                         </label>
                         <input
+                          id={reviewFieldId("deliveryFee")}
                           type="number"
                           step="0.01"
                           className="w-full rounded-[12px] border border-border bg-white p-2 text-xs"
@@ -617,10 +631,11 @@ export function ReviewForm({
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("discount")} className="block text-[10px] text-text-secondary font-semibold mb-1">
                           ส่วนลด (Discount)
                         </label>
                         <input
+                          id={reviewFieldId("discount")}
                           type="number"
                           step="0.01"
                           className="w-full rounded-[12px] border border-border bg-white p-2 text-xs"
@@ -629,10 +644,11 @@ export function ReviewForm({
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("serviceFee")} className="block text-[10px] text-text-secondary font-semibold mb-1">
                           ค่าบริการ (Svc)
                         </label>
                         <input
+                          id={reviewFieldId("serviceFee")}
                           type="number"
                           step="0.01"
                           className="w-full rounded-[12px] border border-border bg-white p-2 text-xs"
@@ -651,8 +667,9 @@ export function ReviewForm({
                         คำนวณยอดเงินจ่ายจริงอัตโนมัติ
                       </button>
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-text-secondary">ยอดรวมจ่ายจริง:</span>
+                        <label htmlFor={reviewFieldId("totalPaid")} className="text-xs font-bold text-text-secondary">ยอดรวมจ่ายจริง:</label>
                         <input
+                          id={reviewFieldId("totalPaid")}
                           type="number"
                           step="0.01"
                           name="totalPaid"
@@ -680,6 +697,7 @@ export function ReviewForm({
                         {items.map((item, idx) => (
                           <div key={idx} className="flex gap-2 items-center">
                             <input
+                              aria-label={`ชื่อรายการย่อยที่ ${idx + 1}`}
                               type="text"
                               className="flex-1 rounded-[12px] border border-border bg-white p-2 text-xs"
                               placeholder="ชื่อรายการ"
@@ -688,6 +706,7 @@ export function ReviewForm({
                               required
                             />
                             <input
+                              aria-label={`จำนวนของรายการย่อยที่ ${idx + 1}`}
                               type="number"
                               className="w-12 rounded-[12px] border border-border bg-white p-2 text-xs text-center"
                               placeholder="จำนวน"
@@ -695,6 +714,7 @@ export function ReviewForm({
                               onChange={(e) => handleItemChange(idx, "quantity", e.target.value)}
                             />
                             <input
+                              aria-label={`ราคาของรายการย่อยที่ ${idx + 1}`}
                               type="number"
                               step="0.01"
                               className="w-16 rounded-[12px] border border-border bg-white p-2 text-xs text-right"
@@ -704,8 +724,9 @@ export function ReviewForm({
                             />
                             <button
                               type="button"
+                              aria-label={`ลบรายการย่อยที่ ${idx + 1}`}
                               onClick={() => handleRemoveItem(idx)}
-                              className="text-red-500 hover:text-red-700"
+                              className="flex min-h-11 min-w-11 items-center justify-center text-red-500 hover:text-red-700"
                             >
                               <Trash2 size={14} />
                             </button>
@@ -723,10 +744,11 @@ export function ReviewForm({
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("amount")} className="block text-xs text-text-secondary font-semibold mb-1">
                           ยอดโอน (บาท)
                         </label>
                         <input
+                          id={reviewFieldId("amount")}
                           type="number"
                           step="0.01"
                           name="amount"
@@ -737,10 +759,11 @@ export function ReviewForm({
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("occurredAt")} className="block text-xs text-text-secondary font-semibold mb-1">
                           วันและเวลาโอน
                         </label>
                         <input
+                          id={reviewFieldId("occurredAt")}
                           type="datetime-local"
                           name="occurredAt"
                           className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
@@ -753,10 +776,11 @@ export function ReviewForm({
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("destinationName")} className="block text-xs text-text-secondary font-semibold mb-1">
                           ผู้รับเงินปลายทาง (Merchant/Payee)
                         </label>
                         <input
+                          id={reviewFieldId("destinationName")}
                           type="text"
                           name="destinationName"
                           className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
@@ -766,10 +790,11 @@ export function ReviewForm({
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("bank")} className="block text-xs text-text-secondary font-semibold mb-1">
                           ธนาคาร
                         </label>
                         <input
+                          id={reviewFieldId("bank")}
                           type="text"
                           name="bank"
                           className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
@@ -781,10 +806,11 @@ export function ReviewForm({
 
                     <div className="grid grid-cols-3 gap-2">
                       <div>
-                        <label className="block text-[10px] text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("referenceNumber")} className="block text-[10px] text-text-secondary font-semibold mb-1">
                           เลขอ้างอิง (Ref)
                         </label>
                         <input
+                          id={reviewFieldId("referenceNumber")}
                           type="text"
                           name="referenceNumber"
                           className="w-full rounded-[12px] border border-border bg-white p-2 text-xs"
@@ -793,10 +819,11 @@ export function ReviewForm({
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("accountLastFour")} className="block text-[10px] text-text-secondary font-semibold mb-1">
                           ผู้โอนท้าย (Sender 4)
                         </label>
                         <input
+                          id={reviewFieldId("accountLastFour")}
                           type="text"
                           name="accountLastFour"
                           className="w-full rounded-[12px] border border-border bg-white p-2 text-xs text-center"
@@ -806,10 +833,11 @@ export function ReviewForm({
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("destinationAccountLastFour")} className="block text-[10px] text-text-secondary font-semibold mb-1">
                           ผู้รับท้าย (Receiver 4)
                         </label>
                         <input
+                          id={reviewFieldId("destinationAccountLastFour")}
                           type="text"
                           name="destinationAccountLastFour"
                           className="w-full rounded-[12px] border border-border bg-white p-2 text-xs text-center"
@@ -821,10 +849,10 @@ export function ReviewForm({
                     </div>
 
                     <div className="border-t border-dashed border-border pt-3 mt-1">
-                      <label className="block text-xs font-bold text-foreground mb-1">
+                      <div id={reviewFieldId("transferTypeGroup")} className="block text-xs font-bold text-foreground mb-1">
                         การจัดกลุ่มประเภทการทำรายการโอน
-                      </label>
-                      <div className="grid grid-cols-3 gap-2">
+                      </div>
+                      <div role="radiogroup" aria-labelledby={reviewFieldId("transferTypeGroup")} className="grid grid-cols-3 gap-2">
                         <label className="flex items-center justify-center p-2 rounded-[12px] border border-border bg-white text-xs font-bold cursor-pointer [&:has(input:checked)]:border-primary [&:has(input:checked)]:bg-primary-soft text-foreground">
                           <input
                             type="radio"
@@ -864,10 +892,11 @@ export function ReviewForm({
                     {/* Linked debt dropdown when selecting debt_payment */}
                     {transferType === "debt_payment" && (
                       <div className="bg-yellow-50/50 p-3 rounded-[12px] border border-yellow-100 flex flex-col gap-2">
-                        <label className="block text-xs font-bold text-yellow-800">
+                        <label htmlFor={reviewFieldId("debtId")} className="block text-xs font-bold text-yellow-800">
                           เชื่อมต่อกับหนี้สินคงค้าง
                         </label>
                         <select
+                          id={reviewFieldId("debtId")}
                           name="debtId"
                           className="w-full rounded-[12px] border border-yellow-200 bg-white p-2.5 text-xs font-medium"
                           value={linkedDebtId}
@@ -893,10 +922,11 @@ export function ReviewForm({
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("creditor")} className="block text-xs text-text-secondary font-semibold mb-1">
                           เจ้าหนี้ / ผู้ให้บริการ
                         </label>
                         <input
+                          id={reviewFieldId("creditor")}
                           type="text"
                           name="creditor"
                           className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
@@ -906,10 +936,11 @@ export function ReviewForm({
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("debtName")} className="block text-xs text-text-secondary font-semibold mb-1">
                           ชื่อหนี้บัตร / สินเชื่อ
                         </label>
                         <input
+                          id={reviewFieldId("debtName")}
                           type="text"
                           name="debtName"
                           className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
@@ -922,10 +953,11 @@ export function ReviewForm({
 
                     <div className="grid grid-cols-3 gap-2">
                       <div>
-                        <label className="block text-[10px] text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("debtType")} className="block text-[10px] text-text-secondary font-semibold mb-1">
                           ประเภทหนี้สิน
                         </label>
                         <select
+                          id={reviewFieldId("debtType")}
                           name="debtType"
                           className="w-full rounded-[12px] border border-border bg-white p-2 text-xs"
                           value={debtType}
@@ -941,10 +973,11 @@ export function ReviewForm({
                         </select>
                       </div>
                       <div>
-                        <label className="block text-[10px] text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("dueDate")} className="block text-[10px] text-text-secondary font-semibold mb-1">
                           วันครบกำหนดชำระ
                         </label>
                         <input
+                          id={reviewFieldId("dueDate")}
                           type="date"
                           name="dueDate"
                           className="w-full rounded-[12px] border border-border bg-white p-2 text-xs"
@@ -954,10 +987,11 @@ export function ReviewForm({
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("accountLastFour")} className="block text-[10px] text-text-secondary font-semibold mb-1">
                           เลขบัตร/บัญชี (ท้าย 4 หลัก)
                         </label>
                         <input
+                          id={reviewFieldId("accountLastFour")}
                           type="text"
                           name="accountLastFour"
                           className="w-full rounded-[12px] border border-border bg-white p-2 text-xs text-center"
@@ -970,10 +1004,11 @@ export function ReviewForm({
 
                     <div className="grid grid-cols-4 gap-2">
                       <div>
-                        <label className="block text-[10px] text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("outstandingBalance")} className="block text-[10px] text-text-secondary font-semibold mb-1">
                           ยอดค้างชำระทั้งหมด
                         </label>
                         <input
+                          id={reviewFieldId("outstandingBalance")}
                           type="number"
                           step="0.01"
                           name="outstandingBalance"
@@ -983,10 +1018,11 @@ export function ReviewForm({
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("statementBalance")} className="block text-[10px] text-text-secondary font-semibold mb-1">
                           ยอดเรียกเก็บรอบนี้
                         </label>
                         <input
+                          id={reviewFieldId("statementBalance")}
                           type="number"
                           step="0.01"
                           name="statementBalance"
@@ -996,10 +1032,11 @@ export function ReviewForm({
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("amountDue")} className="block text-[10px] text-text-secondary font-semibold mb-1">
                           ยอดต้องชำระ (Due)
                         </label>
                         <input
+                          id={reviewFieldId("amountDue")}
                           type="number"
                           step="0.01"
                           name="amountDue"
@@ -1010,10 +1047,11 @@ export function ReviewForm({
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("minimumPayment")} className="block text-[10px] text-text-secondary font-semibold mb-1">
                           ยอดขั้นต่ำ (Min)
                         </label>
                         <input
+                          id={reviewFieldId("minimumPayment")}
                           type="number"
                           step="0.01"
                           name="minimumPayment"
@@ -1027,10 +1065,11 @@ export function ReviewForm({
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("interestRateAnnual")} className="block text-xs text-text-secondary font-semibold mb-1">
                           อัตราดอกเบี้ยรายปี (%)
                         </label>
                         <input
+                          id={reviewFieldId("interestRateAnnual")}
                           type="number"
                           step="0.001"
                           name="interestRateAnnual"
@@ -1040,10 +1079,11 @@ export function ReviewForm({
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("remainingInstallments")} className="block text-xs text-text-secondary font-semibold mb-1">
                           งวดคงเหลือ (ถ้ามี)
                         </label>
                         <input
+                          id={reviewFieldId("remainingInstallments")}
                           type="number"
                           name="remainingInstallments"
                           className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
@@ -1054,10 +1094,10 @@ export function ReviewForm({
                     </div>
 
                     <div className="border-t border-dashed border-border pt-3 mt-1">
-                      <label className="block text-xs font-bold text-foreground mb-1">
+                      <div id={reviewFieldId("debtActionTypeGroup")} className="block text-xs font-bold text-foreground mb-1">
                         การบันทึกหนี้ในแอป
-                      </label>
-                      <div className="grid grid-cols-2 gap-3">
+                      </div>
+                      <div role="radiogroup" aria-labelledby={reviewFieldId("debtActionTypeGroup")} className="grid grid-cols-2 gap-3">
                         <label className="flex items-center justify-center p-2.5 rounded-[12px] border border-border bg-white text-xs font-bold cursor-pointer [&:has(input:checked)]:border-primary [&:has(input:checked)]:bg-primary-soft text-foreground">
                           <input
                             type="radio"
@@ -1085,10 +1125,11 @@ export function ReviewForm({
 
                     {debtActionType === "update" && (
                       <div className="bg-yellow-50/50 p-3 rounded-[12px] border border-yellow-100 flex flex-col gap-2">
-                        <label className="block text-xs font-bold text-yellow-800">
+                        <label htmlFor={reviewFieldId("existingDebtId")} className="block text-xs font-bold text-yellow-800">
                           เลือกหนี้สินเดิมเพื่ออัปเดตยอด
                         </label>
                         <select
+                          id={reviewFieldId("existingDebtId")}
                           name="existingDebtId"
                           className="w-full rounded-[12px] border border-yellow-200 bg-white p-2.5 text-xs font-medium"
                           value={existingDebtId}
@@ -1113,10 +1154,11 @@ export function ReviewForm({
                     <h3 className="font-bold text-primary text-sm">ข้อมูลธุรกรรมการเงิน</h3>
 
                     <div>
-                      <label className="block text-xs text-text-secondary font-semibold mb-1">
+                      <label htmlFor={reviewFieldId("merchant")} className="block text-xs text-text-secondary font-semibold mb-1">
                         คำอธิบาย / รายละเอียดธุรกรรม
                       </label>
                       <input
+                        id={reviewFieldId("merchant")}
                         type="text"
                         name="merchant"
                         className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
@@ -1129,10 +1171,11 @@ export function ReviewForm({
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("totalPaid")} className="block text-xs text-text-secondary font-semibold mb-1">
                           ยอดเงิน (บาท)
                         </label>
                         <input
+                          id={reviewFieldId("totalPaid")}
                           type="number"
                           step="0.01"
                           name="totalPaid"
@@ -1143,10 +1186,11 @@ export function ReviewForm({
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("occurredAt")} className="block text-xs text-text-secondary font-semibold mb-1">
                           วันและเวลาที่ทำรายการ
                         </label>
                         <input
+                          id={reviewFieldId("occurredAt")}
                           type="datetime-local"
                           name="occurredAt"
                           className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
@@ -1159,10 +1203,11 @@ export function ReviewForm({
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("type")} className="block text-xs text-text-secondary font-semibold mb-1">
                           ประเภทธุรกรรม
                         </label>
                         <select
+                          id={reviewFieldId("type")}
                           name="type"
                           className="w-full rounded-[12px] border border-border bg-white p-3 text-sm font-semibold text-foreground"
                           defaultValue="expense"
@@ -1174,10 +1219,11 @@ export function ReviewForm({
                         </select>
                       </div>
                       <div>
-                        <label className="block text-xs text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("paymentMethod")} className="block text-xs text-text-secondary font-semibold mb-1">
                           ช่องทางการทำรายการ
                         </label>
                         <input
+                          id={reviewFieldId("paymentMethod")}
                           type="text"
                           name="paymentMethod"
                           className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"

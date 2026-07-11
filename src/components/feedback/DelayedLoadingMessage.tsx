@@ -41,12 +41,12 @@ export function DelayedLoadingMessage({
 
   return (
     <div aria-live="polite" className="text-xs font-semibold text-text-secondary">
-      <span>{retryVisible ? slowMessage : slow ? message : message}</span>
+      <span>{retryVisible ? slowMessage : slow ? slowMessage : message}</span>
       {retryVisible ? (
         <button
           type="button"
           onClick={onRetry ?? (() => window.location.reload())}
-          className="ml-3 rounded-full border border-border bg-white px-3 py-1 font-bold text-primary shadow-sm"
+          className="ml-3 min-h-11 rounded-full border border-border bg-white px-3 py-1 font-bold text-primary shadow-sm"
         >
           {retryLabel}
         </button>

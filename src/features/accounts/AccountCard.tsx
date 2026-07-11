@@ -40,26 +40,27 @@ export function AccountCard({
       </div>
       {account.notes ? <p className="mt-3 text-sm leading-6 text-text-secondary">{account.notes}</p> : null}
       <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <button disabled={busy} onClick={onEdit} className="min-h-11 rounded-[16px] bg-muted px-3 text-sm font-bold text-primary">
+        <button disabled={busy} onClick={onEdit} aria-label={`แก้ไขบัญชี ${account.name}`} className="min-h-11 rounded-[16px] bg-muted px-3 text-sm font-bold text-primary">
           แก้ไข
         </button>
         <button
           disabled={busy || account.isDefault || account.isActive === false}
           onClick={onDefault}
+          aria-label={`ตั้งบัญชี ${account.name} เป็นบัญชีหลัก`}
           className="min-h-11 rounded-[16px] bg-muted px-3 text-sm font-bold text-primary disabled:opacity-50"
         >
           ตั้งหลัก
         </button>
         {account.isActive === false ? (
-          <button disabled={busy} onClick={onReactivate} className="min-h-11 rounded-[16px] bg-muted px-3 text-sm font-bold text-primary">
+          <button disabled={busy} onClick={onReactivate} aria-label={`เปิดใช้บัญชี ${account.name}`} className="min-h-11 rounded-[16px] bg-muted px-3 text-sm font-bold text-primary">
             เปิดใช้
           </button>
         ) : (
-          <button disabled={busy} onClick={onDeactivate} className="min-h-11 rounded-[16px] bg-muted px-3 text-sm font-bold text-primary">
+          <button disabled={busy} onClick={onDeactivate} aria-label={`ปิดใช้บัญชี ${account.name}`} className="min-h-11 rounded-[16px] bg-muted px-3 text-sm font-bold text-primary">
             ปิดใช้
           </button>
         )}
-        <button disabled={busy} onClick={onDelete} className="min-h-11 rounded-[16px] bg-muted px-3 text-sm font-bold text-overdue">
+        <button disabled={busy} onClick={onDelete} aria-label={`ลบบัญชี ${account.name}`} className="min-h-11 rounded-[16px] bg-muted px-3 text-sm font-bold text-overdue">
           ลบ
         </button>
       </div>

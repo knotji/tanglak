@@ -24,6 +24,7 @@ export default async function HistoryImportSummaryPage({ params }: SummaryPagePr
   }
 
   const rows = await listImportRows(user.id, batchId);
+  const batchContext = batch.originalFilename || batch.id;
 
   // Statistics calculation
   const importedCount = rows.filter(r => r.importDecision === "import" && r.reviewStatus === "imported").length;
@@ -124,6 +125,7 @@ export default async function HistoryImportSummaryPage({ params }: SummaryPagePr
             <form action={handleRollback}>
               <button
                 type="submit"
+                aria-label={`ย้อนกลับ (Rollback) ชุดนำเข้า ${batchContext}`}
                 className="flex min-h-11 w-full items-center justify-center rounded-xl bg-rose-50 text-xs font-bold text-rose-600 hover:bg-rose-100"
               >
                 ย้อนกลับชุดนำเข้านี้ (Rollback)

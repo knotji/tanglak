@@ -8,7 +8,13 @@ function dayLabel(date: string) {
     day: "numeric",
     month: "short",
   }).format(value);
-  return date.startsWith("2026-07-10") ? `วันนี้ · ${formatted}` : formatted;
+  const todayKey = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  return date.startsWith(todayKey) ? `วันนี้ · ${formatted}` : formatted;
 }
 
 export function TransactionGroup({

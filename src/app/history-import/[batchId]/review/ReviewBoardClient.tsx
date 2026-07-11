@@ -14,6 +14,7 @@ interface ReviewBoardClientProps {
 export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClientProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const batchContext = batch.originalFilename || batch.id;
 
   const [rows, setRows] = useState<ImportRow[]>(initialRows);
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
@@ -205,7 +206,7 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
   return (
     <div className="flex flex-col gap-4">
       {errorMsg && (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-700">
+        <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-700">
           ⚠️ {errorMsg}
         </div>
       )}
@@ -595,6 +596,7 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
 
         <button
           onClick={handleDeleteBatch}
+          aria-label={`ยกเลิกนำเข้าและลบชุด ${batchContext}`}
           className="flex min-h-11 w-full items-center justify-center rounded-xl bg-rose-50 text-xs font-bold text-rose-600 hover:bg-rose-100"
         >
           ยกเลิกนำเข้าและลบชุดนี้
