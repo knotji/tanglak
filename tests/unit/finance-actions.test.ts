@@ -5,6 +5,10 @@ import {
   MONEY_ERROR_NEGATIVE_TH,
   MONEY_ERROR_POSITIVE_TH,
 } from "@/lib/finance/money-guards";
+import {
+  DEBT_ERROR_MINIMUM_NEGATIVE_TH,
+  DEBT_ERROR_OUTSTANDING_NEGATIVE_TH,
+} from "@/lib/finance/debt-guards";
 
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
@@ -49,7 +53,7 @@ describe("finance server actions — financial value guards", () => {
       { ok: false },
       fd({ name: "KTC", amount: "-500", dueDate: "2026-07-18" }),
     );
-    expect(result).toEqual({ ok: false, message: MONEY_ERROR_NEGATIVE_TH });
+    expect(result).toEqual({ ok: false, message: DEBT_ERROR_OUTSTANDING_NEGATIVE_TH });
     expect(getMockState().debts).toHaveLength(0);
   });
 
@@ -58,7 +62,7 @@ describe("finance server actions — financial value guards", () => {
       { ok: false },
       fd({ name: "KTC", amount: "500", minimum: "-1", dueDate: "2026-07-18" }),
     );
-    expect(result).toEqual({ ok: false, message: MONEY_ERROR_NEGATIVE_TH });
+    expect(result).toEqual({ ok: false, message: DEBT_ERROR_MINIMUM_NEGATIVE_TH });
   });
 
   it("saveDebtAction returns a clean Thai error for a malformed amount instead of throwing", async () => {
@@ -91,7 +95,7 @@ describe("finance server actions — financial value guards", () => {
       { ok: false },
       fd({ id: debt.id, name: "KTC", amount: "-1000", dueDate: "2026-07-18" }),
     );
-    expect(result).toEqual({ ok: false, message: MONEY_ERROR_NEGATIVE_TH });
+    expect(result).toEqual({ ok: false, message: DEBT_ERROR_OUTSTANDING_NEGATIVE_TH });
     expect(getMockState().debts.find((d) => d.id === debt.id)?.amountDueSatang).toBe(1000);
   });
 

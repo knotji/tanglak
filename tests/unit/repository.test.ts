@@ -14,6 +14,7 @@ import {
   listDebts,
   listTransactions,
   markDebtPaidOff,
+  recalculateDebtPaidThisCycle,
   reopenDebt,
   updateTransaction,
 } from "@/lib/data/finance-repository";
@@ -94,6 +95,105 @@ describe("mocked Supabase repository isolation and debt recalculation", () => {
 
     const [updatedDebt] = await listDebts("user-a");
     expect(updatedDebt?.amountPaidThisCycleSatang).toBe(0);
+  });
+
+  it("scopes paid-this-cycle to the debt's active cycle window", async () => {
+    const debt = await createDebt("user-a", {
+      name: "KTC",
+      amountDueSatang: 320000,
+      minimumPaymentSatang: 100000,
+      dueDate: "2026-07-18",
+      cycleStartDate: "2026-07-01",
+      cycleEndDate: "2026-07-31",
+    });
+    await createTransaction("user-a", {
+      type: "debt_payment",
+      amountSatang: 90000,
+      occurredAt: "2026-06-30T23:59:59+07:00",
+      debtId: debt.id,
+    });
+    await createTransaction("user-a", {
+      type: "debt_payment",
+      amountSatang: 125000,
+      occurredAt: "2026-07-15T12:00:00+07:00",
+      debtId: debt.id,
+    });
+    await createTransaction("user-a", {
+      type: "debt_payment",
+      amountSatang: 75000,
+      occurredAt: "2026-08-01T00:00:00+07:00",
+      debtId: debt.id,
+    });
+
+    const [updatedDebt] = await listDebts("user-a");
+    expect(updatedDebt?.amountPaidThisCycleSatang).toBe(125000);
+  });
+
+  it("falls back to the current Bangkok month when a debt has no explicit cycle", async () => {
+    const debt = await createDebt("user-a", {
+      name: "KTC",
+      amountDueSatang: 320000,
+      minimumPaymentSatang: 100000,
+      dueDate: "2026-07-18",
+    });
+    await createTransaction("user-a", {
+      type: "debt_payment",
+      amountSatang: 90000,
+      occurredAt: "2026-07-31T23:00:00+07:00",
+      debtId: debt.id,
+    });
+    await createTransaction("user-a", {
+      type: "debt_payment",
+      amountSatang: 125000,
+      occurredAt: "2026-08-01T00:00:00+07:00",
+      debtId: debt.id,
+    });
+
+    await recalculateDebtPaidThisCycle("user-a", debt.id, new Date("2026-07-12T12:00:00+07:00"));
+    const [updatedDebt] = await listDebts("user-a");
+    expect(updatedDebt?.amountPaidThisCycleSatang).toBe(90000);
+  });
+
+  it("does not count unlinked debt_payment transactions toward any debt", async () => {
+    const debt = await createDebt("user-a", {
+      name: "KTC",
+      amountDueSatang: 320000,
+      minimumPaymentSatang: 100000,
+      dueDate: "2026-07-18",
+      cycleStartDate: "2026-07-01",
+      cycleEndDate: "2026-07-31",
+    });
+    await createTransaction("user-a", {
+      type: "debt_payment",
+      amountSatang: 125000,
+      occurredAt: "2026-07-15T12:00:00+07:00",
+    });
+    await recalculateDebtPaidThisCycle("user-a", debt.id, new Date("2026-07-12T12:00:00+07:00"));
+
+    const [updatedDebt] = await listDebts("user-a");
+    expect(updatedDebt?.amountPaidThisCycleSatang).toBe(0);
+  });
+
+  it("persists reviewed debt statement fields", async () => {
+    const debt = await createDebt("user-a", {
+      name: "KTC Platinum",
+      creditor: "KTC",
+      debtType: "credit_card",
+      outstandingBalanceSatang: 410000,
+      statementBalanceSatang: 395000,
+      amountDueSatang: 120000,
+      minimumPaymentSatang: 50000,
+      dueDate: "2026-07-18",
+      interestRateAnnual: 16.5,
+      remainingInstallments: 3,
+      creditLimitSatang: 5000000,
+    });
+
+    expect(debt.debtType).toBe("credit_card");
+    expect(debt.statementBalanceSatang).toBe(395000);
+    expect(debt.interestRateAnnual).toBe(16.5);
+    expect(debt.remainingInstallments).toBe(3);
+    expect(debt.creditLimitSatang).toBe(5000000);
   });
 
   it("marks paid off and reopens without deleting payment history", async () => {

@@ -5,7 +5,8 @@ import { timeAsync } from "@/lib/observability/timing";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { assertMoneySatang } from "@/lib/finance/money-guards";
 import { BUDGET_ERROR_DUPLICATE_TH, BUDGET_ERROR_NOT_FOUND_TH } from "@/lib/finance/budget-guards";
-import { isValidMonthQuery } from "@/lib/finance/date";
+import { assertInterestRateAnnual } from "@/lib/finance/debt-guards";
+import { getDebtCycleWindow, isValidDateKey, isValidMonthQuery } from "@/lib/finance/date";
 import { logSafeError } from "@/lib/observability/safe-diagnostics";
 import type { Debt, Transaction, FinanceDocument, DocumentExtraction, ImportBatch, ImportRow, Account, MonthlyBudget, BudgetCategory } from "@/types/domain";
 
@@ -35,12 +36,20 @@ export type TransactionInput = {
 export type DebtInput = {
   name: string;
   creditor?: string;
+  debtType?: Debt["debtType"];
   outstandingBalanceSatang?: number;
+  statementBalanceSatang?: number;
   amountDueSatang: number;
   minimumPaymentSatang: number;
   dueDate: string;
   recurringDueDay?: number;
+  statementDate?: string;
+  cycleStartDate?: string;
+  cycleEndDate?: string;
   paymentMode?: Debt["paymentMode"];
+  interestRateAnnual?: number;
+  remainingInstallments?: number;
+  creditLimitSatang?: number;
   notes?: string;
 };
 
@@ -74,11 +83,64 @@ async function assertDebtBelongsToUser(userId: string, debtId: string): Promise<
   if (!data) throw new Error("Debt not found");
 }
 
+async function assertAccountBelongsToUser(userId: string, accountId: string): Promise<void> {
+  if (isMockAuthEnabled()) {
+    const account = getMockState().accounts.find((item) => item.id === accountId);
+    if (!account || account.userId !== userId) throw new Error("Account not found");
+    return;
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("accounts")
+    .select("id")
+    .eq("id", accountId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Account not found");
+}
+
+function assertOptionalInteger(value: number | undefined, fieldName: string): void {
+  if (value === undefined) return;
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(`${fieldName} must be a non-negative integer`);
+  }
+}
+
+function assertOptionalDateKey(value: string | undefined, fieldName: string): void {
+  if (value === undefined) return;
+  if (!isValidDateKey(value)) throw new Error(`${fieldName} is invalid`);
+}
+
+function validateDebtInput(input: Partial<DebtInput>, existing?: Debt): void {
+  assertMoneySatang(input.outstandingBalanceSatang, "nonnegative", "outstandingBalanceSatang");
+  assertMoneySatang(input.statementBalanceSatang, "nonnegative", "statementBalanceSatang");
+  assertMoneySatang(input.amountDueSatang, "nonnegative", "amountDueSatang");
+  assertMoneySatang(input.minimumPaymentSatang, "nonnegative", "minimumPaymentSatang");
+  assertMoneySatang(input.creditLimitSatang, "nonnegative", "creditLimitSatang");
+  assertInterestRateAnnual(input.interestRateAnnual);
+  assertOptionalInteger(input.remainingInstallments, "remainingInstallments");
+  assertOptionalDateKey(input.dueDate, "dueDate");
+  assertOptionalDateKey(input.statementDate, "statementDate");
+  assertOptionalDateKey(input.cycleStartDate, "cycleStartDate");
+  assertOptionalDateKey(input.cycleEndDate, "cycleEndDate");
+
+  const cycleStartDate = input.cycleStartDate ?? existing?.cycleStartDate;
+  const cycleEndDate = input.cycleEndDate ?? existing?.cycleEndDate;
+  if (cycleStartDate && cycleEndDate && cycleStartDate > cycleEndDate) {
+    throw new Error("Debt cycle start date must be before end date");
+  }
+
+  assertInterestRateAnnual(input.interestRateAnnual ?? existing?.interestRateAnnual);
+  assertOptionalInteger(input.remainingInstallments ?? existing?.remainingInstallments, "remainingInstallments");
+}
+
 const TRANSACTION_COLUMNS =
   "id, user_id, type, status, amount_satang, currency, occurred_at, merchant, category_label, source_account_id, destination_account_id, debt_id, document_id, reference_number, payment_method, account_last_four, destination_account_last_four, bank, source, confidence, note, import_batch_id, import_row_id, is_historical";
 
 const DEBT_COLUMNS =
-  "id, user_id, name, creditor, debt_type, payment_mode, original_amount_satang, outstanding_balance_satang, statement_balance_satang, amount_due_satang, minimum_payment_satang, amount_paid_this_cycle_satang, due_date, recurring_due_day, interest_rate_annual, remaining_installments, status, notes";
+  "id, user_id, name, creditor, debt_type, payment_mode, original_amount_satang, outstanding_balance_satang, statement_balance_satang, amount_due_satang, minimum_payment_satang, amount_paid_this_cycle_satang, due_date, recurring_due_day, statement_date, cycle_start_date, cycle_end_date, interest_rate_annual, remaining_installments, credit_limit_satang, status, notes";
 
 const IMPORT_BATCH_COLUMNS =
   "id, user_id, source_type, source_name, account_id, original_filename, storage_path, mime_type, file_size, period_start, period_end, statement_date, status, total_rows, parsed_rows, ready_rows, duplicate_rows, review_rows, skipped_rows, imported_rows, failed_rows, parser_name, parser_version, model_name, statement_metadata, detected_layout, page_count, created_at, updated_at, completed_at, rolled_back_at";
@@ -129,6 +191,8 @@ export async function listAllTransactions(userId: string): Promise<Transaction[]
 export async function createTransaction(userId: string, input: TransactionInput): Promise<Transaction> {
   assertMoneySatang(input.amountSatang, input.type === "debt_payment" ? "positive" : "nonnegative", "amountSatang");
   if (input.debtId) await assertDebtBelongsToUser(userId, input.debtId);
+  if (input.sourceAccountId) await assertAccountBelongsToUser(userId, input.sourceAccountId);
+  if (input.destinationAccountId) await assertAccountBelongsToUser(userId, input.destinationAccountId);
 
   if (isMockAuthEnabled()) {
     const transaction: Transaction = {
@@ -200,6 +264,8 @@ export async function updateTransaction(
   input: Partial<TransactionInput>,
 ): Promise<Transaction> {
   if (input.debtId) await assertDebtBelongsToUser(userId, input.debtId);
+  if (input.sourceAccountId) await assertAccountBelongsToUser(userId, input.sourceAccountId);
+  if (input.destinationAccountId) await assertAccountBelongsToUser(userId, input.destinationAccountId);
 
   if (isMockAuthEnabled()) {
     const state = getMockState();
@@ -326,9 +392,7 @@ export async function listDebts(userId: string, includeClosed = false): Promise<
 }
 
 export async function createDebt(userId: string, input: DebtInput): Promise<Debt> {
-  assertMoneySatang(input.outstandingBalanceSatang, "nonnegative", "outstandingBalanceSatang");
-  assertMoneySatang(input.amountDueSatang, "nonnegative", "amountDueSatang");
-  assertMoneySatang(input.minimumPaymentSatang, "nonnegative", "minimumPaymentSatang");
+  validateDebtInput(input);
 
   if (isMockAuthEnabled()) {
     const debt: Debt = {
@@ -336,14 +400,21 @@ export async function createDebt(userId: string, input: DebtInput): Promise<Debt
       userId,
       name: input.name,
       creditor: input.creditor,
-      debtType: "other",
+      debtType: input.debtType ?? "other",
       paymentMode: input.paymentMode ?? "variable_monthly",
       outstandingBalanceSatang: input.outstandingBalanceSatang ?? input.amountDueSatang,
+      statementBalanceSatang: input.statementBalanceSatang,
       amountDueSatang: input.amountDueSatang,
       minimumPaymentSatang: input.minimumPaymentSatang,
       amountPaidThisCycleSatang: 0,
       dueDate: input.dueDate,
       recurringDueDay: input.recurringDueDay,
+      statementDate: input.statementDate,
+      cycleStartDate: input.cycleStartDate,
+      cycleEndDate: input.cycleEndDate,
+      interestRateAnnual: input.interestRateAnnual,
+      remainingInstallments: input.remainingInstallments,
+      creditLimitSatang: input.creditLimitSatang,
       status: "active",
       notes: input.notes,
     };
@@ -358,14 +429,21 @@ export async function createDebt(userId: string, input: DebtInput): Promise<Debt
       user_id: userId,
       name: input.name,
       creditor: input.creditor,
-      debt_type: "other",
+      debt_type: input.debtType ?? "other",
       payment_mode: input.paymentMode ?? "variable_monthly",
       outstanding_balance_satang: input.outstandingBalanceSatang ?? input.amountDueSatang,
+      statement_balance_satang: input.statementBalanceSatang,
       amount_due_satang: input.amountDueSatang,
       minimum_payment_satang: input.minimumPaymentSatang,
       amount_paid_this_cycle_satang: 0,
       due_date: input.dueDate,
       recurring_due_day: input.recurringDueDay,
+      statement_date: input.statementDate,
+      cycle_start_date: input.cycleStartDate,
+      cycle_end_date: input.cycleEndDate,
+      interest_rate_annual: input.interestRateAnnual,
+      remaining_installments: input.remainingInstallments,
+      credit_limit_satang: input.creditLimitSatang,
       status: "active",
       notes: input.notes,
     })
@@ -380,42 +458,62 @@ export async function updateDebt(userId: string, id: string, input: Partial<Debt
   // these columns is independently non-negative by design (no cross-field
   // business rule depends on the others), so per-field validation of the
   // patch is equivalent to validating the merged row for these fields.
-  assertMoneySatang(input.outstandingBalanceSatang, "nonnegative", "outstandingBalanceSatang");
-  assertMoneySatang(input.amountDueSatang, "nonnegative", "amountDueSatang");
-  assertMoneySatang(input.minimumPaymentSatang, "nonnegative", "minimumPaymentSatang");
-
   if (isMockAuthEnabled()) {
     const state = getMockState();
     const index = state.debts.findIndex((debt) => debt.id === id);
     if (index < 0) throw new Error("Debt not found");
     assertOwner(userId, state.debts[index].userId);
+    // Validate the final merged state, not just whichever fields happen to
+    // be present in this patch -- a patch that omits interestRateAnnual
+    // must not be able to leave a previously-invalid value on the row (in
+    // practice this can only happen if a row was ever written outside this
+    // guard, e.g. directly in SQL; belt-and-braces).
+    validateDebtInput(input, state.debts[index]);
     state.debts[index] = {
       ...state.debts[index],
       name: input.name ?? state.debts[index].name,
       creditor: input.creditor ?? state.debts[index].creditor,
+      debtType: input.debtType ?? state.debts[index].debtType,
       outstandingBalanceSatang: input.outstandingBalanceSatang ?? state.debts[index].outstandingBalanceSatang,
+      statementBalanceSatang: input.statementBalanceSatang ?? state.debts[index].statementBalanceSatang,
       amountDueSatang: input.amountDueSatang ?? state.debts[index].amountDueSatang,
       minimumPaymentSatang: input.minimumPaymentSatang ?? state.debts[index].minimumPaymentSatang,
       dueDate: input.dueDate ?? state.debts[index].dueDate,
       recurringDueDay: input.recurringDueDay ?? state.debts[index].recurringDueDay,
+      statementDate: input.statementDate ?? state.debts[index].statementDate,
+      cycleStartDate: input.cycleStartDate ?? state.debts[index].cycleStartDate,
+      cycleEndDate: input.cycleEndDate ?? state.debts[index].cycleEndDate,
       paymentMode: input.paymentMode ?? state.debts[index].paymentMode,
+      interestRateAnnual: input.interestRateAnnual ?? state.debts[index].interestRateAnnual,
+      remainingInstallments: input.remainingInstallments ?? state.debts[index].remainingInstallments,
+      creditLimitSatang: input.creditLimitSatang ?? state.debts[index].creditLimitSatang,
       notes: input.notes ?? state.debts[index].notes,
     };
     return state.debts[index];
   }
 
   const supabase = await createSupabaseServerClient();
+  const existing = await getDebtForUser(userId, id);
+  validateDebtInput(input, existing);
   const { data, error } = await supabase
     .from("debts")
     .update({
       name: input.name,
       creditor: input.creditor,
+      debt_type: input.debtType,
       outstanding_balance_satang: input.outstandingBalanceSatang,
+      statement_balance_satang: input.statementBalanceSatang,
       amount_due_satang: input.amountDueSatang,
       minimum_payment_satang: input.minimumPaymentSatang,
       due_date: input.dueDate,
       recurring_due_day: input.recurringDueDay,
+      statement_date: input.statementDate,
+      cycle_start_date: input.cycleStartDate,
+      cycle_end_date: input.cycleEndDate,
       payment_mode: input.paymentMode,
+      interest_rate_annual: input.interestRateAnnual,
+      remaining_installments: input.remainingInstallments,
+      credit_limit_satang: input.creditLimitSatang,
       notes: input.notes,
     })
     .eq("id", id)
@@ -497,12 +595,14 @@ async function getDebtForUser(userId: string, debtId: string): Promise<Debt> {
   return debt;
 }
 
-export async function recalculateDebtPaidThisCycle(userId: string, debtId: string) {
+export async function recalculateDebtPaidThisCycle(userId: string, debtId: string, today = new Date()) {
   if (isMockAuthEnabled()) {
-    recalculateMockDebtPaid(userId, debtId);
+    recalculateMockDebtPaid(userId, debtId, today);
     return;
   }
 
+  const debt = await getDebtForUser(userId, debtId);
+  const cycle = getDebtCycleWindow(debt, today);
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from("transactions")
@@ -510,7 +610,9 @@ export async function recalculateDebtPaidThisCycle(userId: string, debtId: strin
     .eq("user_id", userId)
     .eq("debt_id", debtId)
     .eq("type", "debt_payment")
-    .eq("status", "confirmed");
+    .eq("status", "confirmed")
+    .gte("occurred_at", cycle.startInstant)
+    .lt("occurred_at", cycle.endExclusiveInstant);
   if (error) throw new Error(error.message);
   const total = (data ?? []).reduce((sum, row) => sum + Number(row.amount_satang), 0);
   const { error: updateError } = await supabase
@@ -521,17 +623,22 @@ export async function recalculateDebtPaidThisCycle(userId: string, debtId: strin
   if (updateError) throw new Error(updateError.message);
 }
 
-function recalculateMockDebtPaid(userId: string, debtId: string) {
+function recalculateMockDebtPaid(userId: string, debtId: string, today = new Date()) {
   const state = getMockState();
   const debt = state.debts.find((item) => item.id === debtId && item.userId === userId);
   if (!debt) return;
+  const cycle = getDebtCycleWindow(debt, today);
+  const start = new Date(cycle.startInstant).getTime();
+  const endExclusive = new Date(cycle.endExclusiveInstant).getTime();
   debt.amountPaidThisCycleSatang = state.transactions
     .filter(
       (transaction) =>
         transaction.userId === userId &&
         transaction.debtId === debtId &&
         transaction.type === "debt_payment" &&
-        transaction.status === "confirmed",
+        transaction.status === "confirmed" &&
+        new Date(transaction.occurredAt).getTime() >= start &&
+        new Date(transaction.occurredAt).getTime() < endExclusive,
     )
     .reduce((sum, transaction) => sum + transaction.amountSatang, 0);
 }
@@ -991,6 +1098,8 @@ export async function createImportBatch(
     statementDate?: string;
   },
 ): Promise<ImportBatch> {
+  if (input.accountId) await assertAccountBelongsToUser(userId, input.accountId);
+
   if (isMockAuthEnabled()) {
     const batch: ImportBatch = {
       id: crypto.randomUUID(),
@@ -1066,6 +1175,8 @@ export async function updateImportBatch(
   id: string,
   input: Partial<Omit<ImportBatch, "id" | "userId" | "createdAt" | "updatedAt">>,
 ): Promise<ImportBatch> {
+  if (input.accountId) await assertAccountBelongsToUser(userId, input.accountId);
+
   if (isMockAuthEnabled()) {
     const state = getMockState();
     const idx = state.importBatches.findIndex((b) => b.id === id && b.userId === userId);
@@ -1403,6 +1514,8 @@ async function commitImportRow(
   // the same financial value guards as every other write path.
   assertMoneySatang(amountSatang, type === "debt_payment" ? "positive" : "nonnegative", "amountSatang");
   if (debtId) await assertDebtBelongsToUser(userId, debtId);
+  if (sourceAccountId) await assertAccountBelongsToUser(userId, sourceAccountId);
+  if (destinationAccountId) await assertAccountBelongsToUser(userId, destinationAccountId);
 
   if (isMockAuthEnabled()) {
     return commitImportRowMock(
@@ -1509,6 +1622,8 @@ export async function importReviewedRows(
   if (!batch) {
     throw new Error("ไม่พบชุดนำเข้าข้อมูล");
   }
+
+  if (accountId) await assertAccountBelongsToUser(userId, accountId);
 
   // Read the row states once, up front, so idempotency decisions for this
   // call are based on a single consistent snapshot rather than re-reading
@@ -1711,12 +1826,12 @@ export async function listAccounts(userId: string): Promise<Account[]> {
     const state = getMockState();
     if (state.accounts.length === 0) {
       state.accounts = [
-        { id: "acc-1", name: "KBank Savings", isOwnedByUser: true, accountLastFour: "1234" },
-        { id: "acc-2", name: "SCB Easy", isOwnedByUser: true, accountLastFour: "4321" },
-        { id: "acc-3", name: "KTC Credit Card", isOwnedByUser: true, accountLastFour: "8888" },
+        { id: "acc-1", userId, name: "KBank Savings", isOwnedByUser: true, accountLastFour: "1234" },
+        { id: "acc-2", userId, name: "SCB Easy", isOwnedByUser: true, accountLastFour: "4321" },
+        { id: "acc-3", userId, name: "KTC Credit Card", isOwnedByUser: true, accountLastFour: "8888" },
       ];
     }
-    return state.accounts;
+    return state.accounts.filter((account) => account.userId === userId);
   }
 
   const supabase = await createSupabaseServerClient();
@@ -1741,6 +1856,7 @@ export async function createAccount(
     const state = getMockState();
     const acc: Account = {
       id: crypto.randomUUID(),
+      userId,
       name: input.name,
       isOwnedByUser: input.isOwnedByUser ?? true,
       accountLastFour: input.accountLastFour,
@@ -1763,6 +1879,7 @@ export async function createAccount(
   if (error) throw new Error(error.message);
   return {
     id: data.id,
+    userId: data.user_id,
     name: data.name,
     isOwnedByUser: data.is_owned_by_user,
     accountLastFour: data.account_last_four ?? undefined,

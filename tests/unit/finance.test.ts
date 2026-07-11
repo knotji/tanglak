@@ -4,7 +4,9 @@ import {
   applyDebtPayment,
   calculateMonthlyTotals,
   daysUntilDue,
+  debtCycleStatus,
   deliveryTotalPaidSatang,
+  isFullCyclePaid,
   isMinimumPaid,
   isOverdue,
   isOwnAccountTransfer,
@@ -82,11 +84,31 @@ describe("debt calculations", () => {
     expect(remainingToMinimum(baseDebt)).toBe(170_000);
     expect(applyDebtPayment(baseDebt, 170_000).amountPaidThisCycleSatang).toBe(320_000);
     expect(isMinimumPaid(applyDebtPayment(baseDebt, 170_000))).toBe(true);
+    expect(isFullCyclePaid(applyDebtPayment(baseDebt, 170_000))).toBe(false);
+    expect(isFullCyclePaid(applyDebtPayment(baseDebt, 670_000))).toBe(true);
   });
 
   it("calculates due days and overdue state", () => {
     expect(daysUntilDue("2026-07-18", new Date("2026-07-10T00:00:00Z"))).toBe(8);
     expect(isOverdue(baseDebt, new Date("2026-07-19T00:00:00Z"))).toBe(true);
+  });
+
+  it("uses Bangkok calendar dates for due-today and overdue status", () => {
+    expect(daysUntilDue("2026-07-18", new Date("2026-07-17T17:30:00Z"))).toBe(0);
+    expect(debtCycleStatus(baseDebt, new Date("2026-07-17T17:30:00Z"))).toBe("due_today");
+    expect(debtCycleStatus(baseDebt, new Date("2026-07-18T17:30:00Z"))).toBe("overdue");
+  });
+
+  it("does not treat missing minimum or amount-due fields as paid", () => {
+    const missingTargets = {
+      ...baseDebt,
+      minimumPaymentSatang: undefined,
+      amountDueSatang: undefined,
+      amountPaidThisCycleSatang: 0,
+    };
+    expect(isMinimumPaid(missingTargets)).toBe(false);
+    expect(isFullCyclePaid(missingTargets)).toBe(false);
+    expect(debtCycleStatus(missingTargets, new Date("2026-07-11T12:00:00+07:00"))).toBe("due_soon");
   });
 });
 

@@ -7,6 +7,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { saveDebtAction } from "@/app/actions/finance";
 import { parseOptionalMoney, parseRequiredMoney } from "@/lib/finance/money-guards";
+import { isValidDueDate, parseInterestRateAnnual, DEBT_ERROR_DUE_DATE_INVALID_TH } from "@/lib/finance/debt-guards";
 import type { Debt } from "@/types/domain";
 
 const schema = z.object({
@@ -18,6 +19,7 @@ const schema = z.object({
   dueDate: z.string().min(1),
   recurringDueDay: z.string().optional(),
   paymentMode: z.enum(["fixed_monthly", "variable_monthly", "installment", "one_time"]).optional(),
+  interestRateAnnual: z.string().optional(),
   notes: z.string().optional(),
 });
 
@@ -43,6 +45,7 @@ export function ManualDebtForm({
       dueDate: debt?.dueDate ?? new Date().toISOString().slice(0, 10),
       recurringDueDay: debt?.recurringDueDay ? String(debt.recurringDueDay) : "",
       paymentMode: debt?.paymentMode ?? "variable_monthly",
+      interestRateAnnual: debt?.interestRateAnnual !== undefined ? String(debt.interestRateAnnual) : "",
       notes: debt?.notes ?? "",
     },
   });
@@ -64,6 +67,7 @@ export function ManualDebtForm({
         dueDate: new Date().toISOString().slice(0, 10),
         recurringDueDay: "",
         paymentMode: "variable_monthly",
+        interestRateAnnual: "",
         notes: "",
       });
       onSaved?.();
@@ -78,13 +82,19 @@ export function ManualDebtForm({
         const amountResult = parseRequiredMoney(formData.get("amount"), "nonnegative");
         const outstandingResult = parseOptionalMoney(formData.get("outstanding"), "nonnegative");
         const minimumResult = parseOptionalMoney(formData.get("minimum"), "nonnegative");
+        const interestRateResult = parseInterestRateAnnual(formData.get("interestRateAnnual"));
+        const dueDateValid = isValidDueDate(String(formData.get("dueDate") ?? ""));
         const firstError = !amountResult.ok
           ? amountResult.error
           : !outstandingResult.ok
             ? outstandingResult.error
             : !minimumResult.ok
               ? minimumResult.error
-              : null;
+              : !interestRateResult.ok
+                ? interestRateResult.error
+                : !dueDateValid
+                  ? DEBT_ERROR_DUE_DATE_INVALID_TH
+                  : null;
         if (firstError) {
           event.preventDefault();
           setClientError(firstError);
@@ -143,6 +153,20 @@ export function ManualDebtForm({
             </select>
           </label>
         </div>
+        <label className="space-y-1 text-sm">
+          <span className="font-medium">อัตราดอกเบี้ยต่อปี (%)</span>
+          <input
+            inputMode="decimal"
+            placeholder="16.5"
+            className="min-h-11 w-full rounded-[16px] border border-border px-3"
+            {...register("interestRateAnnual")}
+            name="interestRateAnnual"
+            aria-describedby="debt-interest-rate-help"
+          />
+          <span id="debt-interest-rate-help" className="block text-xs text-text-secondary">
+            ไม่บังคับ เว้นว่างได้ถ้าไม่มีดอกเบี้ย (0–100%)
+          </span>
+        </label>
         <label className="space-y-1 text-sm">
           <span className="font-medium">โน้ต</span>
           <textarea className="min-h-24 w-full rounded-[16px] border border-border px-3 py-2" {...register("notes")} name="notes" />

@@ -2,10 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addDebtPayment,
   createDebt,
+  createImportBatch,
   createTransaction,
   updateDebt,
   updateTransaction,
 } from "@/lib/data/finance-repository";
+import { saveAccount } from "@/lib/data/account-repository";
 import { getMockState } from "@/lib/data/mock-store";
 import { MONEY_ERROR_NEGATIVE_TH, MONEY_ERROR_POSITIVE_TH } from "@/lib/finance/money-guards";
 
@@ -240,5 +242,45 @@ describe("repository-level financial value guards (last line of defense)", () =>
     await expect(updateTransaction("user-a", transaction.id, { debtId: otherDebt.id })).rejects.toThrow(
       "Debt not found",
     );
+  });
+
+  it("rejects a transaction sourceAccountId owned by another user", async () => {
+    const otherAccount = await saveAccount("user-b", {
+      name: "Other account",
+      accountType: "bank_account",
+      currency: "THB",
+      isOwnedByUser: true,
+    });
+
+    await expect(
+      createTransaction("user-a", {
+        type: "expense",
+        amountSatang: 1000,
+        occurredAt: "2026-07-10T12:00:00+07:00",
+        sourceAccountId: otherAccount.id,
+      }),
+    ).rejects.toThrow("Account not found");
+    expect(getMockState().transactions).toHaveLength(0);
+  });
+
+  it("rejects an import batch accountId owned by another user", async () => {
+    const otherAccount = await saveAccount("user-b", {
+      name: "Other account",
+      accountType: "bank_account",
+      currency: "THB",
+      isOwnedByUser: true,
+    });
+
+    await expect(
+      createImportBatch("user-a", {
+        sourceType: "statement_pdf",
+        accountId: otherAccount.id,
+        originalFilename: "statement.pdf",
+        storagePath: "user-a/statement.pdf",
+        mimeType: "application/pdf",
+        fileSize: 1000,
+      }),
+    ).rejects.toThrow("Account not found");
+    expect(getMockState().importBatches).toHaveLength(0);
   });
 });

@@ -45,6 +45,7 @@ export function getBangkokMonthString(date: Date = new Date()): string {
 }
 
 const MONTH_QUERY_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+const DATE_KEY_PATTERN = /^\d{4}-(0[1-9]|1[0-2])-\d{2}$/;
 
 export function isValidMonthQuery(value: unknown): value is string {
   return typeof value === "string" && MONTH_QUERY_PATTERN.test(value);
@@ -62,6 +63,86 @@ export function shiftMonth(month: string, offset: number): string {
   const [year, monthNumber] = month.split("-").map(Number);
   const shifted = new Date(Date.UTC(year, monthNumber - 1 + offset, 1));
   return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function daysInMonth(year: number, monthNumber: number): number {
+  return new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+}
+
+export function getBangkokMonthRange(month = getBangkokMonthString()): {
+  startDate: string;
+  endDate: string;
+  startInstant: string;
+  endExclusiveInstant: string;
+} {
+  if (!isValidMonthQuery(month)) {
+    throw new Error("Invalid month");
+  }
+  const [year, monthNumber] = month.split("-").map(Number);
+  const startDate = `${month}-01`;
+  const endDate = `${month}-${String(daysInMonth(year, monthNumber)).padStart(2, "0")}`;
+  return {
+    startDate,
+    endDate,
+    startInstant: bangkokDateStartInstant(startDate),
+    endExclusiveInstant: bangkokDateStartInstant(shiftDateKey(endDate, 1)),
+  };
+}
+
+export function bangkokDateStartInstant(dateKey: string): string {
+  if (!isValidDateKey(dateKey)) {
+    throw new Error("Invalid date");
+  }
+  return `${dateKey}T00:00:00+07:00`;
+}
+
+export function isValidDateKey(value: unknown): value is string {
+  if (typeof value !== "string" || !DATE_KEY_PATTERN.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+export function shiftDateKey(dateKey: string, offsetDays: number): string {
+  if (!isValidDateKey(dateKey)) {
+    throw new Error("Invalid date");
+  }
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1, day + offsetDays));
+  return shifted.toISOString().slice(0, 10);
+}
+
+export function getDebtCycleWindow(
+  debt: { cycleStartDate?: string; cycleEndDate?: string },
+  fallbackDate: Date = new Date(),
+): {
+  startDate: string;
+  endDate: string;
+  startInstant: string;
+  endExclusiveInstant: string;
+  isFallback: boolean;
+} {
+  if (debt.cycleStartDate && debt.cycleEndDate) {
+    if (!isValidDateKey(debt.cycleStartDate) || !isValidDateKey(debt.cycleEndDate)) {
+      throw new Error("Invalid debt cycle date");
+    }
+    if (debt.cycleStartDate > debt.cycleEndDate) {
+      throw new Error("Debt cycle start date must be before end date");
+    }
+    return {
+      startDate: debt.cycleStartDate,
+      endDate: debt.cycleEndDate,
+      startInstant: bangkokDateStartInstant(debt.cycleStartDate),
+      endExclusiveInstant: bangkokDateStartInstant(shiftDateKey(debt.cycleEndDate, 1)),
+      isFallback: false,
+    };
+  }
+
+  return { ...getBangkokMonthRange(getBangkokMonthString(fallbackDate)), isFallback: true };
 }
 
 export function formatBangkokMonthLabel(month: string): string {

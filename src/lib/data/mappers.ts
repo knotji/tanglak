@@ -42,8 +42,12 @@ type DebtRow = {
   amount_paid_this_cycle_satang: number | string;
   due_date: string | null;
   recurring_due_day: number | null;
+  statement_date: string | null;
+  cycle_start_date: string | null;
+  cycle_end_date: string | null;
   interest_rate_annual: number | string | null;
   remaining_installments: number | null;
+  credit_limit_satang: number | string | null;
   status: Debt["status"];
   notes: string | null;
 };
@@ -98,8 +102,12 @@ export function mapDebt(row: DebtRow): Debt {
     amountPaidThisCycleSatang: Number(row.amount_paid_this_cycle_satang),
     dueDate: row.due_date ?? undefined,
     recurringDueDay: row.recurring_due_day ?? undefined,
+    statementDate: row.statement_date ?? undefined,
+    cycleStartDate: row.cycle_start_date ?? undefined,
+    cycleEndDate: row.cycle_end_date ?? undefined,
     interestRateAnnual: toNumber(row.interest_rate_annual),
     remainingInstallments: row.remaining_installments ?? undefined,
+    creditLimitSatang: toNumber(row.credit_limit_satang),
     status: row.status,
     notes: row.notes ?? undefined,
   };

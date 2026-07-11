@@ -50,7 +50,9 @@ describe("determineNextAction — single highest-priority action", () => {
   });
 
   it("does not treat a debt due more than 3 days out as urgent", () => {
-    const dueLater = debt({ dueDate: "2026-07-25" }); // 10 days after TODAY
+    // Minimum already met so this test isolates date-window behavior from
+    // the separate "unmet minimum" priority tier.
+    const dueLater = debt({ dueDate: "2026-07-25", minimumPaymentSatang: 1_000_00, amountPaidThisCycleSatang: 1_000_00 });
     const action = determineNextAction(
       {
         debts: [dueLater],
@@ -60,6 +62,32 @@ describe("determineNextAction — single highest-priority action", () => {
       TODAY,
     );
     expect(action.title).toBe("ยังไม่ได้ตั้งงบเดือนนี้");
+  });
+
+  it("surfaces a debt with an unmet minimum payment above a missing monthly budget", () => {
+    const unmet = debt({ dueDate: "2026-07-25", minimumPaymentSatang: 1_000_00, amountPaidThisCycleSatang: 0 });
+    const action = determineNextAction(
+      {
+        debts: [unmet],
+        hasBudget: false,
+        hasAnyTransaction: true,
+      },
+      TODAY,
+    );
+    expect(action.title).toContain("ยังชำระไม่ถึงยอดขั้นต่ำ");
+  });
+
+  it("does not surface the unmet-minimum tier once the minimum has been paid", () => {
+    const met = debt({ dueDate: "2026-07-25", minimumPaymentSatang: 1_000_00, amountPaidThisCycleSatang: 1_000_00 });
+    const action = determineNextAction(
+      {
+        debts: [met],
+        hasBudget: true,
+        hasAnyTransaction: true,
+      },
+      TODAY,
+    );
+    expect(action.title).not.toContain("ยังชำระไม่ถึงยอดขั้นต่ำ");
   });
 
   it("surfaces 'no monthly budget' when there is no debt urgency", () => {

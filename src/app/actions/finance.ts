@@ -14,7 +14,15 @@ import {
   updateDebt,
   updateTransaction,
 } from "@/lib/data/finance-repository";
-import { parseOptionalMoney, parseRequiredMoney } from "@/lib/finance/money-guards";
+import { parseRequiredMoney } from "@/lib/finance/money-guards";
+import {
+  isValidDueDate,
+  parseDebtAmountDue,
+  parseDebtMinimumPayment,
+  parseDebtOutstandingBalance,
+  parseInterestRateAnnual,
+  DEBT_ERROR_DUE_DATE_INVALID_TH,
+} from "@/lib/finance/debt-guards";
 
 export type FinanceActionState = {
   ok: boolean;
@@ -41,6 +49,7 @@ const debtSchema = z.object({
   dueDate: z.string().min(1),
   recurringDueDay: z.string().optional(),
   paymentMode: z.enum(["fixed_monthly", "variable_monthly", "installment", "one_time"]).optional(),
+  interestRateAnnual: z.string().optional(),
   notes: z.string().optional(),
 });
 
@@ -113,12 +122,18 @@ export async function saveDebtAction(
   const parsed = debtSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, message: "กรอกข้อมูลหนี้ให้ครบ" };
 
-  const amountDueResult = parseRequiredMoney(parsed.data.amount, "nonnegative");
+  if (!isValidDueDate(parsed.data.dueDate)) {
+    return { ok: false, message: DEBT_ERROR_DUE_DATE_INVALID_TH };
+  }
+
+  const amountDueResult = parseDebtAmountDue(parsed.data.amount);
   if (!amountDueResult.ok) return { ok: false, message: amountDueResult.error };
-  const outstandingResult = parseOptionalMoney(parsed.data.outstanding, "nonnegative");
+  const outstandingResult = parseDebtOutstandingBalance(parsed.data.outstanding);
   if (!outstandingResult.ok) return { ok: false, message: outstandingResult.error };
-  const minimumResult = parseOptionalMoney(parsed.data.minimum, "nonnegative");
+  const minimumResult = parseDebtMinimumPayment(parsed.data.minimum);
   if (!minimumResult.ok) return { ok: false, message: minimumResult.error };
+  const interestRateResult = parseInterestRateAnnual(parsed.data.interestRateAnnual);
+  if (!interestRateResult.ok) return { ok: false, message: interestRateResult.error };
 
   const amountDueSatang = amountDueResult.satang!;
   const input = {
@@ -130,6 +145,7 @@ export async function saveDebtAction(
     dueDate: parsed.data.dueDate,
     recurringDueDay: parsed.data.recurringDueDay ? Number(parsed.data.recurringDueDay) : undefined,
     paymentMode: parsed.data.paymentMode,
+    interestRateAnnual: interestRateResult.rate,
     notes: parsed.data.notes,
   };
 

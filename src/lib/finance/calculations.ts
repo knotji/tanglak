@@ -1,4 +1,5 @@
 import type { Account, Debt, Transaction } from "@/types/domain";
+import { getBangkokTodayString } from "@/lib/finance/date";
 
 export type MonthlyTotals = {
   incomeSatang: number;
@@ -70,11 +71,8 @@ export function remainingToFullAmount(debt: Debt): number {
 }
 
 export function daysUntilDue(dueDate: string, today = new Date()): number {
-  const start = Date.UTC(
-    today.getUTCFullYear(),
-    today.getUTCMonth(),
-    today.getUTCDate(),
-  );
+  const [todayYear, todayMonth, todayDay] = getBangkokTodayString(today).split("-").map(Number);
+  const start = Date.UTC(todayYear, todayMonth - 1, todayDay);
   const [year, month, day] = dueDate.split("-").map(Number);
   const due = Date.UTC(year, month - 1, day);
   return Math.ceil((due - start) / 86_400_000);
@@ -90,7 +88,28 @@ export function isOverdue(debt: Debt, today = new Date()): boolean {
 }
 
 export function isMinimumPaid(debt: Debt): boolean {
+  if (debt.minimumPaymentSatang === undefined) return false;
   return remainingToMinimum(debt) === 0;
+}
+
+export function isFullCyclePaid(debt: Debt): boolean {
+  if (debt.amountDueSatang === undefined) return false;
+  return remainingToFullAmount(debt) === 0;
+}
+
+export function debtCycleStatus(
+  debt: Debt,
+  today = new Date(),
+): "cycle_paid" | "minimum_paid" | "overdue" | "due_today" | "due_soon" | "upcoming" {
+  if (isFullCyclePaid(debt)) return "cycle_paid";
+  if (isMinimumPaid(debt)) return "minimum_paid";
+  if (!debt.dueDate) return "upcoming";
+
+  const days = daysUntilDue(debt.dueDate, today);
+  if (days < 0) return "overdue";
+  if (days === 0) return "due_today";
+  if (days <= 7) return "due_soon";
+  return "upcoming";
 }
 
 export function paymentProgress(debt: Debt): number {

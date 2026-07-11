@@ -53,6 +53,21 @@ export function determineNextAction(input: NextActionInput, today: Date = new Da
     };
   }
 
+  // A debt with no due date in the near term but whose minimum this cycle
+  // still hasn't been met -- surfaced below overdue/due-soon debts but
+  // above monthly-budget prompts, since an unmet debt obligation still
+  // outranks budgeting nudges.
+  const unmetMinimumDebt = input.debts.find((debt) => remainingToMinimum(debt) > 0);
+  if (unmetMinimumDebt) {
+    return {
+      title: `${unmetMinimumDebt.name} ยังชำระไม่ถึงยอดขั้นต่ำ`,
+      body: `เหลือขั้นต่ำที่ต้องชำระ ${formatTHB(remainingToMinimum(unmetMinimumDebt))}`,
+      action: "บันทึกการชำระเงิน",
+      actionHref: "/debts",
+      tone: "debt",
+    };
+  }
+
   if (!input.hasBudget) {
     return {
       title: "ยังไม่ได้ตั้งงบเดือนนี้",

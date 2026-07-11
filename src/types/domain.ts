@@ -126,8 +126,12 @@ export type Debt = {
   amountPaidThisCycleSatang: number;
   dueDate?: string;
   recurringDueDay?: number;
+  statementDate?: string;
+  cycleStartDate?: string;
+  cycleEndDate?: string;
   interestRateAnnual?: number;
   remainingInstallments?: number;
+  creditLimitSatang?: number;
   status: DebtStatus;
   notes?: string;
 };

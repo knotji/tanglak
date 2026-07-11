@@ -20,6 +20,7 @@ import {
 import { processAndExtractDocument } from "@/lib/ai/extract-document";
 import { safeDocumentExtractionMessage } from "@/lib/ai/extraction-errors";
 import { parseOptionalMoney, parseRequiredMoney } from "@/lib/finance/money-guards";
+import { DEBT_ERROR_DUE_DATE_INVALID_TH, isValidDueDate, parseInterestRateAnnual } from "@/lib/finance/debt-guards";
 import { getMockState } from "@/lib/data/mock-store";
 import { logSafeError } from "@/lib/observability/safe-diagnostics";
 
@@ -394,6 +395,10 @@ export async function confirmDocumentAction(
         return { ok: false, message: "ต้องระบุวันครบกำหนดชำระ" };
       }
 
+      if (!isValidDueDate(dueDate)) {
+        return { ok: false, message: DEBT_ERROR_DUE_DATE_INVALID_TH };
+      }
+
       const amountDueResult = parseOptionalMoney(amountDue, "nonnegative");
       if (!amountDueResult.ok) return { ok: false, message: amountDueResult.error };
       const outstandingResult = parseOptionalMoney(outstandingBalance, "nonnegative");
@@ -403,6 +408,18 @@ export async function confirmDocumentAction(
       const statementResult = parseOptionalMoney(statementBalance, "nonnegative");
       if (!statementResult.ok) return { ok: false, message: statementResult.error };
 
+      const interestRateResult = parseInterestRateAnnual(interestRateAnnual);
+      if (!interestRateResult.ok) return { ok: false, message: interestRateResult.error };
+      const parsedRemainingInstallments = remainingInstallments.trim()
+        ? Number(remainingInstallments.trim())
+        : undefined;
+      if (
+        parsedRemainingInstallments !== undefined &&
+        (!Number.isInteger(parsedRemainingInstallments) || parsedRemainingInstallments < 0)
+      ) {
+        return { ok: false, message: "\u0e07\u0e27\u0e14\u0e04\u0e07\u0e40\u0e2b\u0e25\u0e37\u0e2d\u0e15\u0e49\u0e2d\u0e07\u0e44\u0e21\u0e48\u0e15\u0e34\u0e14\u0e25\u0e1a" };
+      }
+
       const amountDueSatang = amountDueResult.satang ?? 0;
       const outstandingSatang = outstandingResult.satang ?? amountDueSatang;
       const minimumSatang = minimumResult.satang ?? amountDueSatang;
@@ -411,10 +428,14 @@ export async function confirmDocumentAction(
       const inputPayload = {
         name: debtName || `${creditor || "เจ้าหนี้"} xxxx-${accountLastFour || ""}`,
         creditor,
+        debtType,
         outstandingBalanceSatang: outstandingSatang,
+        statementBalanceSatang: statementSatang,
         amountDueSatang,
         minimumPaymentSatang: minimumSatang,
         dueDate,
+        interestRateAnnual: interestRateResult.rate,
+        remainingInstallments: parsedRemainingInstallments,
         notes: `บัญชีเลขที่: xxxx-${accountLastFour || "-"}\nอัตราดอกเบี้ย: ${interestRateAnnual || "-"}%\nงวดคงเหลือ: ${remainingInstallments || "-"}`,
       };
 

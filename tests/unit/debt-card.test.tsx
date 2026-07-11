@@ -53,15 +53,29 @@ describe("DebtCard", () => {
   it("labels an overdue debt with text, not color alone", () => {
     const overdue = debt({ dueDate: "2026-07-01" });
     const { container, root } = render(<DebtCard debt={overdue} today={TODAY} />);
-    expect(container.textContent).toContain("เลยกำหนด");
+    expect(container.textContent).toContain("เกินกำหนด");
     cleanup(root, container);
   });
 
-  it("labels a not-yet-due debt with a day count instead of the overdue word", () => {
-    const dueSoon = debt({ dueDate: "2026-07-20" });
+  it("labels a debt due well in the future as not yet due", () => {
+    const notYetDue = debt({ dueDate: "2026-07-25" }); // 10 days out
+    const { container, root } = render(<DebtCard debt={notYetDue} today={TODAY} />);
+    expect(container.textContent).toContain("ยังไม่ถึงกำหนด");
+    expect(container.textContent).not.toContain("เกินกำหนด");
+    cleanup(root, container);
+  });
+
+  it("labels a debt due within 3 days as due soon", () => {
+    const dueSoon = debt({ dueDate: "2026-07-17" }); // 2 days out
     const { container, root } = render(<DebtCard debt={dueSoon} today={TODAY} />);
-    expect(container.textContent).toContain("อีก");
-    expect(container.textContent).not.toContain("เลยกำหนด");
+    expect(container.textContent).toContain("ใกล้ครบกำหนด");
+    cleanup(root, container);
+  });
+
+  it("shows minimum-paid status once paidThisCycle meets the minimum, even past the due date window", () => {
+    const paid = debt({ dueDate: "2026-07-25", minimumPaymentSatang: 1_000_00, amountPaidThisCycleSatang: 1_000_00 });
+    const { container, root } = render(<DebtCard debt={paid} today={TODAY} />);
+    expect(container.textContent).toContain("จ่ายขั้นต่ำแล้ว");
     cleanup(root, container);
   });
 
