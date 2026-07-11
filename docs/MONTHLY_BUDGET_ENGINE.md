@@ -315,6 +315,70 @@ returned by `src/app/actions/budget.ts`.
    `NOT VALID` state; it is either fully built (this migration) or not
    present yet.
 
+## Integration notes (`integrate/monthly-budget-finance-ui`)
+
+### Debt payments appear differently in three places
+
+This app now has three independent places that total up debt-payment
+transactions, and they are **not** reconciled with each other:
+
+| Where | Matched by | Includes `debt_payment` as... |
+|---|---|---|
+| Budget category spend (`calculateCategorySpend`, this doc's "Transaction inclusion rules") | `transaction.category` label equality | Full category spend, same as `expense` |
+| Dashboard overview totals (`calculateMonthlyTotals`, `src/lib/finance/calculations.ts`) | `transaction.type` only | Its own separate `debtPaymentSatang` bucket, kept apart from `livingExpenseSatang` (`cashRemaining = income + refund - livingExpense - debtPayment`) |
+| Debt summaries (`amountPaidThisCycleSatang` on each `Debt`, recalculated in `finance-repository.ts`) | `transaction.debtId` foreign key, scoped to the debt's current billing cycle | The debt's own "paid this cycle" figure, independent of both of the above |
+
+A concrete example: a ฿1,000 `debt_payment` transaction tagged with
+category `หนี้สิน` and linked to a specific debt via `debtId` will
+simultaneously: count as ฿1,000 of spend against a `หนี้สิน` budget category
+(if one exists), count as ฿1,000 in the overview page's separate
+"จ่ายหนี้" line (not its "ค่าใช้ชีวิต" line), and count as ฿1,000 toward that
+one debt's `amountPaidThisCycleSatang`. All three numbers are correct for
+what they each measure; none of them is "the" debt-payment total, and a
+user comparing the budget page, the overview page, and a debt's detail
+page side by side may see three different-looking ฿ figures that are all
+internally consistent. No existing financial semantics were changed by
+this integration to make these three totals agree — that would require a
+deliberate, separately-scoped reconciliation decision, not a byproduct of
+integrating already-built features.
+
+### Status-threshold divergence between the engine and `BudgetProgress`/`CategoryBudgetRow`
+
+The finance UI primitives (`feat/finance-ui-primitives`) were built with
+their own `statusForBudget` (`src/components/finance/status.ts`), used
+internally by `BudgetProgress` and (through it) `CategoryBudgetRow`. It
+disagrees with this engine's `statusForCategory` in two ways:
+
+1. **Near-limit threshold**: the engine's `BUDGET_NEAR_LIMIT_THRESHOLD` is
+   80%; `statusForBudget` uses 85%. A category at 82% usage is `near_limit`
+   per the engine but `healthy` per `BudgetProgress`.
+2. **Zero-budget-with-spending**: the engine's `statusForCategory` returns
+   `overspent` when `budgeted <= 0 && spent > 0` (spending anything against
+   a zero allocation is, by definition, over it — see "Status thresholds"
+   above). `statusForBudget` returns `no_budget` for any `budgetSatang <=
+   0`, regardless of spend. `BudgetProgress` does soften this with dedicated
+   copy ("ยังไม่ตั้งงบสำหรับหมวดนี้ แต่มีการใช้จ่ายแล้ว" — "no budget set for
+   this category, but there has been spending") rather than looking
+   `healthy`, so it is not silently misleading — but its `status` value
+   still disagrees with the engine's.
+
+`BudgetStatusBadge` is unaffected: it accepts a `status: FinancialStatus`
+prop directly rather than recomputing it, so passing the engine's own
+`CategorySummary.status`/`BudgetSummary.status` into it is fully
+consistent with zero translation needed. Only `BudgetProgress` and
+`CategoryBudgetRow` recompute status internally from raw satang numbers.
+
+This divergence is asserted directly (so it cannot silently regress or
+silently disappear) in
+`tests/unit/budget-finance-contract.test.tsx`. It was deliberately **not**
+fixed by editing either module's thresholds during this integration pass —
+doing so would be a silent business-semantics change, and the task scope
+for this integration explicitly excludes a Dashboard/Budget UI overhaul.
+Resolving it (for example, by giving `BudgetProgress`/`CategoryBudgetRow`
+an optional `status` override prop that defaults to their current
+self-computed behavior) is a recommended follow-up, not part of this
+integration.
+
 ## Remaining limitations
 
 - Category matching is free-text label equality, not a foreign-key join to
