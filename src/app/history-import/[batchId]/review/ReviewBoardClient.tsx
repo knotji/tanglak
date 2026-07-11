@@ -11,6 +11,9 @@ interface ReviewBoardClientProps {
   debts: Debt[];
 }
 
+const TAB_IDS = ["all", "ready", "income", "expense", "needs_review", "duplicate", "skip"] as const;
+type TabId = typeof TAB_IDS[number];
+
 export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClientProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -142,21 +145,32 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
   }, [activeTab, debouncedSearchQuery]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  // Shift programmatic focus directly to first transaction row in list on tab selection
-  const isFirstRender = useRef(true);
-  useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
+  // Arrow-key keyboard navigation between tabs
+  const tabRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+
+  const handleTabKeyDown = useCallback((e: React.KeyboardEvent<HTMLButtonElement>, tabId: TabId) => {
+    const idx = TAB_IDS.indexOf(tabId);
+    if (idx === -1) return;
+    let nextIdx = idx;
+    if (e.key === "ArrowRight") {
+      e.preventDefault();
+      nextIdx = (idx + 1) % TAB_IDS.length;
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      nextIdx = (idx - 1 + TAB_IDS.length) % TAB_IDS.length;
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      nextIdx = 0;
+    } else if (e.key === "End") {
+      e.preventDefault();
+      nextIdx = TAB_IDS.length - 1;
+    } else {
       return;
     }
-    if (filteredRows.length > 0) {
-      const firstRowId = filteredRows[0].id;
-      const element = document.getElementById(`row-body-${firstRowId}`);
-      if (element) {
-        element.focus();
-      }
-    }
-  }, [activeTab, filteredRows]);
+    const nextId = TAB_IDS[nextIdx];
+    setActiveTab(nextId);
+    tabRefs.current.get(nextId)?.focus();
+  }, []);
 
   // Navigation Jump Handlers
   const handleJumpToNextWarning = () => {
@@ -513,29 +527,38 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
         </div>
       </div>
 
-      {/* Category Tabs */}
+      {/* Category Tabs — full WAI-ARIA tab widget */}
       <div
         role="tablist"
+        aria-label="กรองรายการตามสถานะ"
         className="flex gap-1 overflow-x-auto pb-1 border-b border-border text-xs scrollbar-none"
       >
-        {[
-          { id: "all", label: `ทั้งหมด (${counts.all})`, ariaLabel: "ทั้งหมด" },
-          { id: "ready", label: `พร้อมนำเข้า (${counts.ready})`, ariaLabel: "พร้อมนำเข้า" },
-          { id: "income", label: `เงินเข้า (${counts.income})`, ariaLabel: "เงินเข้า" },
-          { id: "expense", label: `เงินออก (${counts.expense})`, ariaLabel: "เงินออก" },
-          { id: "needs_review", label: `ต้องตรวจสอบ (${counts.needs_review})`, ariaLabel: "ต้องตรวจสอบ" },
-          { id: "duplicate", label: `รายการซ้ำ (${counts.duplicate})`, ariaLabel: "รายการซ้ำ" },
-          { id: "skip", label: `ไม่นำเข้า (${counts.skip})`, ariaLabel: "ไม่นำเข้า" },
-        ].map((tab) => {
+        {(
+          [
+            { id: "all",          label: `ทั้งหมด (${counts.all})` },
+            { id: "ready",        label: `พร้อมนำเข้า (${counts.ready})` },
+            { id: "income",       label: `เงินเข้า (${counts.income})` },
+            { id: "expense",      label: `เงินออก (${counts.expense})` },
+            { id: "needs_review", label: `ต้องตรวจสอบ (${counts.needs_review})` },
+            { id: "duplicate",    label: `รายการซ้ำ (${counts.duplicate})` },
+            { id: "skip",         label: `ไม่นำเข้า (${counts.skip})` },
+          ] as { id: TabId; label: string }[]
+        ).map((tab) => {
           const isActive = activeTab === tab.id;
           return (
             <button
               key={tab.id}
+              id={`tab-${tab.id}`}
               role="tab"
               aria-selected={isActive}
-              aria-label={tab.ariaLabel}
               aria-controls="transaction-list-container"
+              tabIndex={isActive ? 0 : -1}
+              ref={(el) => {
+                if (el) tabRefs.current.set(tab.id, el);
+                else tabRefs.current.delete(tab.id);
+              }}
               onClick={() => setActiveTab(tab.id)}
+              onKeyDown={(e) => handleTabKeyDown(e, tab.id)}
               className={`px-3 py-1.5 font-bold rounded-lg whitespace-nowrap min-h-[44px] ${
                 isActive
                   ? "bg-primary text-white"
@@ -566,8 +589,14 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
         )}
       </div>
 
-      {/* Staging Rows List */}
-      <div id="transaction-list-container" className="flex flex-col gap-2">
+      {/* Staging Rows List — tabpanel controlled by the tablist above */}
+      <div
+        id="transaction-list-container"
+        role="tabpanel"
+        aria-labelledby={`tab-${activeTab}`}
+        tabIndex={0}
+        className="flex flex-col gap-2 focus:outline-none"
+      >
         {filteredRows.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border bg-surface p-8 text-center text-xs text-text-secondary flex flex-col items-center justify-center gap-2">
             <span>🔍 ไม่พบรายการธุรกรรมที่ตรงกับการค้นหาหรือตัวกรองนี้</span>
