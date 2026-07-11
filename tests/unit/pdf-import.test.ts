@@ -4,6 +4,7 @@ import { join } from "node:path";
 import nextConfig from "../../next.config";
 import { describe, expect, it, vi } from "vitest";
 import {
+  buildCompactHeaderStatementPdf,
   buildGenericBankStatementPdf,
   buildMalformedPdf,
   buildNoTextLayerPdf,
@@ -326,5 +327,128 @@ describe("pdf production runtime compatibility", () => {
     expect(source).not.toMatch(/\.render\s*\(/);
     expect(source).not.toContain("CanvasFactory");
     expect(source).not.toContain("createCanvas");
+  });
+});
+
+describe("real-world compact-header statement layout (fix/pdf-real-statement-layout)", () => {
+  // This fixture reproduces (with entirely fictional data) the structural
+  // characteristics of a real production statement that previously failed
+  // with unsupported_layout:
+  //   1. A long bank letterhead/account-info preamble (14+ lines) before
+  //      the transaction table header, beyond the old fixed header search
+  //      window.
+  //   2. Debit/Credit header labels close enough together to merge into a
+  //      single detected column under the old column-gap threshold,
+  //      losing the "credit" role entirely.
+  //   3. Data amounts landing in two well-separated x sub-positions despite
+  //      that header ambiguity, which the new column-split logic recovers.
+
+  it("parses the sanitized layout successfully with all 25 rows", async () => {
+    const buffer = await buildCompactHeaderStatementPdf();
+    const result = await parsePdfStatement(parseInput(buffer));
+    expect(result.rows.length).toBe(25);
+  });
+
+  it("maps dates correctly, including 2-digit Buddhist years", async () => {
+    const buffer = await buildCompactHeaderStatementPdf();
+    const result = await parsePdfStatement(parseInput(buffer));
+    for (const row of result.rows) {
+      expect(row.occurredAt.slice(0, 4)).toBe("2026");
+      expect(row.occurredAt.slice(5, 7)).toBe("07");
+    }
+  });
+
+  it("maps amounts correctly as integer satang", async () => {
+    const buffer = await buildCompactHeaderStatementPdf();
+    const result = await parsePdfStatement(parseInput(buffer));
+    result.rows.forEach((row, i) => {
+      const expectedAmountSatang = 12000 + (i + 1) * 900;
+      expect(row.amountSatang).toBe(expectedAmountSatang);
+      expect(Number.isInteger(row.amountSatang)).toBe(true);
+    });
+  });
+
+  it("resolves debit/credit direction correctly from the split shared column", async () => {
+    const buffer = await buildCompactHeaderStatementPdf();
+    const result = await parsePdfStatement(parseInput(buffer));
+    const directionCounts: Record<string, number> = {};
+    result.rows.forEach((r) => {
+      directionCounts[r.direction] = (directionCounts[r.direction] ?? 0) + 1;
+    });
+    // Fixture: credit on every 5th row (i % 5 === 0) out of 25 rows.
+    expect(directionCounts.credit).toBe(5);
+    expect(directionCounts.debit).toBe(20);
+    expect(directionCounts.unknown ?? 0).toBe(0);
+
+    result.rows.forEach((row, i) => {
+      const expectedDirection = (i + 1) % 5 === 0 ? "credit" : "debit";
+      expect(row.direction).toBe(expectedDirection);
+    });
+  });
+
+  it("ignores repeated page headers/footers instead of producing spurious rows", async () => {
+    const buffer = await buildCompactHeaderStatementPdf();
+    const result = await parsePdfStatement(parseInput(buffer));
+    // rowsPerPage=14 over 25 rows spans 2 pages with a repeated header line;
+    // exactly 25 rows (not 26+) confirms the repeated header wasn't parsed
+    // as a transaction.
+    expect(result.pageCount).toBe(2);
+    expect(result.rows.length).toBe(25);
+    expect(result.rows.every((r) => r.description.length > 0)).toBe(true);
+  });
+
+  it("produces zero validation warnings and a populated running balance for every row", async () => {
+    const buffer = await buildCompactHeaderStatementPdf();
+    const result = await parsePdfStatement(parseInput(buffer));
+    result.rows.forEach((row) => {
+      const rawData = row.rawData as { validationWarnings?: string[] } | undefined;
+      expect(rawData?.validationWarnings ?? []).toEqual([]);
+      expect(row.runningBalanceSatang).toBeTypeOf("number");
+    });
+  });
+
+  it("detects the header well beyond the old 10-line search window", async () => {
+    const buffer = await buildCompactHeaderStatementPdf();
+    const doc = normalizeExtractedDocument(await extractPdfDocument(extractInput(buffer)));
+    const layout = detectGenericLayout(doc);
+    expect(layout.layoutId).not.toBe("unsupported");
+    expect(layout.headerLineIndex).toBeGreaterThanOrEqual(10);
+  });
+
+  it("still rejects a genuinely unsupported (non-tabular) layout", async () => {
+    const buffer = await buildUnsupportedLayoutPdf();
+    await expect(parsePdfStatement(parseInput(buffer))).rejects.toMatchObject({ code: "unsupported_layout" });
+  });
+
+  it("still rejects malformed, no-text-layer, and password-protected PDFs unchanged", async () => {
+    await expect(parsePdfStatement(parseInput(buildMalformedPdf()))).rejects.toMatchObject({
+      code: "malformed_pdf",
+    });
+    await expect(parsePdfStatement(parseInput(await buildNoTextLayerPdf()))).rejects.toMatchObject({
+      code: "no_text_layer",
+    });
+    await expect(parsePdfStatement(parseInput(await buildPasswordProtectedPdf()))).rejects.toMatchObject({
+      code: "password_protected_pdf",
+    });
+  });
+
+  it("still parses the original generic layout (layout A) unchanged", async () => {
+    const buffer = await buildGenericBankStatementPdf();
+    const result = await parsePdfStatement(parseInput(buffer));
+    expect(result.rows.length).toBeGreaterThanOrEqual(30);
+  });
+
+  it("unsupported_layout errors carry safe structural diagnostics only, never row content", async () => {
+    const buffer = await buildUnsupportedLayoutPdf();
+    try {
+      await parsePdfStatement(parseInput(buffer));
+      throw new Error("expected parsePdfStatement to reject");
+    } catch (err) {
+      expect(err).toBeInstanceOf(PdfImportError);
+      const stack = (err as PdfImportError).stack ?? "";
+      expect(stack).toMatch(/pageCount=\d+/);
+      expect(stack).toMatch(/candidateColumnCount=\d+/);
+      expect(stack).toMatch(/reason=/);
+    }
   });
 });

@@ -100,6 +100,107 @@ export async function buildGenericBankStatementPdf(): Promise<Buffer> {
   });
 }
 
+const COMPACT_COL_WIDTHS = { date: 9, time: 6, code: 5, description: 20, debit: 12, credit: 12 };
+
+interface CompactFixtureRow {
+  date: string;
+  time: string;
+  code: string;
+  description: string;
+  debit?: string;
+  credit?: string;
+  balance: string;
+}
+
+function formatCompactRow(row: CompactFixtureRow): string {
+  const debit = (row.debit ?? "").padEnd(COMPACT_COL_WIDTHS.debit);
+  const credit = (row.credit ?? "").padEnd(COMPACT_COL_WIDTHS.credit);
+  return `${row.date.padEnd(COMPACT_COL_WIDTHS.date)}${row.time.padEnd(COMPACT_COL_WIDTHS.time)}${row.code.padEnd(COMPACT_COL_WIDTHS.code)}${row.description.padEnd(COMPACT_COL_WIDTHS.description)}${debit}${credit}${row.balance}`;
+}
+
+// Debit/Credit separated by only 2 spaces, unlike the wide field padding
+// used for the actual data columns below — this reproduces a real observed
+// statement layout where the header labels sit close together (~10pt gap
+// in Courier 8pt) while the data amounts land in two well-separated
+// sub-positions within that same nominal column.
+const COMPACT_HEADER_LINE =
+  "Date".padEnd(COMPACT_COL_WIDTHS.date) +
+  "Time".padEnd(COMPACT_COL_WIDTHS.time) +
+  "Code".padEnd(COMPACT_COL_WIDTHS.code) +
+  "Description".padEnd(COMPACT_COL_WIDTHS.description) +
+  "Debit  Credit".padEnd(COMPACT_COL_WIDTHS.debit + COMPACT_COL_WIDTHS.credit) +
+  "Balance";
+
+/**
+ * Builds a sanitized statement reproducing a real-world layout characteristic
+ * observed in production: a long bank letterhead/account-info preamble
+ * (14+ lines) before the transaction table header, and a header where the
+ * Debit/Credit labels sit close enough together to risk merging into one
+ * detected column — while the actual data amounts remain in two clearly
+ * separated x-positions. All names, numbers, and account details here are
+ * fictional/placeholder; this models structure only, not any real statement.
+ */
+export async function buildCompactHeaderStatementPdf(): Promise<Buffer> {
+  const rows: CompactFixtureRow[] = [];
+  let balance = 8000000; // satang, 80,000.00 THB opening
+
+  for (let i = 1; i <= 25; i++) {
+    const day = String(1 + (i % 27)).padStart(2, "0");
+    const isCredit = i % 5 === 0;
+    const amountSatang = 12000 + i * 900;
+    if (isCredit) balance += amountSatang;
+    else balance -= amountSatang;
+
+    rows.push({
+      date: `${day}/07/69`,
+      time: `${String(8 + (i % 10)).padStart(2, "0")}:${String((i * 7) % 60).padStart(2, "0")}`,
+      code: "ATM",
+      description: `PAYEE ${String(i).padStart(3, "0")}`,
+      debit: isCredit ? undefined : (amountSatang / 100).toFixed(2),
+      credit: isCredit ? (amountSatang / 100).toFixed(2) : undefined,
+      balance: (balance / 100).toFixed(2),
+    });
+  }
+
+  return renderPdf((doc) => {
+    // Long letterhead/preamble block (fictional placeholder content only)
+    // modeling the real-world statement's long lead-in before the header.
+    doc.fontSize(11).text("SAMPLE BANK PUBLIC COMPANY LIMITED");
+    doc.fontSize(9).text("HEAD OFFICE, SAMPLE ROAD, SAMPLE DISTRICT, SAMPLE CITY 10000");
+    doc.text("Tel: 1000-000-000 / www.samplebank.example");
+    doc.text("STATEMENT OF ACCOUNT");
+    doc.text("Account Holder / Customer Reference Section");
+    doc.text("Name: SAMPLE ACCOUNT HOLDER");
+    doc.text("Address: 123 SAMPLE STREET");
+    doc.text("Account Type: SAVINGS");
+    doc.text("Account No: xxx-x-xx000-x");
+    doc.text("Branch: SAMPLE BRANCH");
+    doc.text("");
+    doc.text("Statement Period          01/07/69 - 31/07/69");
+    doc.text("");
+    doc.text("Opening Balance");
+    doc.text(`         xxxx-x-xxx000-x (SAMPLE BRANCH)                    ${(8000000 / 100).toFixed(2)}`);
+    doc.moveDown(0.3);
+
+    let rowsOnPage = 0;
+    const rowsPerPage = 14;
+
+    doc.font("Courier").fontSize(8).text(COMPACT_HEADER_LINE);
+    for (let i = 0; i < rows.length; i++) {
+      if (rowsOnPage >= rowsPerPage) {
+        doc.addPage();
+        doc.font("Courier").fontSize(8).text(COMPACT_HEADER_LINE);
+        rowsOnPage = 0;
+      }
+      doc.text(formatCompactRow(rows[i]));
+      rowsOnPage++;
+    }
+
+    doc.moveDown(0.5);
+    doc.text(`Closing Balance: ${(balance / 100).toFixed(2)}`);
+  });
+}
+
 /** A PDF with only a filled rectangle and no text layer — should be rejected as no_text_layer. */
 export async function buildNoTextLayerPdf(): Promise<Buffer> {
   return renderPdf((doc) => {

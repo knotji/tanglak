@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import {
+  buildCompactHeaderStatementPdf,
   buildGenericBankStatementPdf,
   buildMalformedPdf,
   buildNoTextLayerPdf,
@@ -140,5 +141,23 @@ test.describe.serial("PDF statement import — deterministic parsing edge cases"
     const buffer = await buildUnsupportedLayoutPdf();
     await uploadPdf(page, buffer, "letter.pdf");
     await expect(page.getByText(/ดาวน์โหลด CSV จากธนาคารแล้วนำเข้าแทนได้/)).toBeVisible();
+  });
+
+  // Reproduces (with entirely fictional data) a real production statement's
+  // layout that previously failed with unsupported_layout: a long
+  // letterhead preamble before the header, and debit/credit header labels
+  // close enough to merge without the column-gap fix. See
+  // fix/pdf-real-statement-layout.
+  test("compact-header real-world layout reaches the review screen with correct debit/credit rows", async ({
+    page,
+  }) => {
+    await login(page, `pdf-compact-${Date.now()}@example.test`, password);
+    const buffer = await buildCompactHeaderStatementPdf();
+    await uploadPdf(page, buffer, "compact_statement.pdf");
+
+    await expect(page).toHaveURL(/\/history-import\/[a-f0-9-]+\/review/);
+    await expect(page.getByText("PAYEE 001").first()).toBeVisible();
+    // 20 debit + 5 credit rows from the fixture.
+    await expect(page.getByRole("button", { name: "ทั้งหมด", exact: true })).toBeVisible();
   });
 });

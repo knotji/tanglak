@@ -1,9 +1,23 @@
 import type { DetectedLayout, ExtractedDocument, ExtractedLine, LayoutColumn, LayoutColumnRole } from "./types";
 
-const HEADER_SEARCH_ZONE = 10;
+// Real-world statements often carry a much longer letterhead/preamble block
+// (bank address, account holder info, statement period, opening balance
+// note) before the actual transaction table header than our synthetic test
+// fixtures modeled — one observed real SCB statement puts its header at
+// line 14. This only widens how many candidate lines we *look at*; the
+// role/column requirements below (hasDate + hasAmountLike + 3+ columns)
+// are unchanged, so it doesn't loosen what counts as a valid header.
+const HEADER_SEARCH_ZONE = 30;
 // Minimum horizontal gap (PDF points) between text items to consider them
 // separate table columns rather than words within the same header label.
-const COLUMN_GAP_THRESHOLD = 12;
+// A real SCB statement's debit/credit header labels sit ~10.6pt apart,
+// which the previous threshold of 12 merged into one column (losing the
+// "credit" role entirely, since the merged label's text matched "debit"
+// first). 8 was the smallest value that fully separated all 7 of that
+// statement's header columns; verified against a second real statement
+// (whose header words were already >12pt apart) that this doesn't
+// introduce a false split there.
+const COLUMN_GAP_THRESHOLD = 8;
 
 const ROLE_KEYWORDS: Array<{ role: LayoutColumnRole; keywords: RegExp }> = [
   { role: "posted_date", keywords: /post(?:ing|ed)? date|effective date|วันที่บันทึก|วันที่ทำรายการ/i },
@@ -96,6 +110,15 @@ export function detectGenericLayout(doc: ExtractedDocument): DetectedLayout {
       layoutId = "B";
     } else if (seenRoles.has("amount")) {
       layoutId = "F";
+    } else if (seenRoles.has("debit") || seenRoles.has("credit")) {
+      // Only one of debit/credit was distinguishable from the header itself
+      // (its counterpart's label may be too close to another label to
+      // separate, or use unrecognized wording) — this still passed the
+      // hasAmountLike gate above, so it's a real candidate, not a rejection.
+      // Per-row direction is determined independently by the row parser
+      // from which numeric column a matched amount is nearest to, so an
+      // imprecise layoutId label here doesn't affect parsing correctness.
+      layoutId = isWithdrawalWording(line.text) ? "D" : "A";
     }
 
     let confidence = 0.4;

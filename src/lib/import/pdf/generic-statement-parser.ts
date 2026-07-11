@@ -1,5 +1,5 @@
 import { parseAmountSatang, parseThaiBuddhistYearDate } from "../normalize";
-import { groupContinuationLines } from "./row-grouping";
+import { groupContinuationLines, type GroupedRow } from "./row-grouping";
 import type { DetectedLayout, ExtractedDocument, ExtractedTextItem, LayoutColumnRole, ParsedPdfRow, StatementMetadata } from "./types";
 
 const MONEY_TOKEN = /^\(?-?[\d,]+\.\d{2}\)?-?$/;
@@ -75,6 +75,67 @@ function firstNonNumericColumnStart(layout: DetectedLayout): number {
 }
 
 /**
+ * Some compact statement layouts give debit and credit a single shared
+ * header label (or two labels close enough together to merge into one
+ * detected column), but still right-align debit amounts toward the left
+ * of that region and credit amounts toward the right. When a layout has
+ * exactly one of debit/credit, this inspects the actual x-positions of
+ * amounts landing inside that lone column across the whole statement and,
+ * if they form two well-separated clusters, splits the column at the gap
+ * midpoint — left cluster keeps the original role, right cluster gets the
+ * missing counterpart. Grounded entirely in observed coordinates, never in
+ * cell content, and a no-op unless the evidence is unambiguous (a single
+ * large gap with a meaningful number of points on both sides).
+ */
+function splitAmbiguousDirectionColumn(groupedRows: GroupedRow[], columns: NumericColumn[]): NumericColumn[] {
+  const hasDebit = columns.some((c) => c.role === "debit");
+  const hasCredit = columns.some((c) => c.role === "credit");
+  if (hasDebit === hasCredit) return columns; // both or neither present: nothing to split
+
+  const loneRole: "debit" | "credit" = hasDebit ? "debit" : "credit";
+  const loneCol = columns.find((c) => c.role === loneRole)!;
+
+  const xs: number[] = [];
+  for (const row of groupedRows) {
+    for (const item of row.items) {
+      if (item.x < loneCol.xStart - 15 || item.x >= loneCol.xEnd) continue;
+      if (!MONEY_TOKEN.test(item.text)) continue;
+      xs.push(item.x);
+    }
+  }
+  if (xs.length < 10) return columns;
+
+  xs.sort((a, b) => a - b);
+  let bestGapIndex = -1;
+  let bestGap = 0;
+  for (let i = 1; i < xs.length; i++) {
+    const gap = xs[i] - xs[i - 1];
+    if (gap > bestGap) {
+      bestGap = gap;
+      bestGapIndex = i;
+    }
+  }
+
+  const leftCount = bestGapIndex;
+  const rightCount = xs.length - bestGapIndex;
+  // A real sub-column boundary is much wider than ordinary digit/kerning
+  // jitter within one column, and needs a meaningful sample on both sides
+  // so a single stray outlier can't trigger a false split.
+  if (bestGap < 20 || leftCount < 5 || rightCount < 5) return columns;
+
+  const splitX = (xs[bestGapIndex - 1] + xs[bestGapIndex]) / 2;
+  const otherRole: LayoutColumnRole = loneRole === "debit" ? "credit" : "debit";
+
+  return columns.flatMap((c) => {
+    if (c !== loneCol) return [c];
+    return [
+      { role: loneRole, xStart: loneCol.xStart, xEnd: splitX },
+      { role: otherRole, xStart: splitX, xEnd: loneCol.xEnd },
+    ];
+  });
+}
+
+/**
  * Assigns a money item to its nearest numeric column by comparing item.x to
  * each column's left edge. Nearest-by-start is more robust than strict range
  * containment: cell values are commonly left- or right-aligned differently
@@ -100,7 +161,7 @@ export function parseGenericStatement(
   metadata: StatementMetadata,
 ): ParsedPdfRow[] {
   const groupedRows = groupContinuationLines(doc, layout);
-  const columns = numericColumns(layout);
+  const columns = splitAmbiguousDirectionColumn(groupedRows, numericColumns(layout));
   const amountColumnStart = firstNonNumericColumnStart(layout);
   const parsed: ParsedPdfRow[] = [];
 

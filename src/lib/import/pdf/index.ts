@@ -5,6 +5,7 @@ import { normalizeExtractedDocument } from "./pdf-page-normalizer";
 import { detectStatementMetadata } from "./statement-metadata";
 import { detectGenericLayout } from "./generic-layout-detector";
 import { parseGenericStatement } from "./generic-statement-parser";
+import { groupContinuationLines } from "./row-grouping";
 import { validatePdfRunningBalance, validateSummaryTotals } from "./row-validator";
 import { summarizeParserConfidence, MIN_LAYOUT_CONFIDENCE } from "./parser-confidence";
 import { assistHeaderMapping } from "./gemini-assist";
@@ -58,12 +59,27 @@ export async function parsePdfStatement(input: ParsePdfStatementInput): Promise<
   }
 
   if (layout.layoutId === "unsupported" || layout.confidence < MIN_LAYOUT_CONFIDENCE) {
-    throw new PdfImportError("unsupported_layout", layout.warnings.join("; "));
+    // Structural-only diagnostic (page/line/column counts, no cell content)
+    // to help debug future unsupported-layout reports without logging any
+    // financial data.
+    const lineCounts = doc.pages.map((p) => p.lines.length).join(",");
+    throw new PdfImportError(
+      "unsupported_layout",
+      `pageCount=${doc.pageCount} linesPerPage=[${lineCounts}] candidateColumnCount=${layout.columns.length} confidence=${layout.confidence.toFixed(2)} reason=header_not_found_or_low_confidence`,
+    );
   }
 
   const parsedRows = parseGenericStatement(doc, layout, metadata);
   if (parsedRows.length === 0) {
-    throw new PdfImportError("unsupported_layout", "no rows parsed from detected layout");
+    // candidateRowCount = how many date-led rows the grouper found at all
+    // (independent of whether they went on to parse an amount) — this
+    // distinguishes "no date-shaped rows found" from "rows found but no
+    // amount token recognized", without logging any row content.
+    const candidateRowCount = groupContinuationLines(doc, layout).length;
+    throw new PdfImportError(
+      "unsupported_layout",
+      `pageCount=${doc.pageCount} candidateColumnCount=${layout.columns.length} candidateRowCount=${candidateRowCount} layoutId=${layout.layoutId} confidence=${layout.confidence.toFixed(2)} reason=zero_rows_parsed_from_detected_layout`,
+    );
   }
 
   const balanceCheck = validatePdfRunningBalance(parsedRows);
