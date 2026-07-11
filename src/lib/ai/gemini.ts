@@ -1,8 +1,39 @@
 import { extractedFinancialDocumentSchema } from "@/lib/ai/schemas";
 import { extractionSystemPrompt } from "@/lib/ai/prompts";
 import { classifySchemaValidationError, DocumentExtractionError } from "@/lib/ai/extraction-errors";
+import { parseDocumentTimestamp } from "@/lib/ai/timestamp";
 import { logSafeError } from "@/lib/observability/safe-diagnostics";
 import { ZodError } from "zod";
+
+/**
+ * Normalizes `transaction.occurredAt` on the raw Gemini payload before
+ * schema validation. Gemini is asked to report the timestamp as printed on
+ * the document; the actual date/timezone math is done here, deterministically,
+ * rather than trusting the model's own ISO conversion (the source of the
+ * original bug — a printed "11 Jul 26 07:26 +0700" round-tripping through
+ * the model as a wrong, hallucinated time).
+ *
+ * A value that can't be confidently parsed is stripped (never replaced with
+ * the current date/time) so the existing required-field pipeline
+ * (classifySchemaValidationError) surfaces it as needing review, exactly as
+ * it already does for any other missing required financial field.
+ */
+function normalizeParsedTimestamp(parsedJson: unknown): unknown {
+  if (typeof parsedJson !== "object" || parsedJson === null) return parsedJson;
+  const root = parsedJson as { transaction?: unknown };
+  if (typeof root.transaction !== "object" || root.transaction === null) return parsedJson;
+
+  const transaction = root.transaction as { occurredAt?: unknown };
+  if (!("occurredAt" in transaction)) return parsedJson;
+
+  const result = parseDocumentTimestamp(transaction.occurredAt);
+  if (result.state === "extracted" || result.state === "inferred") {
+    transaction.occurredAt = result.iso;
+  } else {
+    delete transaction.occurredAt;
+  }
+  return parsedJson;
+}
 
 export async function extractFinancialDocument(input: {
   mimeType: string;
@@ -71,7 +102,7 @@ export async function extractFinancialDocument(input: {
   }
 
   try {
-    return extractedFinancialDocumentSchema.parse(parsedJson);
+    return extractedFinancialDocumentSchema.parse(normalizeParsedTimestamp(parsedJson));
   } catch (error) {
     const extractionError =
       error instanceof ZodError ? classifySchemaValidationError(error) : new DocumentExtractionError("schema_validation_failed", { cause: error });

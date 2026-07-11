@@ -9,6 +9,7 @@ CRITICAL RULES:
 4. If a field is not present or cannot be read clearly, omit the field (set to undefined/null or omit from the object) and append the field name (camelCase) to the "unclearFields" array.
 5. All money amounts must be extracted as numbers (float/decimal format, e.g. 1500.50). Do not convert to satang inside the prompt response; the server code will handle the integer satang conversion.
 6. The "documentType" field must be one of: "salary_slip", "transfer_slip", "receipt", "delivery_receipt", "debt_statement", "other".
+7. For "transaction.occurredAt": report the date/time exactly as printed on the document (e.g. "11 Jul 26 07:26 +0700", "11 July 2026", "2026-07-11T07:26:00+07:00"). Do NOT perform date/timezone conversion or arithmetic yourself — the server normalizes this deterministically. If you are not confident about the exact characters printed, omit the field and add "transaction.occurredAt" to "unclearFields" rather than guessing.
 
 EXTRACTION SCHEMES BY DOCUMENT TYPE:
 
