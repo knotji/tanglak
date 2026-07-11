@@ -24,7 +24,7 @@ export default function DebtsLoading() {
       </div>
       <section aria-hidden="true" className="space-y-3">
         {[0, 1].map((index) => (
-          <div key={index} className="rounded-[16px] border border-border bg-white p-4">
+          <div key={index} className="rounded-[16px] border border-border bg-surface p-4">
             <div className="flex justify-between gap-4">
               <div className="h-5 w-36 rounded bg-muted" />
               <div className="h-5 w-20 rounded bg-muted" />

@@ -24,7 +24,7 @@ export default function TransactionsLoading() {
           <div key={group} className="space-y-2">
             <div className="h-4 w-24 rounded bg-muted" />
             {[0, 1].map((row) => (
-              <div key={row} className="rounded-[14px] border border-border bg-white p-4">
+              <div key={row} className="rounded-[14px] border border-border bg-surface p-4">
                 <div className="flex items-center justify-between gap-4">
                   <div className="min-w-0 flex-1">
                     <div className="h-4 w-3/4 rounded bg-muted" />

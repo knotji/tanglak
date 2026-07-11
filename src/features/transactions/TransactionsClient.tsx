@@ -86,7 +86,7 @@ export function TransactionsClient({
         </button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 rounded-[16px] border border-border bg-white p-2 shadow-sm">
+      <div className="flex flex-wrap items-center gap-2 rounded-[16px] border border-border bg-surface p-2">
         <button
           type="button"
           onClick={() => goToMonth(previousMonth)}

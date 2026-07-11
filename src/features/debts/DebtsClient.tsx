@@ -68,22 +68,26 @@ export function DebtsClient({ debts }: { debts: Debt[] }) {
       ) : null}
       {debts.length ? (
         <>
-          <section className="rounded-[16px] border border-border bg-surface p-5 shadow-[0_12px_30px_rgba(24,32,29,0.05)]">
-            <p className="text-sm font-semibold text-text-secondary">หนี้ทั้งหมด</p>
+          <section className="rounded-[16px] border border-border bg-surface p-5">
+            <p className="text-sm font-semibold text-text-secondary">ยอดคงเหลือรวม</p>
             <p className="tabular mt-2 text-[40px] font-bold leading-none">{formatTHB(totalOutstanding)}</p>
             <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
               <div>
-                <p className="text-text-secondary">ต้องจ่ายเดือนนี้</p>
+                <p className="text-text-secondary">ขั้นต่ำเดือนนี้</p>
                 <p className="tabular mt-1 text-xl font-bold">{formatTHB(totalMinimum)}</p>
               </div>
               <div>
-                <p className="text-text-secondary">จ่ายแล้ว</p>
+                <p className="text-text-secondary">จ่ายแล้วรอบนี้</p>
                 <p className="tabular mt-1 text-xl font-bold text-income">{formatTHB(totalPaid)}</p>
               </div>
             </div>
             <div className="mt-4">
               <ProgressBar value={totalMinimum ? (totalPaid / totalMinimum) * 100 : 0} tone="debt" />
             </div>
+            <p className="mt-3 text-xs leading-5 text-text-secondary">
+              &quot;จ่ายแล้วรอบนี้&quot; นับเฉพาะรอบบิลปัจจุบันของแต่ละหนี้ อาจไม่เท่ากับยอดหมวดหมู่ในงบประมาณ
+              หรือยอด &quot;จ่ายหนี้&quot; ในหน้าภาพรวม เพราะแต่ละหน้านับด้วยเงื่อนไขต่างกัน
+            </p>
           </section>
           <NextActionCard title={`ยังขาดขั้นต่ำ ${formatTHB(remainingMinimum)}`} body="ดูหนี้ที่ใกล้ครบกำหนดก่อน" />
         </>

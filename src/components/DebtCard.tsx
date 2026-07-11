@@ -1,6 +1,9 @@
+import { AlertTriangle, CalendarClock } from "lucide-react";
+import Link from "next/link";
 import { MoneyAmount } from "@/components/MoneyAmount";
 import {
   daysUntilDue,
+  isOverdue,
   paymentProgress,
   remainingToMinimum,
 } from "@/lib/finance/calculations";
@@ -19,17 +22,20 @@ export function DebtCard({
   const remaining = remainingToMinimum(debt);
   const progress = paymentProgress(debt) * 100;
   const dueIn = debt.dueDate ? daysUntilDue(debt.dueDate, today) : null;
+  const overdue = isOverdue(debt, today);
 
   return (
-    <article className="rounded-[16px] border border-border bg-surface p-5 shadow-[0_10px_24px_rgba(24,32,29,0.04)]">
+    <article className="rounded-[16px] border border-border bg-surface p-5">
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-bold">{debt.name}</h2>
-          <p className="mt-0.5 text-sm font-medium text-text-secondary">•••• 4821</p>
-        </div>
+        <h2 className="text-lg font-bold">{debt.name}</h2>
         {dueIn !== null ? (
-          <span className="rounded-[14px] bg-debt/10 px-3 py-1.5 text-xs font-bold text-debt">
-            อีก {dueIn} วัน
+          <span
+            className={`flex shrink-0 items-center gap-1 rounded-[14px] px-3 py-1.5 text-xs font-bold ${
+              overdue ? "bg-overdue/10 text-overdue" : "bg-debt/10 text-debt"
+            }`}
+          >
+            {overdue ? <AlertTriangle size={14} aria-hidden /> : <CalendarClock size={14} aria-hidden />}
+            {overdue ? "เลยกำหนด" : `อีก ${dueIn} วัน`}
           </span>
         ) : null}
       </div>
@@ -63,9 +69,12 @@ export function DebtCard({
         >
           เพิ่มการชำระ
         </button>
-        <button className="min-h-11 rounded-[16px] border border-border bg-surface text-sm font-bold text-primary">
+        <Link
+          href={`/debts/${debt.id}`}
+          className="flex min-h-11 items-center justify-center rounded-[16px] border border-border bg-surface text-sm font-bold text-primary"
+        >
           ดูรายละเอียด
-        </button>
+        </Link>
       </div>
       {remaining > 0 ? (
         <p className="mt-3 text-sm font-medium text-debt">
