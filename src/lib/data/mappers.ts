@@ -1,4 +1,4 @@
-import type { Debt, Transaction, FinanceDocument, DocumentExtraction, ImportBatch, ImportRow } from "@/types/domain";
+import type { Debt, Transaction, FinanceDocument, DocumentExtraction, ImportBatch, ImportRow, MonthlyBudget, BudgetCategory } from "@/types/domain";
 
 type TransactionRow = {
   id: string;
@@ -316,6 +316,52 @@ export function mapImportRow(row: ImportRowRow): ImportRow {
     parserSource: row.parser_source,
     parserConfidence: toNumber(row.parser_confidence),
     rowFingerprint: row.row_fingerprint ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+type MonthlyBudgetRow = {
+  id: string;
+  user_id: string;
+  month: string;
+  income_satang: number | string;
+  strategy: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export function mapMonthlyBudget(row: MonthlyBudgetRow): MonthlyBudget {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    month: row.month,
+    incomeSatang: Number(row.income_satang),
+    strategy: row.strategy,
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+type BudgetCategoryRow = {
+  id: string;
+  user_id: string;
+  monthly_budget_id: string;
+  label: string;
+  amount_satang: number | string;
+  created_at: string;
+  updated_at: string;
+};
+
+export function mapBudgetCategory(row: BudgetCategoryRow): BudgetCategory {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    monthlyBudgetId: row.monthly_budget_id,
+    label: row.label,
+    amountSatang: Number(row.amount_satang),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
