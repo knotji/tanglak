@@ -56,6 +56,15 @@ completion without relying on in-memory locks.
 Late results from expired or replaced claims are rejected by compare-and-set
 guards and cannot create extraction rows or overwrite newer state.
 
+**There is no background sweeper.** A stale claim is not reclaimed by a
+scheduled job or cron process — it is only reclaimed the next time a claim
+attempt is made for that same document (e.g. the user retries, or the next
+upload/processing action happens to target it). A document stuck in
+`processing` with an expired lease simply sits there, unresolved from the
+user's point of view, until something triggers another claim attempt. Use
+the operational query below to find and manually intervene on documents
+stuck this way if no natural retry occurs.
+
 ## Migration Order
 
 Deploy `supabase/migrations/202607110003_ai_processing_claims.sql` before
@@ -80,3 +89,16 @@ where status = 'processing'
   and processing_started_at < now() - interval '2 minutes'
 order by processing_started_at asc;
 ```
+
+## Verification status
+
+`202607110003_ai_processing_claims.sql` (the `alter type ... add value`
+statements, the `processing_started_at` column, and the claim index) has
+**not** been executed against a live Postgres or Supabase instance in the
+environment(s) that produced or integrated this change — no `supabase` CLI,
+`docker`, or `psql` was available. Verification consisted of a manual
+schema cross-check against `document_status`'s existing definition and the
+`documents` table, plus the mock-auth-path application test suite (unit,
+action, and e2e). A production dry-run against a disposable/staging
+Postgres instance is still required before this is considered
+production-verified at the database level.
