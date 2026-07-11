@@ -132,6 +132,20 @@ begin
 end;
 $$;
 
+-- PostgreSQL grants EXECUTE on a newly created function to PUBLIC by
+-- default (unlike tables, which grant nothing by default) -- revoke that
+-- before granting explicitly, matching this repository's existing
+-- least-privilege convention for table grants (202607100007_data_api_grants.sql
+-- grants only to `authenticated`, never to `anon`/`public`). RLS would still
+-- block a PUBLIC/anon caller's writes (auth.uid() is null for anon, and
+-- `null = user_id` never matches), so this is defense in depth rather than
+-- the only protection -- but it keeps privilege grants explicit and
+-- auditable instead of relying solely on RLS null-comparison behavior.
+revoke all on function public.import_commit_row(
+  uuid, uuid, uuid, public.transaction_type, bigint, timestamptz, text, text,
+  text, text, uuid, uuid, uuid
+) from public;
+
 grant execute on function public.import_commit_row(
   uuid, uuid, uuid, public.transaction_type, bigint, timestamptz, text, text,
   text, text, uuid, uuid, uuid
@@ -209,4 +223,5 @@ begin
 end;
 $$;
 
+revoke all on function public.import_rollback_batch(uuid, uuid) from public;
 grant execute on function public.import_rollback_batch(uuid, uuid) to authenticated;
