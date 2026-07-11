@@ -141,10 +141,18 @@ export function DebtPaymentHistoryClient({
                     <p className="tabular text-lg font-bold">{formatTHB(payment.amountSatang)}</p>
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-2">
-                    <button onClick={() => setEditing(payment)} className="min-h-11 rounded-[16px] bg-muted text-sm font-bold text-primary">
+                    <button
+                      onClick={() => setEditing(payment)}
+                      aria-label={`แก้ไขการชำระ ${new Date(payment.occurredAt).toLocaleDateString("th-TH")} ${formatTHB(payment.amountSatang)}`}
+                      className="min-h-11 rounded-[16px] bg-muted text-sm font-bold text-primary"
+                    >
                       แก้ไข
                     </button>
-                    <button onClick={() => setDeleting(payment)} className="min-h-11 rounded-[16px] bg-muted text-sm font-bold text-overdue">
+                    <button
+                      onClick={() => setDeleting(payment)}
+                      aria-label={`ลบการชำระ ${new Date(payment.occurredAt).toLocaleDateString("th-TH")} ${formatTHB(payment.amountSatang)}`}
+                      className="min-h-11 rounded-[16px] bg-muted text-sm font-bold text-overdue"
+                    >
                       ลบ
                     </button>
                   </div>

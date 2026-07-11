@@ -68,6 +68,7 @@ export default async function HistoryImportSettingsPage() {
                   month: "short",
                   day: "numeric",
                 });
+                const batchContext = `${batch.originalFilename || "ไฟล์นิรนาม"} ${dateStr}`;
                 
                 return (
                   <div
@@ -124,14 +125,16 @@ export default async function HistoryImportSettingsPage() {
                             <input type="hidden" name="batchId" value={batch.id} />
                             <button
                               type="submit"
-                              className="rounded bg-rose-50 px-2 py-1 font-semibold text-rose-600 hover:bg-rose-100"
+                              aria-label={`ลบชุดนำเข้า ${batchContext}`}
+                              className="min-h-11 rounded bg-rose-50 px-3 py-1 font-semibold text-rose-600 hover:bg-rose-100"
                             >
                               ลบชุดนี้
                             </button>
                           </form>
                           <Link
                             href={`/history-import/${batch.id}/review`}
-                            className="rounded bg-amber-500 px-3 py-1 font-bold text-white hover:bg-amber-600"
+                            aria-label={`ตรวจสอบรายการชุดนำเข้า ${batchContext}`}
+                            className="flex min-h-11 items-center rounded bg-amber-500 px-3 py-1 font-bold text-white hover:bg-amber-600"
                           >
                             ตรวจสอบรายการ
                           </Link>
@@ -142,7 +145,8 @@ export default async function HistoryImportSettingsPage() {
                         <>
                           <Link
                             href={`/history-import/${batch.id}/summary`}
-                            className="rounded bg-gray-100 px-3 py-1 font-semibold text-text-secondary hover:bg-gray-200"
+                            aria-label={`ดูสรุปชุดนำเข้า ${batchContext}`}
+                            className="flex min-h-11 items-center rounded bg-gray-100 px-3 py-1 font-semibold text-text-secondary hover:bg-gray-200"
                           >
                             ดูสรุปข้อมูล
                           </Link>
@@ -150,7 +154,8 @@ export default async function HistoryImportSettingsPage() {
                             <input type="hidden" name="batchId" value={batch.id} />
                             <button
                               type="submit"
-                              className="rounded bg-rose-500 px-3 py-1 font-bold text-white hover:bg-rose-600"
+                              aria-label={`ย้อนกลับ (Rollback) ชุดนำเข้า ${batchContext}`}
+                              className="min-h-11 rounded bg-rose-500 px-3 py-1 font-bold text-white hover:bg-rose-600"
                             >
                               ย้อนกลับ (Rollback)
                             </button>
@@ -162,7 +167,8 @@ export default async function HistoryImportSettingsPage() {
                         <>
                           <Link
                             href={`/history-import/${batch.id}/review`}
-                            className="rounded bg-amber-500 px-2 py-1 font-bold text-white hover:bg-amber-600"
+                            aria-label={`ตรวจต่อชุดนำเข้า ${batchContext}`}
+                            className="flex min-h-11 items-center rounded bg-amber-500 px-3 py-1 font-bold text-white hover:bg-amber-600"
                           >
                             ตรวจต่อ
                           </Link>
@@ -170,7 +176,8 @@ export default async function HistoryImportSettingsPage() {
                             <input type="hidden" name="batchId" value={batch.id} />
                             <button
                               type="submit"
-                              className="rounded bg-rose-500 px-3 py-1 font-bold text-white hover:bg-rose-600"
+                              aria-label={`ย้อนกลับ (Rollback) ชุดนำเข้า ${batchContext}`}
+                              className="min-h-11 rounded bg-rose-500 px-3 py-1 font-bold text-white hover:bg-rose-600"
                             >
                               ย้อนกลับ (Rollback)
                             </button>
@@ -183,7 +190,8 @@ export default async function HistoryImportSettingsPage() {
                           <input type="hidden" name="batchId" value={batch.id} />
                           <button
                             type="submit"
-                            className="rounded bg-rose-50 px-2.5 py-1 font-semibold text-rose-600 hover:bg-rose-100"
+                            aria-label={`ลบทิ้งชุดนำเข้า ${batchContext}`}
+                            className="min-h-11 rounded bg-rose-50 px-3 py-1 font-semibold text-rose-600 hover:bg-rose-100"
                           >
                             ลบทิ้ง
                           </button>

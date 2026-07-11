@@ -92,15 +92,16 @@ export function HistoryImportClient({ accounts: initialAccounts }: HistoryImport
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
       {errorMsg && (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-700">
+        <div id="history-import-error" role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-700">
           ⚠️ {errorMsg}
         </div>
       )}
 
       {/* Source Selection */}
       <div className="flex flex-col gap-2">
-        <label className="text-xs font-bold text-text-secondary">ประเภทชุดข้อมูลประวัติการเงิน</label>
+        <label htmlFor="history-import-source-type" className="text-xs font-bold text-text-secondary">ประเภทชุดข้อมูลประวัติการเงิน</label>
         <select
+          id="history-import-source-type"
           value={sourceType}
           onChange={(e) => setSourceType(e.target.value)}
           className="h-11 rounded-xl border border-border bg-white px-3 text-sm font-medium text-foreground outline-none"
@@ -114,8 +115,9 @@ export function HistoryImportClient({ accounts: initialAccounts }: HistoryImport
 
       {/* Account Linking Selector */}
       <div className="flex flex-col gap-2">
-        <label className="text-xs font-bold text-text-secondary">บัญชีผู้รับเงิน / บัญชีต้นทาง</label>
+        <label htmlFor="history-import-account" className="text-xs font-bold text-text-secondary">บัญชีผู้รับเงิน / บัญชีต้นทาง</label>
         <select
+          id="history-import-account"
           value={accountId}
           onChange={(e) => setAccountId(e.target.value)}
           className="h-11 rounded-xl border border-border bg-white px-3 text-sm font-medium text-foreground outline-none"
@@ -135,14 +137,18 @@ export function HistoryImportClient({ accounts: initialAccounts }: HistoryImport
         <div className="flex flex-col gap-3 rounded-xl border border-border bg-surface p-4">
           <h4 className="text-xs font-bold text-primary">เพิ่มบัญชีธนาคาร/บัตรเครดิตใหม่</h4>
           <div className="flex flex-col gap-2">
+            <label htmlFor="history-import-new-account-name" className="sr-only">ชื่อเรียกบัญชี</label>
             <input
+              id="history-import-new-account-name"
               type="text"
               placeholder="ชื่อเรียกบัญชี เช่น กสิกร ออมทรัพย์, บัตร KTC"
               value={newAccountName}
               onChange={(e) => setNewAccountName(e.target.value)}
               className="h-10 rounded-lg border border-border bg-white px-3 text-xs outline-none"
             />
+            <label htmlFor="history-import-new-account-last-four" className="sr-only">เลขท้ายบัญชี 4 หลัก</label>
             <input
+              id="history-import-new-account-last-four"
               type="text"
               placeholder="เลขท้ายบัญชี 4 หลัก (ระบุหรือไม่ระบุก็ได้)"
               value={newAccountLastFour}
@@ -156,13 +162,15 @@ export function HistoryImportClient({ accounts: initialAccounts }: HistoryImport
 
       {/* File Dropzone */}
       <div className="flex flex-col gap-2">
-        <label className="text-xs font-bold text-text-secondary">อัปโหลดไฟล์ Statement (PDF / CSV)</label>
+        <label htmlFor="history-import-file" className="text-xs font-bold text-text-secondary">อัปโหลดไฟล์ Statement (PDF / CSV)</label>
         <div className="relative flex min-h-[140px] flex-col items-center justify-center rounded-2xl border-2 border-dashed border-border bg-white p-4 text-center hover:bg-slate-50">
           <input
+            id="history-import-file"
             type="file"
             accept=".pdf,.csv"
             onChange={handleFileChange}
             disabled={isUploading}
+            aria-describedby={errorMsg ? "history-import-file-help history-import-error" : "history-import-file-help"}
             className="absolute inset-0 cursor-pointer opacity-0"
           />
           <div className="flex flex-col items-center gap-2">
@@ -177,7 +185,7 @@ export function HistoryImportClient({ accounts: initialAccounts }: HistoryImport
             ) : (
               <div className="flex flex-col text-xs text-text-secondary">
                 <span className="font-semibold text-primary">กดเพื่อเลือกไฟล์ หรือ ลากไฟล์วางที่นี่</span>
-                <span>รองรับขนาดไม่เกิน 10MB</span>
+                <span id="history-import-file-help">รองรับขนาดไม่เกิน 10MB</span>
               </div>
             )}
           </div>

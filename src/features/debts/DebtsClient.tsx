@@ -107,6 +107,7 @@ export function DebtsClient({ debts }: { debts: Debt[] }) {
                     setSelectedDebt(debt);
                     setOpen("edit");
                   }}
+                  aria-label={`แก้ไขหนี้ ${debt.name}`}
                   className="min-h-11 rounded-[16px] bg-muted text-sm font-bold text-primary"
                 >
                   แก้ไข
@@ -114,6 +115,7 @@ export function DebtsClient({ debts }: { debts: Debt[] }) {
                 {debt.status === "paid_off" || debt.status === "paused" ? (
                   <button
                     onClick={() => reopen(debt)}
+                    aria-label={`เปิดใหม่หนี้ ${debt.name}`}
                     className="min-h-11 rounded-[16px] bg-muted text-sm font-bold text-primary"
                   >
                     เปิดใหม่
@@ -121,12 +123,17 @@ export function DebtsClient({ debts }: { debts: Debt[] }) {
                 ) : (
                   <button
                     onClick={() => markPaid(debt)}
+                    aria-label={`ปิดหนี้ ${debt.name}`}
                     className="min-h-11 rounded-[16px] bg-muted text-sm font-bold text-primary"
                   >
                     ปิดหนี้
                   </button>
                 )}
-                <Link href={`/debts/${debt.id}`} className="flex min-h-11 items-center justify-center rounded-[16px] bg-muted text-sm font-bold text-text-secondary">
+                <Link
+                  href={`/debts/${debt.id}`}
+                  aria-label={`ดูประวัติหนี้ ${debt.name}`}
+                  className="flex min-h-11 items-center justify-center rounded-[16px] bg-muted text-sm font-bold text-text-secondary"
+                >
                   ประวัติ
                 </Link>
               </div>

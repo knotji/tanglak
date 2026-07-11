@@ -44,14 +44,24 @@ export function UploadClient() {
   const [progressStep, setProgressStep] = useState(uploadSteps[0].id);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleCardClick = () => {
-    setDocType("other");
+  const openFileDialog = (nextDocType?: string) => {
+    if (nextDocType) setDocType(nextDocType);
     fileInputRef.current?.click();
   };
 
+  const handleCardClick = () => {
+    openFileDialog("other");
+  };
+
+  const handleCardKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
+    if ((e.key === "Enter" || e.key === " ") && !e.repeat) {
+      e.preventDefault();
+      openFileDialog("other");
+    }
+  };
+
   const handleTypeClick = (value: string) => {
-    setDocType(value);
-    fileInputRef.current?.click();
+    openFileDialog(value);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -112,6 +122,7 @@ export function UploadClient() {
     <div className="flex flex-col gap-4">
       {/* Hidden Native File Input */}
       <input
+        id="document-upload-file"
         ref={fileInputRef}
         className="hidden"
         type="file"
@@ -122,14 +133,20 @@ export function UploadClient() {
       {/* Main Upload Box Card */}
       {!selectedFile ? (
         <section
+          role="button"
+          tabIndex={0}
+          aria-controls="document-upload-file"
+          aria-describedby="document-upload-help"
+          aria-label="ถ่ายรูป หรือเลือกไฟล์หลักฐาน"
           onClick={handleCardClick}
+          onKeyDown={handleCardKeyDown}
           className="cursor-pointer rounded-[16px] border border-dashed border-primary/30 bg-surface p-8 text-center shadow-[0_12px_30px_rgba(24,32,29,0.05)] transition hover:border-primary/50 hover:bg-primary-soft/10"
         >
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-[16px] bg-primary-soft text-primary">
             <Camera size={26} aria-hidden />
           </div>
           <p className="mt-4 text-xl font-bold">ถ่ายรูป หรือเลือกไฟล์</p>
-          <p className="mt-1 text-sm leading-6 text-text-secondary">
+          <p id="document-upload-help" className="mt-1 text-sm leading-6 text-text-secondary">
             รองรับ JPG, PNG, WEBP, PDF (สูงสุด 15MB)
           </p>
         </section>
@@ -161,7 +178,7 @@ export function UploadClient() {
 
           {/* Error Message banner */}
           {errorMessage && (
-            <div className="mt-4 rounded-[12px] border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-600 flex items-center gap-2">
+            <div role="alert" className="mt-4 rounded-[12px] border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-600 flex items-center gap-2">
               <AlertTriangle size={14} className="shrink-0" />
               <span>{errorMessage}</span>
             </div>

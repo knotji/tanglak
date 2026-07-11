@@ -29,6 +29,7 @@ export function TransactionRow({
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(transaction.occurredAt));
+  const actionContext = transaction.merchant ?? transaction.note ?? "รายการ";
 
   return (
     <div className="flex items-center gap-3 py-3">
@@ -49,14 +50,19 @@ export function TransactionRow({
       {(onEdit || onDelete) && (
         <div className="flex gap-1">
           {onEdit ? (
-            <button className="min-h-9 rounded-[12px] bg-muted px-2 text-xs font-bold text-primary" onClick={() => onEdit(transaction)}>
+            <button
+              className="min-h-11 rounded-[12px] bg-muted px-3 text-xs font-bold text-primary"
+              aria-label={`แก้ไขรายการ ${actionContext}`}
+              onClick={() => onEdit(transaction)}
+            >
               แก้
             </button>
           ) : null}
           {onDelete ? (
             <button
               disabled={busy}
-              className="min-h-9 rounded-[12px] bg-muted px-2 text-xs font-bold text-overdue disabled:opacity-60"
+              className="min-h-11 rounded-[12px] bg-muted px-3 text-xs font-bold text-overdue disabled:opacity-60"
+              aria-label={`ลบรายการ ${actionContext}`}
               onClick={() => onDelete(transaction)}
             >
               {busy ? "..." : "ลบ"}
