@@ -8,7 +8,7 @@ import { TransactionsClient } from "@/features/transactions/TransactionsClient";
 import type { Transaction } from "@/types/domain";
 
 // A mock router to avoid Next.js routing issues in component testing
-// @ts-ignore
+// @ts-expect-error -- test intentionally overrides browser timer behavior
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 vi.mock("next/navigation", () => ({
