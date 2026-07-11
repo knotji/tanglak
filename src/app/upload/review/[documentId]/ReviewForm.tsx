@@ -15,6 +15,7 @@ import type { FinanceDocument, DocumentExtraction, Debt, Transaction } from "@/t
 import type { ExtractedFinancialDocument } from "@/lib/ai/schemas";
 import { DOCUMENT_EXTRACTION_FALLBACK_MESSAGE } from "@/lib/ai/extraction-errors";
 import { formatTHB } from "@/lib/finance/money";
+import { parseOptionalMoney, parseRequiredMoney } from "@/lib/finance/money-guards";
 import {
   getBangkokTodayString,
   getBangkokNowDateTimeLocalString,
@@ -36,6 +37,65 @@ interface ReviewFormProps {
   debts: Debt[];
   duplicateTransactions: (Transaction & { score: number; reasons: string[] })[];
   previewUrl: string;
+}
+
+/**
+ * Client-side pre-check for the monetary fields on the currently visible
+ * docType section, mirroring the field classification enforced server-side
+ * in confirmDocumentAction (see docs/FINANCIAL_VALUE_GUARDS.md). This never
+ * rewrites the user's input — it only returns the first Thai error message
+ * to show, or null if the visible fields are all valid.
+ */
+function validateReviewMoneyFields(
+  docType: string,
+  fd: FormData,
+  items: Array<{ amount?: number }>,
+): string | null {
+  const requireField = (name: string, severity: "nonnegative" | "positive") => {
+    const result = parseRequiredMoney(fd.get(name), severity);
+    return result.ok ? null : result.error!;
+  };
+  const optionalField = (name: string, severity: "nonnegative" | "positive") => {
+    const result = parseOptionalMoney(fd.get(name), severity);
+    return result.ok ? null : result.error!;
+  };
+
+  if (docType === "salary_slip") {
+    return (
+      requireField("netIncome", "nonnegative") ||
+      optionalField("grossIncome", "nonnegative") ||
+      optionalField("tax", "nonnegative") ||
+      optionalField("socialSecurity", "nonnegative") ||
+      null
+    );
+  }
+
+  if (docType === "receipt" || docType === "delivery_receipt") {
+    const invalidItem = items.some((item) => typeof item.amount === "number" && !Number.isFinite(item.amount))
+      ? "รูปแบบจำนวนเงินไม่ถูกต้อง"
+      : items.some((item) => typeof item.amount === "number" && item.amount < 0)
+        ? "จำนวนเงินต้องไม่ติดลบ"
+        : null;
+    return invalidItem || requireField("totalPaid", "nonnegative");
+  }
+
+  if (docType === "transfer_slip") {
+    const txType = String(fd.get("type") || "");
+    return requireField("amount", txType === "debt_payment" ? "positive" : "nonnegative");
+  }
+
+  if (docType === "debt_statement") {
+    return (
+      optionalField("amountDue", "nonnegative") ||
+      optionalField("outstandingBalance", "nonnegative") ||
+      optionalField("statementBalance", "nonnegative") ||
+      optionalField("minimumPayment", "nonnegative") ||
+      null
+    );
+  }
+
+  const txType = String(fd.get("type") || "");
+  return requireField("totalPaid", txType === "debt_payment" ? "positive" : "nonnegative");
 }
 
 type TimestampDisplayState = "extracted" | "inferred" | "missing" | "invalid";
@@ -118,6 +178,7 @@ export function ReviewForm({
     normalizedPreview?.documentType || doc.documentType || "other"
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [moneyError, setMoneyError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
   const [manualMode, setManualMode] = useState(false);
@@ -262,7 +323,6 @@ export function ReviewForm({
   // Action: Confirm Form Submission
   const handleConfirmSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setIsSubmitting(true);
 
     const fd = new FormData(e.currentTarget);
     fd.append("documentType", docType);
@@ -271,6 +331,17 @@ export function ReviewForm({
     if (docType === "receipt" || docType === "delivery_receipt") {
       fd.append("items", JSON.stringify(items));
     }
+
+    // Independently re-check monetary fields client-side before submitting
+    // (the server still re-validates independently in confirmDocumentAction
+    // — this is only for immediate, correctable feedback).
+    const clientMoneyError = validateReviewMoneyFields(docType, fd, items);
+    if (clientMoneyError) {
+      setMoneyError(clientMoneyError);
+      return;
+    }
+    setMoneyError(null);
+    setIsSubmitting(true);
 
     const res = await confirmDocumentAction(doc.id, fd);
     if (res.ok) {
@@ -1333,6 +1404,12 @@ export function ReviewForm({
                     </div>
                   </div>
                 )}
+
+                {moneyError ? (
+                  <p role="alert" className="rounded-[12px] border border-red-150 bg-red-50/70 p-3 text-sm font-semibold text-red-700">
+                    {moneyError}
+                  </p>
+                ) : null}
 
                 {/* Submit Buttons */}
                 <div className="flex gap-3 border-t border-border pt-4 mt-2">

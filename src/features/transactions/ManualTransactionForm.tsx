@@ -2,11 +2,12 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus } from "lucide-react";
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { saveTransactionAction } from "@/app/actions/finance";
 import { AccountSelector } from "@/features/accounts/AccountSelector";
+import { parseRequiredMoney } from "@/lib/finance/money-guards";
 import type { Account, Transaction } from "@/types/domain";
 
 const schema = z.object({
@@ -30,6 +31,7 @@ export function ManualTransactionForm({
   onSaved?: () => void;
 }) {
   const [state, action, pending] = useActionState(saveTransactionAction, { ok: false });
+  const [clientError, setClientError] = useState<string | null>(null);
   const { register, reset, formState } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -58,6 +60,17 @@ export function ManualTransactionForm({
   return (
     <form
       action={action}
+      onSubmit={(event) => {
+        const formData = new FormData(event.currentTarget);
+        const type = String(formData.get("type") || "expense");
+        const amountResult = parseRequiredMoney(formData.get("amount"), type === "debt_payment" ? "positive" : "nonnegative");
+        if (!amountResult.ok) {
+          event.preventDefault();
+          setClientError(amountResult.error);
+          return;
+        }
+        setClientError(null);
+      }}
       onInput={(event) => {
         const formData = new FormData(event.currentTarget);
         window.localStorage.setItem("tanglak.transactionDraft", JSON.stringify(Object.fromEntries(formData)));
@@ -99,7 +112,11 @@ export function ManualTransactionForm({
       {formState.errors.amount || formState.errors.label ? (
         <p className="mt-3 text-sm text-overdue">กรอกข้อมูลขั้นต่ำให้ครบก่อนบันทึก</p>
       ) : null}
-      {state.message && !state.ok ? <p className="mt-3 text-sm text-overdue">{state.message}</p> : null}
+      {clientError ? (
+        <p role="alert" className="mt-3 text-sm text-overdue">{clientError}</p>
+      ) : state.message && !state.ok ? (
+        <p className="mt-3 text-sm text-overdue">{state.message}</p>
+      ) : null}
       <button
         disabled={pending}
         className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-[16px] bg-primary px-4 font-bold text-white disabled:opacity-60"

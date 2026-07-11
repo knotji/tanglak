@@ -12,6 +12,7 @@ import { MobileBottomSheet } from "@/components/MobileBottomSheet";
 import { PageHeader } from "@/components/PageHeader";
 import { ProgressBar } from "@/components/ProgressBar";
 import { formatTHB } from "@/lib/finance/money";
+import { parseRequiredMoney } from "@/lib/finance/money-guards";
 import type { Debt, Transaction } from "@/types/domain";
 
 function monthLabel(key: string) {
@@ -29,13 +30,27 @@ function PaymentEditForm({
   onSaved: () => void;
 }) {
   const [state, action, pending] = useActionState(updateDebtPaymentAction, { ok: false });
+  const [clientError, setClientError] = useState<string | null>(null);
 
   useEffect(() => {
     if (state.ok) onSaved();
   }, [onSaved, state.ok]);
 
   return (
-    <form action={action} className="rounded-[16px] border border-border bg-surface p-4">
+    <form
+      action={action}
+      onSubmit={(event) => {
+        const formData = new FormData(event.currentTarget);
+        const amountResult = parseRequiredMoney(formData.get("amount"), "positive");
+        if (!amountResult.ok) {
+          event.preventDefault();
+          setClientError(amountResult.error);
+          return;
+        }
+        setClientError(null);
+      }}
+      className="rounded-[16px] border border-border bg-surface p-4"
+    >
       <input type="hidden" name="id" value={payment.id} />
       <input type="hidden" name="debtId" value={debt.id} />
       <div className="grid gap-3">
@@ -67,7 +82,7 @@ function PaymentEditForm({
         </label>
       </div>
       <div className="mt-3">
-        <InlineError message={state.ok ? undefined : state.message} />
+        <InlineError message={clientError ?? (state.ok ? undefined : state.message)} />
       </div>
       <LoadingButton pending={pending} className="mt-4 w-full">
         บันทึกการชำระ

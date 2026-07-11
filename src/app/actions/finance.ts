@@ -14,7 +14,7 @@ import {
   updateDebt,
   updateTransaction,
 } from "@/lib/data/finance-repository";
-import { bahtToSatang } from "@/lib/finance/money";
+import { parseOptionalMoney, parseRequiredMoney } from "@/lib/finance/money-guards";
 
 export type FinanceActionState = {
   ok: boolean;
@@ -72,9 +72,12 @@ export async function saveTransactionAction(
   const parsed = transactionSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, message: "กรอกข้อมูลรายการให้ครบ" };
 
+  const amountResult = parseRequiredMoney(parsed.data.amount, parsed.data.type === "debt_payment" ? "positive" : "nonnegative");
+  if (!amountResult.ok) return { ok: false, message: amountResult.error };
+
   const input = {
     type: parsed.data.type,
-    amountSatang: bahtToSatang(parsed.data.amount),
+    amountSatang: amountResult.satang!,
     occurredAt: `${parsed.data.date}T12:00:00+07:00`,
     merchant: parsed.data.label,
     category: parsed.data.category,
@@ -110,13 +113,20 @@ export async function saveDebtAction(
   const parsed = debtSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, message: "กรอกข้อมูลหนี้ให้ครบ" };
 
-  const amountDueSatang = bahtToSatang(parsed.data.amount);
+  const amountDueResult = parseRequiredMoney(parsed.data.amount, "nonnegative");
+  if (!amountDueResult.ok) return { ok: false, message: amountDueResult.error };
+  const outstandingResult = parseOptionalMoney(parsed.data.outstanding, "nonnegative");
+  if (!outstandingResult.ok) return { ok: false, message: outstandingResult.error };
+  const minimumResult = parseOptionalMoney(parsed.data.minimum, "nonnegative");
+  if (!minimumResult.ok) return { ok: false, message: minimumResult.error };
+
+  const amountDueSatang = amountDueResult.satang!;
   const input = {
     name: parsed.data.name,
     creditor: parsed.data.creditor,
-    outstandingBalanceSatang: parsed.data.outstanding ? bahtToSatang(parsed.data.outstanding) : amountDueSatang,
+    outstandingBalanceSatang: outstandingResult.satang ?? amountDueSatang,
     amountDueSatang,
-    minimumPaymentSatang: parsed.data.minimum ? bahtToSatang(parsed.data.minimum) : amountDueSatang,
+    minimumPaymentSatang: minimumResult.satang ?? amountDueSatang,
     dueDate: parsed.data.dueDate,
     recurringDueDay: parsed.data.recurringDueDay ? Number(parsed.data.recurringDueDay) : undefined,
     paymentMode: parsed.data.paymentMode,
@@ -141,8 +151,11 @@ export async function addDebtPaymentAction(
   const parsed = paymentSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, message: "ใส่ยอดชำระหนี้" };
 
+  const amountResult = parseRequiredMoney(parsed.data.amount, "positive");
+  if (!amountResult.ok) return { ok: false, message: amountResult.error };
+
   try {
-    await addDebtPayment(user.id, parsed.data.debtId, bahtToSatang(parsed.data.amount));
+    await addDebtPayment(user.id, parsed.data.debtId, amountResult.satang!);
     revalidateFinance();
     return { ok: true, message: "บันทึกการชำระแล้ว" };
   } catch (error) {
@@ -158,11 +171,14 @@ export async function updateDebtPaymentAction(
   const parsed = debtPaymentUpdateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, message: "กรอกข้อมูลการชำระให้ครบ" };
 
+  const amountResult = parseRequiredMoney(parsed.data.amount, "positive");
+  if (!amountResult.ok) return { ok: false, message: amountResult.error };
+
   try {
     await updateTransaction(user.id, parsed.data.id, {
       type: "debt_payment",
       debtId: parsed.data.debtId,
-      amountSatang: bahtToSatang(parsed.data.amount),
+      amountSatang: amountResult.satang!,
       occurredAt: `${parsed.data.date}T12:00:00+07:00`,
       note: parsed.data.note,
     });

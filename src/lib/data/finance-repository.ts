@@ -3,6 +3,7 @@ import { getMockState } from "@/lib/data/mock-store";
 import { mapDebt, mapTransaction, mapDocument, mapDocumentExtraction, mapImportBatch, mapImportRow } from "@/lib/data/mappers";
 import { timeAsync } from "@/lib/observability/timing";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { assertMoneySatang } from "@/lib/finance/money-guards";
 import type { Debt, Transaction, FinanceDocument, DocumentExtraction, ImportBatch, ImportRow, Account } from "@/types/domain";
 
 export type TransactionInput = {
@@ -40,6 +41,32 @@ export type DebtInput = {
 
 function assertOwner(userId: string, ownerId: string) {
   if (userId !== ownerId) throw new Error("Cannot access another user's data");
+}
+
+/**
+ * A transaction's `debtId` is a client/caller-supplied foreign key — never
+ * trust it without confirming the referenced debt actually belongs to the
+ * same user. Without this, one user could point their own transaction's
+ * debt_id at another user's debt row (the debts table itself stays
+ * protected by its own RLS/user_id scoping, but the transaction would carry
+ * a cross-user reference and skew that debt's recalculated totals).
+ */
+async function assertDebtBelongsToUser(userId: string, debtId: string): Promise<void> {
+  if (isMockAuthEnabled()) {
+    const debt = getMockState().debts.find((item) => item.id === debtId);
+    if (!debt || debt.userId !== userId) throw new Error("Debt not found");
+    return;
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("debts")
+    .select("id")
+    .eq("id", debtId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Debt not found");
 }
 
 const TRANSACTION_COLUMNS =
@@ -95,6 +122,9 @@ export async function listAllTransactions(userId: string): Promise<Transaction[]
 }
 
 export async function createTransaction(userId: string, input: TransactionInput): Promise<Transaction> {
+  assertMoneySatang(input.amountSatang, input.type === "debt_payment" ? "positive" : "nonnegative", "amountSatang");
+  if (input.debtId) await assertDebtBelongsToUser(userId, input.debtId);
+
   if (isMockAuthEnabled()) {
     const transaction: Transaction = {
       id: crypto.randomUUID(),
@@ -164,11 +194,18 @@ export async function updateTransaction(
   id: string,
   input: Partial<TransactionInput>,
 ): Promise<Transaction> {
+  if (input.debtId) await assertDebtBelongsToUser(userId, input.debtId);
+
   if (isMockAuthEnabled()) {
     const state = getMockState();
     const index = state.transactions.findIndex((transaction) => transaction.id === id);
     if (index < 0) throw new Error("Transaction not found");
     assertOwner(userId, state.transactions[index].userId);
+    // Validate the final merged state (type + amount together), not just
+    // whichever of the two happens to be present in this patch.
+    const finalType = input.type ?? state.transactions[index].type;
+    const finalAmount = input.amountSatang ?? state.transactions[index].amountSatang;
+    assertMoneySatang(finalAmount, finalType === "debt_payment" ? "positive" : "nonnegative", "amountSatang");
     const previousDebtId = state.transactions[index].debtId;
     state.transactions[index] = { ...state.transactions[index], ...input };
     if (previousDebtId) recalculateMockDebtPaid(userId, previousDebtId);
@@ -179,10 +216,15 @@ export async function updateTransaction(
   const supabase = await createSupabaseServerClient();
   const { data: previous } = await supabase
     .from("transactions")
-    .select("debt_id")
+    .select("debt_id, type, amount_satang")
     .eq("id", id)
     .eq("user_id", userId)
     .maybeSingle();
+  // Validate the final merged state (type + amount together), not just
+  // whichever of the two happens to be present in this patch.
+  const finalType = input.type ?? previous?.type;
+  const finalAmount = input.amountSatang ?? previous?.amount_satang;
+  assertMoneySatang(finalAmount, finalType === "debt_payment" ? "positive" : "nonnegative", "amountSatang");
   const payload: Record<string, unknown> = {};
   if (input.type !== undefined) payload.type = input.type;
   if (input.amountSatang !== undefined) payload.amount_satang = input.amountSatang;
@@ -279,6 +321,10 @@ export async function listDebts(userId: string, includeClosed = false): Promise<
 }
 
 export async function createDebt(userId: string, input: DebtInput): Promise<Debt> {
+  assertMoneySatang(input.outstandingBalanceSatang, "nonnegative", "outstandingBalanceSatang");
+  assertMoneySatang(input.amountDueSatang, "nonnegative", "amountDueSatang");
+  assertMoneySatang(input.minimumPaymentSatang, "nonnegative", "minimumPaymentSatang");
+
   if (isMockAuthEnabled()) {
     const debt: Debt = {
       id: crypto.randomUUID(),
@@ -325,6 +371,14 @@ export async function createDebt(userId: string, input: DebtInput): Promise<Debt
 }
 
 export async function updateDebt(userId: string, id: string, input: Partial<DebtInput>): Promise<Debt> {
+  // Only fields actually present in this patch are checked here — each of
+  // these columns is independently non-negative by design (no cross-field
+  // business rule depends on the others), so per-field validation of the
+  // patch is equivalent to validating the merged row for these fields.
+  assertMoneySatang(input.outstandingBalanceSatang, "nonnegative", "outstandingBalanceSatang");
+  assertMoneySatang(input.amountDueSatang, "nonnegative", "amountDueSatang");
+  assertMoneySatang(input.minimumPaymentSatang, "nonnegative", "minimumPaymentSatang");
+
   if (isMockAuthEnabled()) {
     const state = getMockState();
     const index = state.debts.findIndex((debt) => debt.id === id);
@@ -401,6 +455,10 @@ async function setDebtStatus(userId: string, id: string, status: Debt["status"])
 }
 
 export async function addDebtPayment(userId: string, debtId: string, amountSatang: number) {
+  // A debt payment must be a real, positive payment (Category A) — zero and
+  // negative amounts are rejected here before anything is persisted.
+  assertMoneySatang(amountSatang, "positive", "amountSatang");
+
   const now = new Date().toISOString();
   const debt = await getDebtForUser(userId, debtId);
   const transaction = await createTransaction(userId, {
