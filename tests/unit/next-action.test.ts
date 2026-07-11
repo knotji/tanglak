@@ -1,0 +1,147 @@
+import { describe, expect, it } from "vitest";
+import { determineNextAction } from "@/lib/finance/next-action";
+import type { Debt } from "@/types/domain";
+
+function debt(overrides: Partial<Debt> = {}): Debt {
+  return {
+    id: "debt-1",
+    userId: "user-a",
+    name: "บัตรเครดิต A",
+    debtType: "credit_card",
+    paymentMode: "variable_monthly",
+    outstandingBalanceSatang: 10_000_00,
+    minimumPaymentSatang: 1_000_00,
+    amountPaidThisCycleSatang: 0,
+    status: "active",
+    ...overrides,
+  };
+}
+
+const TODAY = new Date(Date.UTC(2026, 6, 15)); // 2026-07-15, fixed reference point
+
+describe("determineNextAction — single highest-priority action", () => {
+  it("prioritizes an overdue debt above a missing budget and overspent category", () => {
+    const overdue = debt({ dueDate: "2026-07-01" }); // 14 days before TODAY
+    const action = determineNextAction(
+      {
+        debts: [overdue],
+        hasBudget: false,
+        overspentCategoryLabel: "อาหาร",
+        hasAnyTransaction: true,
+      },
+      TODAY,
+    );
+    expect(action.tone).toBe("overdue");
+    expect(action.title).toContain("เลยกำหนด");
+  });
+
+  it("prioritizes a debt due within 3 days over a missing budget", () => {
+    const dueSoon = debt({ dueDate: "2026-07-17" }); // 2 days after TODAY
+    const action = determineNextAction(
+      {
+        debts: [dueSoon],
+        hasBudget: false,
+        hasAnyTransaction: true,
+      },
+      TODAY,
+    );
+    expect(action.tone).toBe("debt");
+    expect(action.title).toContain("ครบกำหนดใน 2 วัน");
+  });
+
+  it("does not treat a debt due more than 3 days out as urgent", () => {
+    const dueLater = debt({ dueDate: "2026-07-25" }); // 10 days after TODAY
+    const action = determineNextAction(
+      {
+        debts: [dueLater],
+        hasBudget: false,
+        hasAnyTransaction: true,
+      },
+      TODAY,
+    );
+    expect(action.title).toBe("ยังไม่ได้ตั้งงบเดือนนี้");
+  });
+
+  it("surfaces 'no monthly budget' when there is no debt urgency", () => {
+    const action = determineNextAction(
+      {
+        debts: [],
+        hasBudget: false,
+        hasAnyTransaction: true,
+      },
+      TODAY,
+    );
+    expect(action.title).toBe("ยังไม่ได้ตั้งงบเดือนนี้");
+    expect(action.actionHref).toBe("/budget");
+  });
+
+  it("surfaces an overspent category once a budget exists", () => {
+    const action = determineNextAction(
+      {
+        debts: [],
+        hasBudget: true,
+        overspentCategoryLabel: "อาหาร",
+        nearLimitCategoryLabel: "เดินทาง",
+        hasAnyTransaction: true,
+      },
+      TODAY,
+    );
+    expect(action.title).toContain("อาหาร");
+    expect(action.title).toContain("เกินงบ");
+    expect(action.tone).toBe("overdue");
+  });
+
+  it("surfaces a near-limit category only when nothing is overspent", () => {
+    const action = determineNextAction(
+      {
+        debts: [],
+        hasBudget: true,
+        nearLimitCategoryLabel: "เดินทาง",
+        hasAnyTransaction: true,
+      },
+      TODAY,
+    );
+    expect(action.title).toContain("เดินทาง");
+    expect(action.title).toContain("ใกล้เต็มงบ");
+  });
+
+  it("prompts for the first transaction when nothing has been recorded yet", () => {
+    const action = determineNextAction(
+      {
+        debts: [],
+        hasBudget: true,
+        hasAnyTransaction: false,
+      },
+      TODAY,
+    );
+    expect(action.title).toBe("เริ่มจากบันทึกรายการแรก");
+  });
+
+  it("falls back to an 'on track' message when everything is healthy", () => {
+    const action = determineNextAction(
+      {
+        debts: [],
+        hasBudget: true,
+        hasAnyTransaction: true,
+      },
+      TODAY,
+    );
+    expect(action.title).toBe("เดือนนี้ยังอยู่ในแผน");
+    expect(action.action).toBeUndefined();
+  });
+
+  it("never surfaces a lower-priority signal once a higher one is chosen", () => {
+    const action = determineNextAction(
+      {
+        debts: [debt({ dueDate: "2026-07-01" })],
+        hasBudget: false,
+        overspentCategoryLabel: "อาหาร",
+        nearLimitCategoryLabel: "เดินทาง",
+        hasAnyTransaction: false,
+      },
+      TODAY,
+    );
+    expect(action.title).not.toContain("งบ");
+    expect(action.title).not.toContain("อาหาร");
+  });
+});

@@ -33,12 +33,14 @@ test.describe("loading and navigation UX", () => {
     await expect(page.getByRole("navigation")).toBeVisible();
     await expect(page.getByRole("link", { name: "วันนี้" })).toBeVisible();
     await expect(page.getByRole("link", { name: "รายการ" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "งบ", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "หนี้", exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "ภาพรวม" })).toBeVisible();
 
     for (const width of [360, 390, 430]) {
       await page.setViewportSize({ width, height: 844 });
 
-      for (const route of ["/today", "/transactions", "/debts", "/overview", "/upload", "/history-import"]) {
+      for (const route of ["/today", "/transactions", "/debts", "/overview", "/budget", "/upload", "/history-import"]) {
         await page.goto(route);
         await expect(page.locator("main")).toBeVisible();
         const hasOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
