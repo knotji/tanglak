@@ -25,7 +25,12 @@ import {
   saveBudgetCategoryAction,
   saveMonthlyIncomeAction,
 } from "@/app/actions/budget";
-import { createBudgetCategory, listBudgetCategories, upsertMonthlyBudget } from "@/lib/data/finance-repository";
+import {
+  createBudgetCategory,
+  getMonthlyBudget,
+  listBudgetCategories,
+  upsertMonthlyBudget,
+} from "@/lib/data/finance-repository";
 
 function fd(fields: Record<string, string>): FormData {
   const formData = new FormData();
@@ -131,6 +136,17 @@ describe("budget server actions", () => {
     const second = await copyPreviousMonthAction({ ok: false }, fd({ fromMonth: "2026-06", toMonth: "2026-07" }));
     expect(second.ok).toBe(true);
     expect(second.message).toContain("ครบแล้ว");
+  });
+
+  it("copyPreviousMonthAction never carries the source month's income into a brand-new target month", async () => {
+    const juneBudget = await upsertMonthlyBudget("user-a", "2026-06", 20_000_00);
+    await createBudgetCategory("user-a", juneBudget.id, "อาหาร", 4_000_00);
+
+    const result = await copyPreviousMonthAction({ ok: false }, fd({ fromMonth: "2026-06", toMonth: "2026-07" }));
+    expect(result.ok).toBe(true);
+
+    const julyBudget = await getMonthlyBudget("user-a", "2026-07");
+    expect(julyBudget?.incomeSatang).toBe(0);
   });
 
   it("safe error messages never leak internal identifiers or stack details", async () => {

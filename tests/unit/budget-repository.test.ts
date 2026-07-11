@@ -165,7 +165,7 @@ describe("copy previous month budget", () => {
     state.users.clear();
   });
 
-  it("copies income and all categories into a fresh target month", async () => {
+  it("copies all categories into a fresh target month but leaves income at 0 (income is never copied)", async () => {
     const julyBudget = await upsertMonthlyBudget("user-a", "2026-07", 30_000_00);
     await createBudgetCategory("user-a", julyBudget.id, "อาหาร", 5_000_00);
     await createBudgetCategory("user-a", julyBudget.id, "เดินทาง", 2_000_00);
@@ -173,10 +173,28 @@ describe("copy previous month budget", () => {
     const result = await copyPreviousMonthBudget("user-a", "2026-07", "2026-08");
     expect(result.copiedCount).toBe(2);
     expect(result.skippedCount).toBe(0);
-    expect(result.budget.incomeSatang).toBe(30_000_00);
+    // Income is month-specific and must never be copied from the source
+    // month, even when the target month is brand new.
+    expect(result.budget.incomeSatang).toBe(0);
 
     const augustCategories = await listBudgetCategories("user-a", result.budget.id);
     expect(augustCategories.map((c) => c.label).sort()).toEqual(["อาหาร", "เดินทาง"].sort());
+    expect(augustCategories.find((c) => c.label === "อาหาร")?.amountSatang).toBe(5_000_00);
+    expect(augustCategories.find((c) => c.label === "เดินทาง")?.amountSatang).toBe(2_000_00);
+  });
+
+  it("never copies source income into an existing target month that already has income = 0", async () => {
+    const julyBudget = await upsertMonthlyBudget("user-a", "2026-07", 30_000_00);
+    await createBudgetCategory("user-a", julyBudget.id, "อาหาร", 5_000_00);
+    // Target month exists (e.g. the user visited /budget for August) but
+    // has not set an income yet -- upsertMonthlyBudget with 0 is what the
+    // page does implicitly by not calling it at all; simulate by creating
+    // the row directly at income 0.
+    await upsertMonthlyBudget("user-a", "2026-08", 0);
+
+    const result = await copyPreviousMonthBudget("user-a", "2026-07", "2026-08");
+    expect(result.copiedCount).toBe(1);
+    expect(result.budget.incomeSatang).toBe(0);
   });
 
   it("throws the safe not-found message when the source month has no budget", async () => {
@@ -196,6 +214,31 @@ describe("copy previous month budget", () => {
 
     const augustCategories = await listBudgetCategories("user-a", second.budget.id);
     expect(augustCategories).toHaveLength(1); // not duplicated
+  });
+
+  it("concurrent copy retries into a brand-new target month do not duplicate categories or leave a non-zero income", async () => {
+    const julyBudget = await upsertMonthlyBudget("user-a", "2026-07", 30_000_00);
+    await createBudgetCategory("user-a", julyBudget.id, "อาหาร", 5_000_00);
+    await createBudgetCategory("user-a", julyBudget.id, "เดินทาง", 2_000_00);
+
+    const [first, second] = await Promise.all([
+      copyPreviousMonthBudget("user-a", "2026-07", "2026-08"),
+      copyPreviousMonthBudget("user-a", "2026-07", "2026-08"),
+    ]);
+
+    expect(first.budget.incomeSatang).toBe(0);
+    expect(second.budget.incomeSatang).toBe(0);
+    // Both calls target the same 2 source categories; whichever request
+    // reaches a given category first copies it, the other finds it already
+    // present and counts it as skipped -- across both calls every category
+    // is accounted for exactly once as copied, never duplicated.
+    expect(first.copiedCount + second.copiedCount).toBe(2);
+    expect(first.skippedCount + second.skippedCount).toBe(2);
+
+    const augustBudget = (await getMonthlyBudget("user-a", "2026-08"))!;
+    expect(augustBudget.incomeSatang).toBe(0);
+    const augustCategories = await listBudgetCategories("user-a", augustBudget.id);
+    expect(augustCategories).toHaveLength(2); // never duplicated by the race
   });
 
   it("does not overwrite an already-edited target month's income on retry", async () => {

@@ -2007,12 +2007,23 @@ export type CopyPreviousMonthResult = {
 };
 
 /**
- * Copies a prior month's budget (income, if the target budget is newly
- * created, plus every category not already present in the target month)
- * into the target month. Idempotent: categories already present in the
- * target (by label) are counted as skipped, never duplicated -- both when
- * detected up front and when a concurrent/retried call races on the
- * underlying unique constraint.
+ * Copies a prior month's category budget allocations -- and only category
+ * allocations -- into the target month. Expected monthly income is
+ * deliberately month-specific and is never copied from the source month:
+ * a newly created target budget starts at income 0 (the user must set it
+ * separately), and an already-existing target budget's income is left
+ * completely untouched -- `upsertMonthlyBudget` (which unconditionally
+ * overwrites income) is only ever called when no target budget exists yet,
+ * so there is no code path here that can read-then-write-back a target's
+ * income and risk clobbering a concurrent income change.
+ *
+ * Idempotent: categories already present in the target (by label) are
+ * counted as skipped, never duplicated -- both when detected up front and
+ * when a concurrent/retried call races on the underlying unique
+ * constraint. A concurrent "two copies race to create the target budget"
+ * case is likewise safe, since every copy call seeds a newly created
+ * target at income 0 -- whichever call wins the race, the result is the
+ * same value.
  */
 export async function copyPreviousMonthBudget(
   userId: string,
@@ -2026,11 +2037,7 @@ export async function copyPreviousMonthBudget(
   if (!sourceBudget) throw new Error(BUDGET_ERROR_NOT_FOUND_TH);
 
   const existingTargetBudget = await getMonthlyBudget(userId, toMonth);
-  const targetBudget = await upsertMonthlyBudget(
-    userId,
-    toMonth,
-    existingTargetBudget ? existingTargetBudget.incomeSatang : sourceBudget.incomeSatang,
-  );
+  const targetBudget = existingTargetBudget ?? (await upsertMonthlyBudget(userId, toMonth, 0));
 
   const sourceCategories = await listBudgetCategories(userId, sourceBudget.id);
   const targetCategories = await listBudgetCategories(userId, targetBudget.id);

@@ -49,7 +49,11 @@ DB-backed guarantee behind both "duplicate category budget rejected" and
 
 - **Monthly expected income** — `monthly_budgets.income_satang`. What the
   user expects to earn this month; independent of actual confirmed income
-  transactions (the two are not reconciled by this feature).
+  transactions (the two are not reconciled by this feature). Income is
+  strictly month-specific and is set by the user per month — it is never
+  inferred or copied from another month by any operation, including "copy
+  previous month" (see below); a new month's income always starts at 0
+  until the user sets it.
 - **Total planned budget** — sum of all `budget_categories.amount_satang`
   for the month (`BudgetSummary.plannedTotalSatang`).
 - **Category budget** — one `budget_categories` row's `amount_satang`.
@@ -192,17 +196,26 @@ in addition to each category's own `status`.
 ## Copy previous month
 
 `copyPreviousMonthBudget(userId, fromMonth, toMonth)` in
-`finance-repository.ts`:
+`finance-repository.ts` copies **category budget allocations only**.
+Expected monthly income is month-specific and is **never** copied by this
+operation, under any circumstance:
 
 1. Looks up the source month's budget; throws the safe
    `ไม่พบงบประมาณของเดือนนี้` message if it does not exist.
-2. Creates the target month's budget if it does not exist yet, copying the
-   source month's income as the initial value. **If the target budget
-   already exists, its income is left untouched** — a retry (or a second,
-   later copy) never overwrites income the user has since edited. This was
-   verified directly: `tests/unit/budget-repository.test.ts` creates a
-   target budget via copy, manually edits its income, then re-runs the copy
-   and asserts the edited income survives.
+2. Creates the target month's budget if it does not exist yet, **always at
+   income 0** — never the source month's income. If the target budget
+   already exists, this step does not run at all: the function reuses the
+   existing row as-is and never calls the income-overwriting
+   `upsertMonthlyBudget` on it, so there is no code path that reads a
+   target's income and writes it back (which would otherwise risk
+   clobbering a concurrent income edit). A retry, a later copy, or two
+   concurrent copy requests racing to create the same new target month all
+   converge on the same outcome: income 0 unless the user has separately
+   set it. This is verified directly in `tests/unit/budget-repository.test.ts`
+   and `tests/unit/budget-actions.test.ts` — a fresh copy target has
+   `incomeSatang === 0`; a target with a user-set income keeps it across a
+   retry; and two concurrent copy calls into the same brand-new month both
+   report income 0.
 3. For each source category, inserts it into the target month only if a
    category with the same label does not already exist there. Categories
    already present are counted as `skippedCount`, not re-created.
@@ -218,6 +231,13 @@ in addition to each category's own `status`.
    implicit ownership check inside `createBudgetCategory` (it 404s via the
    safe not-found message if the target `monthly_budget_id` doesn't belong
    to the caller).
+
+The `/budget` page's copy-previous-month UI reflects this directly: its
+confirmation disclosure says "คัดลอกเฉพาะงบแต่ละหมวด รายรับของเดือนใหม่จะไม่
+ถูกคัดลอก" ("copies only each category's budget; the new month's income is
+not copied"), and after a successful copy into a month whose income is
+still 0, it shows a reminder that the user still needs to set that month's
+income separately.
 
 ## Budget summary service
 

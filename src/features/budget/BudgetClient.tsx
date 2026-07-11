@@ -168,10 +168,12 @@ function CopyPreviousMonthForm({
   fromMonth,
   toMonth,
   preview,
+  targetIncomeSatang,
 }: {
   fromMonth: string;
   toMonth: string;
   preview: Array<{ label: string; amountSatang: number }>;
+  targetIncomeSatang: number;
 }) {
   const [state, action, pending] = useActionState(copyPreviousMonthAction, { ok: false });
   return (
@@ -184,11 +186,16 @@ function CopyPreviousMonthForm({
           <p className="mt-2">
             จะคัดลอก {preview.length} หมวดหมู่ รวมงบเดิม {formatTHB(preview.reduce((sum, c) => sum + c.amountSatang, 0))}
           </p>
-          <p className="mt-1">รายรับของเดือนนี้จะไม่ถูกคัดลอกทับ ถ้าตั้งไว้แล้ว</p>
+          <p className="mt-1">คัดลอกเฉพาะงบแต่ละหมวด รายรับของเดือนใหม่จะไม่ถูกคัดลอก</p>
         </details>
       ) : null}
       {state.message ? (
-        <p className={`mb-2 text-sm font-bold ${state.ok ? "text-income" : "text-overdue"}`}>{state.message}</p>
+        <div className="mb-2 space-y-1">
+          <p className={`text-sm font-bold ${state.ok ? "text-income" : "text-overdue"}`}>{state.message}</p>
+          {state.ok && targetIncomeSatang === 0 ? (
+            <p className="text-xs text-text-secondary">อย่าลืมตั้งรายรับต่อเดือนสำหรับเดือนนี้ด้วย</p>
+          ) : null}
+        </div>
       ) : null}
       <LoadingButton pending={pending} className="w-full" pendingLabel="กำลังคัดลอก...">
         คัดลอกงบจากเดือนก่อนหน้า
@@ -245,7 +252,12 @@ export function BudgetClient({
       <IncomeForm month={selectedMonth} hasBudget={summary.hasBudget} />
 
       {canCopyPreviousMonth ? (
-        <CopyPreviousMonthForm fromMonth={previousMonth} toMonth={selectedMonth} preview={previousMonthCategoryPreview} />
+        <CopyPreviousMonthForm
+          fromMonth={previousMonth}
+          toMonth={selectedMonth}
+          preview={previousMonthCategoryPreview}
+          targetIncomeSatang={summary.expectedIncomeSatang}
+        />
       ) : null}
 
       <section className="rounded-[16px] border border-border bg-surface p-4" aria-label="สรุปงบประมาณ">

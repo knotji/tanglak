@@ -107,6 +107,42 @@ test.describe("monthly budget engine", () => {
     expect(foodRows).toBe(1);
   });
 
+  test("copy previous month never carries the source month's income into the new month", async ({ page }) => {
+    await signUp(page, "ผู้ใช้คัดลอกงบไม่เอารายรับ");
+
+    await page.goto("/budget?month=2026-09");
+    await page.getByLabel("รายรับต่อเดือน").fill("45000");
+    await page.getByRole("button", { name: "บันทึกรายรับ" }).click();
+    await expect(page.getByText("บันทึกรายรับแล้ว")).toBeVisible();
+    await page.getByLabel("ชื่อหมวดหมู่ใหม่").fill("อาหาร");
+    await page.getByLabel("งบประมาณหมวดหมู่ใหม่").fill("6000");
+    await page.getByRole("button", { name: "+ เพิ่มหมวดหมู่งบประมาณ" }).click();
+    await expect(page.getByText("อาหาร")).toBeVisible();
+
+    await page.goto("/budget?month=2026-10");
+    await page.getByRole("button", { name: "คัดลอกงบจากเดือนก่อนหน้า" }).click();
+    await expect(page.getByText("คัดลอกงบประมาณแล้ว 1 หมวดหมู่")).toBeVisible();
+    await expect(page.getByText("อาหาร")).toBeVisible();
+
+    // The source month's income (฿45,000) must not appear anywhere in the
+    // new month -- expected income stays at ฿0 until the user sets it.
+    await expect(page.getByText("฿45,000")).toHaveCount(0);
+    await expect(page.getByText("อย่าลืมตั้งรายรับต่อเดือน")).toBeVisible();
+
+    // User can still set October's income afterward, independently.
+    await page.getByLabel("รายรับต่อเดือน").fill("12000");
+    await page.getByRole("button", { name: "บันทึกรายรับ" }).click();
+    await expect(page.getByText("฿12,000").first()).toBeVisible();
+
+    // Repeating the copy must not duplicate categories or reset the income
+    // the user just set.
+    await page.getByRole("button", { name: "คัดลอกงบจากเดือนก่อนหน้า" }).click();
+    await expect(page.getByText(/ข้าม 1 รายการที่ซ้ำ/)).toBeVisible();
+    await expect(page.getByText("฿12,000").first()).toBeVisible();
+    const foodRowsAfterRepeat = await page.getByText("อาหาร").count();
+    expect(foodRowsAfterRepeat).toBe(1);
+  });
+
   test("overspending is reflected in the category status once actual spend exceeds the budget", async ({ page }) => {
     await signUp(page, "ผู้ใช้เกินงบ");
     const currentMonth = new Date().toISOString().slice(0, 7); // manual transactions use today's date
