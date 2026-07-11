@@ -26,6 +26,15 @@ vi.mock("@/app/actions/history-import", () => ({
   deleteBatchAction: vi.fn(() => Promise.resolve({ ok: true })),
 }));
 
+function typeInInput(input: HTMLInputElement, value: string) {
+  const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+    window.HTMLInputElement.prototype,
+    "value"
+  )?.set;
+  nativeInputValueSetter?.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 function buildBatch(overrides: Partial<ImportBatch> = {}): ImportBatch {
   return {
     id: "batch-1",
@@ -116,7 +125,7 @@ describe("History Import Review Selection Model", () => {
     expect(confirmButton?.textContent).toContain("ยืนยันการนำเข้าทั้งหมด (1 รายการ)");
 
     // Verify row buttons and states
-    const rowButtons = container.querySelectorAll("button[aria-pressed]");
+    const rowButtons = container.querySelectorAll("#transaction-list-container button[aria-pressed]");
     expect(rowButtons.length).toBe(3);
 
     // Row 1 (Ready) - should display "ไม่นำเข้า" (meaning it is included, so clicking excludes it)
@@ -147,7 +156,7 @@ describe("History Import Review Selection Model", () => {
     const countElement = container.querySelector('[aria-live="polite"]');
     expect(countElement?.textContent).toContain("เลือก 2 จาก 2 รายการ");
 
-    const rowButtons = container.querySelectorAll<HTMLButtonElement>("button[aria-pressed]");
+    const rowButtons = container.querySelectorAll<HTMLButtonElement>("#transaction-list-container button[aria-pressed]");
 
     // Click first row's button to exclude it
     await act(async () => {
@@ -255,7 +264,7 @@ describe("History Import Review Selection Model", () => {
     expect(countElement?.textContent).toContain("เลือก 2 จาก 2 รายการ");
 
     // Exclude row-1
-    const rowButtons = container.querySelectorAll<HTMLButtonElement>("button[aria-pressed]");
+    const rowButtons = container.querySelectorAll<HTMLButtonElement>("#transaction-list-container button[aria-pressed]");
     await act(async () => {
       rowButtons[0].dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
@@ -301,7 +310,7 @@ describe("History Import Review Selection Model", () => {
       root.render(<ReviewBoardClient batch={batch} initialRows={rows} debts={[]} />);
     });
 
-    const button = container.querySelector<HTMLButtonElement>("button[aria-pressed]");
+    const button = container.querySelector<HTMLButtonElement>("#transaction-list-container button[aria-pressed]");
     expect(button).not.toBeNull();
 
     // Contextual label contains description and formatted amount
@@ -321,5 +330,278 @@ describe("History Import Review Selection Model", () => {
     expect(countElement?.textContent).toContain("เลือก 0 จาก 1 รายการ");
     expect(button?.getAttribute("aria-pressed")).toBe("false");
     expect(button?.getAttribute("aria-label")).toContain("นำเข้ารายการนี้");
+  });
+
+  it("renders collapsed rows by default and expands them inline on body click", async () => {
+    const batch = buildBatch();
+    const rows = [buildRow("row-1", { reviewStatus: "ready", description: "GrabFood" })];
+
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ReviewBoardClient batch={batch} initialRows={rows} debts={[]} />);
+    });
+
+    const rowBody = container.querySelector<HTMLDivElement>("#row-body-row-1");
+    expect(rowBody).not.toBeNull();
+    expect(rowBody?.getAttribute("aria-expanded")).toBe("false");
+    expect(container.querySelector("#edit-form-row-1")).toBeNull();
+
+    // Click to expand
+    await act(async () => {
+      rowBody?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(rowBody?.getAttribute("aria-expanded")).toBe("true");
+    expect(container.querySelector("#edit-form-row-1")).not.toBeNull();
+  });
+
+  it("auto-expands first invalid or warning row on mount", async () => {
+    const batch = buildBatch();
+    const rows = [
+      buildRow("row-1", { reviewStatus: "ready" }),
+      buildRow("row-2", { reviewStatus: "invalid" }), // Invalid row
+    ];
+
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ReviewBoardClient batch={batch} initialRows={rows} debts={[]} />);
+    });
+
+    // Invalid row should auto-expand
+    expect(container.querySelector("#row-body-row-2")?.getAttribute("aria-expanded")).toBe("true");
+    expect(container.querySelector("#row-body-row-1")?.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("calculates filter chip counts dynamically based on active search text", async () => {
+    vi.useFakeTimers();
+    const batch = buildBatch();
+    const rows = [
+      buildRow("row-1", { reviewStatus: "ready", description: "GrabFood BKK" }),
+      buildRow("row-2", { reviewStatus: "possible_duplicate", description: "GrabFood CNX" }),
+      buildRow("row-3", { reviewStatus: "ready", description: "Starbucks Store" }),
+    ];
+
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ReviewBoardClient batch={batch} initialRows={rows} debts={[]} />);
+    });
+
+    // Enter search query
+    const searchInput = container.querySelector<HTMLInputElement>("#search-input");
+    await act(async () => {
+      if (searchInput) {
+        typeInInput(searchInput, "GrabFood");
+      }
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(150);
+    });
+
+    // Counts on tablist should reflect only GrabFood rows (2 items)
+    const allTab = Array.from(container.querySelectorAll('[role="tab"]')).find(t => t.textContent?.includes("ทั้งหมด"));
+    const duplicateTab = Array.from(container.querySelectorAll('[role="tab"]')).find(t => t.textContent?.includes("รายการซ้ำ"));
+
+    expect(allTab?.textContent).toContain("ทั้งหมด (2)");
+    expect(duplicateTab?.textContent).toContain("รายการซ้ำ (1)");
+
+    vi.useRealTimers();
+  });
+
+  it("filters rows based on search query with debouncing", async () => {
+    vi.useFakeTimers();
+    const batch = buildBatch();
+    const rows = [
+      buildRow("row-1", { description: "7-Eleven Store" }),
+      buildRow("row-2", { description: "Starbucks Cafe" }),
+    ];
+
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ReviewBoardClient batch={batch} initialRows={rows} debts={[]} />);
+    });
+
+    const searchInput = container.querySelector<HTMLInputElement>("#search-input");
+    await act(async () => {
+      if (searchInput) {
+        typeInInput(searchInput, "Starbucks");
+      }
+    });
+
+    // Fast-forward debounce time (150ms)
+    await act(async () => {
+      vi.advanceTimersByTime(150);
+    });
+
+    expect(container.querySelectorAll('[id^="row-card-"]').length).toBe(1);
+    expect(container.querySelector("#row-card-row-2")).not.toBeNull();
+    expect(container.querySelector("#row-card-row-1")).toBeNull();
+
+    vi.useRealTimers();
+  });
+
+  it("clears search query when clicking clear button", async () => {
+    vi.useFakeTimers();
+    const batch = buildBatch();
+    const rows = [
+      buildRow("row-1", { description: "7-Eleven Store" }),
+    ];
+
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ReviewBoardClient batch={batch} initialRows={rows} debts={[]} />);
+    });
+
+    const searchInput = container.querySelector<HTMLInputElement>("#search-input");
+    await act(async () => {
+      if (searchInput) {
+        typeInInput(searchInput, "7-Eleven");
+      }
+    });
+
+    const clearBtn = Array.from(container.querySelectorAll("button")).find(b => b.getAttribute("aria-label") === "ล้างการค้นหา");
+    expect(clearBtn).not.toBeUndefined();
+
+    await act(async () => {
+      clearBtn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(searchInput?.value).toBe("");
+    
+    await act(async () => {
+      vi.advanceTimersByTime(150);
+    });
+    
+    expect(container.querySelectorAll('[id^="row-card-"]').length).toBe(1);
+    vi.useRealTimers();
+  });
+
+  it("performs warnings jump-to-next navigation and first-excluded navigation", async () => {
+    const batch = buildBatch();
+    const rows = [
+      buildRow("row-1", { reviewStatus: "ready" }),
+      buildRow("row-2", { reviewStatus: "possible_duplicate" }),
+      buildRow("row-3", { reviewStatus: "ready", validationWarnings: ["Warning text"] }),
+    ];
+
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ReviewBoardClient batch={batch} initialRows={rows} debts={[]} />);
+    });
+
+    const nextWarningBtn = Array.from(container.querySelectorAll("button")).find(b => b.textContent?.includes("ถัดไปที่ต้องตรวจสอบ"));
+    const firstExcludedBtn = Array.from(container.querySelectorAll("button")).find(b => b.textContent?.includes("รายการแรกที่ไม่นำเข้า"));
+
+    expect(nextWarningBtn).not.toBeUndefined();
+    expect(firstExcludedBtn).not.toBeUndefined();
+
+    const mockScroll = vi.fn();
+    window.HTMLElement.prototype.scrollIntoView = mockScroll;
+
+    // On mount, the first warning row (row-2) should already be expanded
+    expect(container.querySelector("#row-body-row-2")?.getAttribute("aria-expanded")).toBe("true");
+
+    // Next Warning -> row-3
+    await act(async () => {
+      nextWarningBtn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(container.querySelector("#row-body-row-3")?.getAttribute("aria-expanded")).toBe("true");
+
+    // Next Warning (wraps around) -> row-2
+    await act(async () => {
+      nextWarningBtn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(container.querySelector("#row-body-row-2")?.getAttribute("aria-expanded")).toBe("true");
+
+    // First Excluded -> row-2 (duplicate candidate starts as excluded)
+    await act(async () => {
+      firstExcludedBtn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(container.querySelector("#row-body-row-2")?.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("persists user selections when search query or filter changes", async () => {
+    vi.useFakeTimers();
+    const batch = buildBatch();
+    const rows = [
+      buildRow("row-1", { reviewStatus: "ready", description: "GrabFood" }),
+      buildRow("row-2", { reviewStatus: "ready", description: "LineMan" }),
+    ];
+
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ReviewBoardClient batch={batch} initialRows={rows} debts={[]} />);
+    });
+
+    const row1Toggle = container.querySelector<HTMLButtonElement>("#row-card-row-1 button");
+    await act(async () => {
+      row1Toggle?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(container.querySelector("#row-card-row-1")?.className).toContain("opacity-50");
+
+    const searchInput = container.querySelector<HTMLInputElement>("#search-input");
+    await act(async () => {
+      if (searchInput) {
+        typeInInput(searchInput, "Grab");
+      }
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(150);
+    });
+
+    expect(container.querySelectorAll('[id^="row-card-"]').length).toBe(1);
+    expect(container.querySelector("#row-card-row-1")?.className).toContain("opacity-50");
+
+    await act(async () => {
+      if (searchInput) {
+        typeInInput(searchInput, "");
+      }
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(150);
+    });
+
+    expect(container.querySelectorAll('[id^="row-card-"]').length).toBe(2);
+    expect(container.querySelector("#row-card-row-1")?.className).toContain("opacity-50");
+    
+    vi.useRealTimers();
+  });
+
+  it("remains responsive and performs search/filter operations smoothly with 220+ rows", async () => {
+    const batch = buildBatch();
+    const rows = Array.from({ length: 220 }).map((_, i) =>
+      buildRow(`row-${i}`, {
+        description: i === 150 ? "Special Target Tx" : `Tx ${i}`,
+        reviewStatus: "ready",
+      })
+    );
+
+    const root = createRoot(container);
+    const start = performance.now();
+    await act(async () => {
+      root.render(<ReviewBoardClient batch={batch} initialRows={rows} debts={[]} />);
+    });
+    const duration = performance.now() - start;
+    
+    expect(duration).toBeLessThan(1000);
+
+    vi.useFakeTimers();
+    const searchInput = container.querySelector<HTMLInputElement>("#search-input");
+    await act(async () => {
+      if (searchInput) {
+        typeInInput(searchInput, "Special Target Tx");
+      }
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(150);
+    });
+
+    expect(container.querySelectorAll('[id^="row-card-"]').length).toBe(1);
+    expect(container.querySelector("#row-card-row-150")).not.toBeNull();
+    vi.useRealTimers();
   });
 });

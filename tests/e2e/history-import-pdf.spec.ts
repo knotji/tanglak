@@ -65,7 +65,7 @@ test.describe.serial("PDF statement import — deterministic parsing edge cases"
     reviewUrl = page.url();
 
     // 30 fixture rows all render in the "all" tab.
-    await expect(page.getByRole("button", { name: "ทั้งหมด", exact: true })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "ทั้งหมด" })).toBeVisible();
     const rowCards = page.locator("text=MERCHANT");
     await expect(rowCards.first()).toBeVisible();
 
@@ -87,7 +87,7 @@ test.describe.serial("PDF statement import — deterministic parsing edge cases"
     // shared staging pipeline and defaults to importDecision: "unresolved".
     // Leaving it untouched and confirming should surface the
     // unresolved-rows warning and produce a partially_imported batch.
-    await expect(page.getByText("ชำระหนี้ (1)")).toBeVisible();
+    await expect(page.getByText("ต้องตรวจสอบ (1)")).toBeVisible();
     page.once("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "ยืนยันการนำเข้าทั้งหมด" }).click();
 
@@ -101,8 +101,10 @@ test.describe.serial("PDF statement import — deterministic parsing edge cases"
     // Resume: go back into review and resolve the remaining row as a skip
     // (a reviewer choosing not to import a detected debt payment).
     await page.getByRole("link", { name: "ตรวจต่อ" }).click();
-    await expect(page).toHaveURL(/\/history-import\/[a-f0-9-]+\/review/);
-    await page.getByText("KTC PAYMENT BKK").first().click();
+    const ktcRow = page.locator("div[id^='row-body-']").filter({ hasText: "KTC PAYMENT BKK" }).first();
+    if (await ktcRow.getAttribute("aria-expanded") === "false") {
+      await ktcRow.click();
+    }
     await page.getByLabel("ข้ามรายการนี้").check();
     await page.getByRole("button", { name: "ยืนยันการนำเข้าทั้งหมด" }).click();
     await expect(page).toHaveURL(/\/history-import\/[a-f0-9-]+\/summary/);
@@ -158,6 +160,6 @@ test.describe.serial("PDF statement import — deterministic parsing edge cases"
     await expect(page).toHaveURL(/\/history-import\/[a-f0-9-]+\/review/);
     await expect(page.getByText("PAYEE 001").first()).toBeVisible();
     // 20 debit + 5 credit rows from the fixture.
-    await expect(page.getByRole("button", { name: "ทั้งหมด", exact: true })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "ทั้งหมด" })).toBeVisible();
   });
 });

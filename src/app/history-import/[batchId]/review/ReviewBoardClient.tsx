@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useTransition } from "react";
+import React, { useState, useTransition, useMemo, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { confirmBatchAction, deleteBatchAction } from "@/app/actions/history-import";
 import type { ImportBatch, ImportRow, Debt } from "@/types/domain";
@@ -17,7 +17,17 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
   const batchContext = batch.originalFilename || batch.id;
 
   const [rows, setRows] = useState<ImportRow[]>(initialRows);
-  const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
+  const [expandedRowId, setExpandedRowId] = useState<string | null>(() => {
+    const firstIssue = initialRows.find(
+      (r) =>
+        r.reviewStatus === "invalid" ||
+        r.reviewStatus === "possible_transfer" ||
+        r.reviewStatus === "possible_debt_payment" ||
+        r.validationWarnings.length > 0 ||
+        r.reviewStatus === "possible_duplicate"
+    );
+    return firstIssue ? firstIssue.id : null;
+  });
   const [excludedRowIds, setExcludedRowIds] = useState<Set<string>>(() => {
     const initialExclusions = new Set<string>();
     initialRows.forEach((row) => {
@@ -34,44 +44,174 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
     return initialExclusions;
   });
   const [activeTab, setActiveTab] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Statistics
+  // Search input debouncer (150ms delay)
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 150);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
+  // Filters helper functions (memoized with useCallback)
+  const isReadyToImport = useCallback((r: ImportRow) => r.reviewStatus !== "invalid" && !excludedRowIds.has(r.id), [excludedRowIds]);
+  const isIncome = useCallback((r: ImportRow) => r.direction === "credit", []);
+  const isExpense = useCallback((r: ImportRow) => r.direction === "debit", []);
+  const isNeedsReview = useCallback((r: ImportRow) => 
+    r.reviewStatus === "invalid" || 
+    r.reviewStatus === "possible_transfer" || 
+    r.reviewStatus === "possible_debt_payment" || 
+    r.validationWarnings.length > 0, []);
+  const isDuplicate = useCallback((r: ImportRow) => r.reviewStatus === "possible_duplicate", []);
+  const isExcluded = useCallback((r: ImportRow) => excludedRowIds.has(r.id), [excludedRowIds]);
+
+  // Statistics for overall batch (computed from rows)
   const totalCount = rows.length;
   const readyCount = rows.filter(r => r.reviewStatus === "ready").length;
   const duplicateCount = rows.filter(r => r.reviewStatus === "possible_duplicate").length;
   const needsReviewCount = rows.filter(r => r.reviewStatus === "needs_review").length;
   const transferCount = rows.filter(r => r.reviewStatus === "possible_transfer").length;
   const debtPaymentCount = rows.filter(r => r.reviewStatus === "possible_debt_payment").length;
-  const skippedCount = rows.filter(r => r.importDecision === "skip").length;
-  const warningCount = rows.filter(r => r.validationWarnings.length > 0).length;
 
   const importableCount = rows.filter(r => r.reviewStatus !== "invalid").length;
   const includedCount = rows.filter(r => r.reviewStatus !== "invalid" && !excludedRowIds.has(r.id)).length;
 
-  // Filter rows based on activeTab
-  const filteredRows = rows.filter(row => {
+  // 1. Filter rows by Search input
+  const searchedRows = useMemo(() => {
+    const q = debouncedSearchQuery.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((r) => {
+      const descMatch = r.description.toLowerCase().includes(q);
+      const refMatch = r.referenceNumber ? r.referenceNumber.toLowerCase().includes(q) : false;
+      const merchantMatch = r.merchant ? r.merchant.toLowerCase().includes(q) : false;
+      return descMatch || refMatch || merchantMatch;
+    });
+  }, [rows, debouncedSearchQuery]);
+
+  // 2. Filter rows by activeTab (Filter Chips)
+  const filteredRows = useMemo(() => {
     switch (activeTab) {
       case "ready":
-        return row.reviewStatus === "ready";
-      case "duplicate":
-        return row.reviewStatus === "possible_duplicate";
+        return searchedRows.filter(isReadyToImport);
+      case "income":
+        return searchedRows.filter(isIncome);
+      case "expense":
+        return searchedRows.filter(isExpense);
       case "needs_review":
-        return row.reviewStatus === "needs_review" || row.reviewStatus === "invalid";
-      case "transfer":
-        return row.reviewStatus === "possible_transfer";
-      case "debt_payment":
-        return row.reviewStatus === "possible_debt_payment";
+        return searchedRows.filter(isNeedsReview);
+      case "duplicate":
+        return searchedRows.filter(isDuplicate);
       case "skip":
-        return row.importDecision === "skip";
-      case "warnings":
-        return row.validationWarnings.length > 0;
+        return searchedRows.filter(isExcluded);
       case "all":
       default:
-        return true;
+        return searchedRows;
     }
-  });
+  }, [searchedRows, activeTab, isReadyToImport, isIncome, isExpense, isNeedsReview, isDuplicate, isExcluded]);
+
+  // 3. Counts displayed on Filter Chips
+  const counts = useMemo(() => {
+    return {
+      all: searchedRows.length,
+      ready: searchedRows.filter(isReadyToImport).length,
+      income: searchedRows.filter(isIncome).length,
+      expense: searchedRows.filter(isExpense).length,
+      needs_review: searchedRows.filter(isNeedsReview).length,
+      duplicate: searchedRows.filter(isDuplicate).length,
+      skip: searchedRows.filter(isExcluded).length,
+    };
+  }, [searchedRows, isReadyToImport, isIncome, isExpense, isNeedsReview, isDuplicate, isExcluded]);
+
+  // Auto-expand warning/invalid rows on filter/search change
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    const firstIssue = filteredRows.find(r => isNeedsReview(r) || isDuplicate(r));
+    if (firstIssue) {
+      setExpandedRowId(firstIssue.id);
+    } else {
+      // Close expanded row if it gets filtered out of active set
+      if (expandedRowId && !filteredRows.some(r => r.id === expandedRowId)) {
+        setExpandedRowId(null);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, debouncedSearchQuery]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  // Shift programmatic focus directly to first transaction row in list on tab selection
+  const isFirstRender = useRef(true);
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    if (filteredRows.length > 0) {
+      const firstRowId = filteredRows[0].id;
+      const element = document.getElementById(`row-body-${firstRowId}`);
+      if (element) {
+        element.focus();
+      }
+    }
+  }, [activeTab, filteredRows]);
+
+  // Navigation Jump Handlers
+  const handleJumpToNextWarning = () => {
+    const issueRows = filteredRows.filter(r => isNeedsReview(r) || isDuplicate(r));
+    if (issueRows.length === 0) return;
+
+    let nextIndex = 0;
+    if (expandedRowId) {
+      const currentIndex = issueRows.findIndex(r => r.id === expandedRowId);
+      if (currentIndex !== -1) {
+        nextIndex = (currentIndex + 1) % issueRows.length;
+      }
+    }
+
+    const targetRow = issueRows[nextIndex];
+    setExpandedRowId(targetRow.id);
+
+    setTimeout(() => {
+      const element = document.getElementById(`row-body-${targetRow.id}`);
+      if (element) {
+        const prefersReducedMotion = typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)").matches : false;
+        if (typeof element.scrollIntoView === "function") {
+          element.scrollIntoView({ behavior: prefersReducedMotion ? "auto" : "smooth", block: "start" });
+        }
+        element.focus();
+      }
+    }, 50);
+  };
+
+  const handleJumpToFirstExcluded = () => {
+    const excludedRows = filteredRows.filter(isExcluded);
+    if (excludedRows.length === 0) return;
+
+    const targetRow = excludedRows[0];
+    setExpandedRowId(targetRow.id);
+
+    setTimeout(() => {
+      const element = document.getElementById(`row-body-${targetRow.id}`);
+      if (element) {
+        const prefersReducedMotion = typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)").matches : false;
+        if (typeof element.scrollIntoView === "function") {
+          element.scrollIntoView({ behavior: prefersReducedMotion ? "auto" : "smooth", block: "start" });
+        }
+        element.focus();
+      }
+    }, 50);
+  };
+
+  const nextWarningDisabled = useMemo(() => {
+    return !filteredRows.some(r => isNeedsReview(r) || isDuplicate(r));
+  }, [filteredRows, isNeedsReview, isDuplicate]);
+
+  const firstExcludedDisabled = useMemo(() => {
+    return !filteredRows.some(isExcluded);
+  }, [filteredRows, isExcluded]);
 
   const statementMetadata = batch.statementMetadata as
     | {
@@ -325,29 +465,87 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
         </div>
       </div>
 
-      {/* Category Tabs */}
-      <div className="flex gap-1 overflow-x-auto pb-1 border-b border-border text-xs scrollbar-none">
-        {[
-          { id: "all", label: "ทั้งหมด" },
-          { id: "ready", label: `พร้อม (${readyCount})` },
-          { id: "duplicate", label: `อาจซ้ำ (${duplicateCount})` },
-          { id: "transfer", label: `คู่โอน (${transferCount})` },
-          { id: "debt_payment", label: `ชำระหนี้ (${debtPaymentCount})` },
-          { id: "skip", label: `ข้าม (${skippedCount})` },
-          { id: "warnings", label: `มีคำเตือนการอ่าน (${warningCount})` },
-        ].map((tab) => (
+      {/* Search & Quick Navigation Controls */}
+      <div className="flex flex-col gap-2 rounded-2xl border border-border bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-1">
+          <label htmlFor="search-input" className="text-xs font-bold text-text-secondary">
+            ค้นหาธุรกรรม (ชื่อร้านค้า หรือ เลขที่อ้างอิง)
+          </label>
+          <div className="relative flex items-center">
+            <input
+              id="search-input"
+              type="text"
+              placeholder="พิมพ์เพื่อค้นหา..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-10 w-full rounded-xl border border-border bg-white pl-3 pr-10 text-xs focus:border-primary focus:outline-none"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-3 flex h-6 w-6 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-text"
+                aria-label="ล้างการค้นหา"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 mt-1">
           <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-3 py-1.5 font-bold rounded-lg whitespace-nowrap ${
-              activeTab === tab.id
-                ? "bg-primary text-white"
-                : "text-text-secondary bg-surface hover:bg-slate-200"
-            }`}
+            type="button"
+            onClick={handleJumpToNextWarning}
+            disabled={nextWarningDisabled}
+            className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50/50 px-3 text-xs font-bold text-amber-700 hover:bg-amber-100/50 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {tab.label}
+            ⚠ ถัดไปที่ต้องตรวจสอบ
           </button>
-        ))}
+          <button
+            type="button"
+            onClick={handleJumpToFirstExcluded}
+            disabled={firstExcludedDisabled}
+            className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-xs font-bold text-slate-700 hover:bg-slate-100/50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            ✖ รายการแรกที่ไม่นำเข้า
+          </button>
+        </div>
+      </div>
+
+      {/* Category Tabs */}
+      <div
+        role="tablist"
+        className="flex gap-1 overflow-x-auto pb-1 border-b border-border text-xs scrollbar-none"
+      >
+        {[
+          { id: "all", label: `ทั้งหมด (${counts.all})`, ariaLabel: "ทั้งหมด" },
+          { id: "ready", label: `พร้อมนำเข้า (${counts.ready})`, ariaLabel: "พร้อมนำเข้า" },
+          { id: "income", label: `เงินเข้า (${counts.income})`, ariaLabel: "เงินเข้า" },
+          { id: "expense", label: `เงินออก (${counts.expense})`, ariaLabel: "เงินออก" },
+          { id: "needs_review", label: `ต้องตรวจสอบ (${counts.needs_review})`, ariaLabel: "ต้องตรวจสอบ" },
+          { id: "duplicate", label: `รายการซ้ำ (${counts.duplicate})`, ariaLabel: "รายการซ้ำ" },
+          { id: "skip", label: `ไม่นำเข้า (${counts.skip})`, ariaLabel: "ไม่นำเข้า" },
+        ].map((tab) => {
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              role="tab"
+              aria-selected={isActive}
+              aria-label={tab.ariaLabel}
+              aria-controls="transaction-list-container"
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-3 py-1.5 font-bold rounded-lg whitespace-nowrap min-h-[44px] ${
+                isActive
+                  ? "bg-primary text-white"
+                  : "text-text-secondary bg-surface hover:bg-slate-200"
+              }`}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Table actions bar */}
@@ -369,10 +567,19 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
       </div>
 
       {/* Staging Rows List */}
-      <div className="flex flex-col gap-2">
+      <div id="transaction-list-container" className="flex flex-col gap-2">
         {filteredRows.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border bg-surface p-8 text-center text-xs text-text-secondary">
-            ไม่มีรายการในหมวดหมู่นี้
+          <div className="rounded-xl border border-dashed border-border bg-surface p-8 text-center text-xs text-text-secondary flex flex-col items-center justify-center gap-2">
+            <span>🔍 ไม่พบรายการธุรกรรมที่ตรงกับการค้นหาหรือตัวกรองนี้</span>
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="mt-2 rounded-lg bg-primary px-3 py-1.5 font-bold text-white text-xs hover:bg-primary-dark transition-colors"
+              >
+                ล้างการค้นหา
+              </button>
+            )}
           </div>
         ) : (
           filteredRows.map((row) => {
@@ -386,6 +593,7 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
             return (
               <div
                 key={row.id}
+                id={`row-card-${row.id}`}
                 className={`rounded-xl border border-border bg-white shadow-sm overflow-hidden transition-all duration-200 ${
                   row.reviewStatus === "invalid"
                     ? "border-amber-300 bg-amber-50/5"
@@ -395,16 +603,11 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
                 }`}
               >
                 {/* Compact view */}
-                <div
-                  className="flex items-center gap-3 p-3 cursor-pointer hover:bg-slate-50/50"
-                  onClick={() => setExpandedRowId(isExpanded ? null : row.id)}
-                >
+                <div className="flex items-center gap-3 p-2 md:p-3">
+                  {/* Left Side: Include/Exclude Toggle Button */}
                   <button
                     type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleToggleExclude(row.id);
-                    }}
+                    onClick={() => handleToggleExclude(row.id)}
                     disabled={row.reviewStatus === "invalid"}
                     aria-pressed={!isExcluded}
                     aria-label={`${row.merchant || row.description} - ฿${(row.amountSatang / 100).toLocaleString()}: ${
@@ -416,6 +619,7 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
                     }`}
                     onKeyDown={(e) => {
                       if (e.key === " " || e.key === "Enter") {
+                        e.preventDefault();
                         e.stopPropagation();
                         handleToggleExclude(row.id);
                       }
@@ -430,68 +634,94 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
                   >
                     {row.reviewStatus === "invalid" ? "ข้อมูลไม่ครบ" : isExcluded ? "นำเข้า" : "ไม่นำเข้า"}
                   </button>
-                  <div className="text-center min-w-[36px]">
-                    <span className="block font-bold text-foreground text-xs">{displayDate}</span>
-                    <span className="block text-[9px] text-text-secondary">{displayTime}</span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <span className="block text-xs font-bold text-foreground truncate">
-                      {row.merchant || row.description}
-                    </span>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <span className="text-[10px] text-text-secondary truncate max-w-[120px]">
-                        {row.description}
-                      </span>
-                      {row.reviewStatus === "possible_duplicate" && (
-                        <span className="rounded bg-rose-50 px-1 py-0.2 text-[8px] font-bold text-rose-600">
-                          ซ้ำ ({row.duplicateScore}%)
+
+                  {/* Right Side: Collapsible row body (Clickable Details area) */}
+                  <div
+                    id={`row-body-${row.id}`}
+                    role="button"
+                    aria-expanded={isExpanded}
+                    aria-controls={`edit-form-${row.id}`}
+                    tabIndex={0}
+                    onClick={() => setExpandedRowId(isExpanded ? null : row.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === " " || e.key === "Enter") {
+                        e.preventDefault();
+                        setExpandedRowId(isExpanded ? null : row.id);
+                      }
+                    }}
+                    className="flex flex-1 items-center justify-between gap-3 min-w-0 cursor-pointer rounded-lg p-1 hover:bg-slate-50/50 focus:bg-slate-50/50 focus:outline-none"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="text-center min-w-[36px] shrink-0">
+                        <span className="block font-bold text-foreground text-xs">{displayDate}</span>
+                        <span className="block text-[9px] text-text-secondary">{displayTime}</span>
+                      </div>
+                      
+                      <div className="min-w-0 flex-1">
+                        <span className={`block text-xs font-bold text-foreground truncate max-w-[140px] md:max-w-[240px] ${isExcluded ? "line-through" : ""}`}>
+                          {row.merchant || row.description}
                         </span>
-                      )}
-                      {row.reviewStatus === "possible_transfer" && (
-                        <span className="rounded bg-blue-50 px-1 py-0.2 text-[8px] font-bold text-blue-600">
-                          โอนบัญชี
-                        </span>
-                      )}
-                      {row.reviewStatus === "possible_debt_payment" && (
-                        <span className="rounded bg-amber-50 px-1 py-0.2 text-[8px] font-bold text-amber-600">
-                          จ่ายหนี้
-                        </span>
-                      )}
-                      {row.pageNumber && (
-                        <span className="rounded bg-slate-100 px-1 py-0.2 text-[8px] font-semibold text-text-secondary">
-                          ดูจากหน้า {row.pageNumber}
-                        </span>
-                      )}
-                      {row.validationWarnings.length > 0 && (
-                        <span className="rounded bg-amber-50 px-1 py-0.2 text-[8px] font-bold text-amber-700">
-                          ⚠ คำเตือนการอ่าน
-                        </span>
-                      )}
+                        
+                        <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                          <span className={`text-[10px] text-text-secondary truncate max-w-[120px] ${isExcluded ? "line-through" : ""}`}>
+                            {row.description}
+                          </span>
+                          <span className="text-[10px] text-slate-300">|</span>
+                          <span className={`text-[10px] text-text-secondary truncate max-w-[120px] ${isExcluded ? "line-through" : ""}`}>
+                            {row.suggestedCategory || "อื่น ๆ"}
+                          </span>
+                          
+                          {row.reviewStatus === "possible_duplicate" && (
+                            <span className="rounded bg-rose-50 px-1 py-0.2 text-[8px] font-bold text-rose-600">
+                              ซ้ำ ({row.duplicateScore}%)
+                            </span>
+                          )}
+                          {row.reviewStatus === "possible_transfer" && (
+                            <span className="rounded bg-blue-50 px-1 py-0.2 text-[8px] font-bold text-blue-600">
+                              โอนบัญชี
+                            </span>
+                          )}
+                          {row.reviewStatus === "possible_debt_payment" && (
+                            <span className="rounded bg-amber-50 px-1 py-0.2 text-[8px] font-bold text-amber-600">
+                              จ่ายหนี้
+                            </span>
+                          )}
+                          {row.validationWarnings.length > 0 && (
+                            <span className="rounded bg-amber-50 px-1 py-0.2 text-[8px] font-bold text-amber-700">
+                              ⚠ คำเตือน
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  <div className="text-right">
-                    <span
-                      className={`text-xs font-bold ${
-                        row.direction === "credit" ? "text-emerald-600" : "text-foreground"
-                      }`}
-                    >
-                      {row.direction === "credit" ? "+" : "-"}฿{(row.amountSatang / 100).toLocaleString()}
-                    </span>
-                    <span className="block text-[9px] text-text-secondary mt-0.5">
-                      {row.importDecision === "import"
-                        ? "นำเข้า"
-                        : row.importDecision === "skip"
-                        ? "ข้าม"
-                        : row.importDecision === "merge_existing"
-                        ? "รวมรายการ"
-                        : "รอกำหนด"}
-                    </span>
+
+                    <div className="text-right shrink-0">
+                      <span
+                        className={`text-xs font-bold ${
+                          row.direction === "credit" ? "text-emerald-600" : "text-foreground"
+                        } ${isExcluded ? "line-through opacity-70" : ""}`}
+                      >
+                        {row.direction === "credit" ? "+" : "-"}฿{(row.amountSatang / 100).toLocaleString()}
+                      </span>
+                      <span className="block text-[9px] text-text-secondary mt-0.5">
+                        {row.importDecision === "import"
+                          ? "นำเข้า"
+                          : row.importDecision === "skip"
+                          ? "ข้าม"
+                          : row.importDecision === "merge_existing"
+                          ? "รวมรายการ"
+                          : "รอกำหนด"}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
                 {/* Expanded edit details form */}
                 {isExpanded && (
-                  <div className="border-t border-border bg-slate-50/50 p-3 text-xs flex flex-col gap-3 animate-slide-down">
+                  <div
+                    id={`edit-form-${row.id}`}
+                    className="border-t border-border bg-slate-50/50 p-3 text-xs flex flex-col gap-3 animate-slide-down"
+                  >
                     {row.validationWarnings.length > 0 && (
                       <div className="rounded bg-amber-50 border border-amber-100 p-2 text-[10px] text-amber-700">
                         {row.validationWarnings.map((w, index) => <div key={index}>{w}</div>)}
@@ -586,6 +816,19 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
                         </p>
                       </div>
                     )}
+
+                    {/* Source Information */}
+                    <div className="text-[10px] text-text-secondary border-t border-slate-200 pt-2 flex flex-wrap gap-x-4 gap-y-1">
+                      {row.pageNumber && (
+                        <span>หน้าของเอกสาร: {row.pageNumber}</span>
+                      )}
+                      {row.parserSource && (
+                        <span>แหล่งการประมวลผล: {row.parserSource === "deterministic" ? "การอ่านแบบเจาะจงโครงสร้าง" : "โมเดล AI"}</span>
+                      )}
+                      {row.parserConfidence !== undefined && (
+                        <span>ความมั่นใจในการวิเคราะห์: {Math.round(row.parserConfidence * 100)}%</span>
+                      )}
+                    </div>
 
                     {/* Import Decision Radio Options */}
                     <div className="mt-2 flex flex-col gap-1 border-t border-border pt-2">

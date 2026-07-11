@@ -93,6 +93,63 @@ test.describe.serial("History Statement Import Selection E2E", () => {
     await expect(page).toHaveURL(/\/history-import\/[a-f0-9-]+\/review/);
     await expect(page.getByText("เลือก 20 จาก 20 รายการ")).toBeVisible();
 
+    // E2E PHASE 2 ADDITIONS:
+    // 1. Mobile Viewport adaptation (360px, 390px, 430px)
+    for (const width of [360, 390, 430]) {
+      await page.setViewportSize({ width, height: 800 });
+      await expect(page.locator("div[role='tablist']")).toBeVisible();
+    }
+    await page.setViewportSize({ width: 1280, height: 800 });
+
+    // 2. Search & Clear interactions
+    const searchInput = page.locator("#search-input");
+    await expect(searchInput).toBeVisible();
+    await searchInput.fill("MERCHANT 015");
+    await page.waitForTimeout(200);
+    await expect(page.locator("div[id^='row-card-']")).toHaveCount(1);
+    await expect(page.getByText("MERCHANT 015").first()).toBeVisible();
+
+    // Click clear button
+    const clearBtn = page.locator("button[aria-label='ล้างการค้นหา']");
+    await expect(clearBtn).toBeVisible();
+    await clearBtn.click();
+    await page.waitForTimeout(200);
+    await expect(page.locator("div[id^='row-card-']")).toHaveCount(20);
+
+    // 3. Filter Chip switching and selection persistence
+    await page.getByRole("tab", { name: /เงินเข้า/ }).click();
+    await page.waitForTimeout(50);
+    const incomeRows = page.locator("div[id^='row-card-']");
+    const incomeCount = await incomeRows.count();
+    
+    await page.getByRole("tab", { name: /เงินออก/ }).click();
+    await page.waitForTimeout(50);
+    const expenseRows = page.locator("div[id^='row-card-']");
+    const expenseCount = await expenseRows.count();
+
+    expect(incomeCount + expenseCount).toBe(20);
+
+    await page.getByRole("tab", { name: /ทั้งหมด/ }).click();
+    await page.waitForTimeout(50);
+
+    // 4. Progressive Disclosure - Expand/Collapse inline form
+    const firstRowBody = page.locator("div[id^='row-body-']").first();
+    await expect(firstRowBody).toHaveAttribute("aria-expanded", "false");
+    const firstRowId = (await firstRowBody.getAttribute("id"))?.replace("row-body-", "");
+    await expect(page.locator(`#edit-form-${firstRowId}`)).not.toBeVisible();
+
+    await firstRowBody.click();
+    await expect(firstRowBody).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator(`#edit-form-${firstRowId}`)).toBeVisible();
+    
+    const merchantInput = page.locator(`#import-row-${firstRowId}-merchant`);
+    await expect(merchantInput).toBeVisible();
+    await merchantInput.fill("EDITED MERCHANT E2E");
+
+    await firstRowBody.click();
+    await expect(firstRowBody).toHaveAttribute("aria-expanded", "false");
+    await expect(page.locator(`#edit-form-${firstRowId}`)).not.toBeVisible();
+
     // Test Exclude All
     await page.getByRole("button", { name: "ยกเลิกทั้งหมด" }).click();
     await expect(page.getByText("เลือก 0 จาก 20 รายการ")).toBeVisible();
