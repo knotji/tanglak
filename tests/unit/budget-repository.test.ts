@@ -74,6 +74,23 @@ describe("monthly budget repository", () => {
     );
   });
 
+  it("rejects a category label that differs from an existing one only by leading/trailing whitespace", async () => {
+    const budget = await upsertMonthlyBudget("user-a", "2026-07", 30_000_00);
+    await createBudgetCategory("user-a", budget.id, "อาหาร", 5_000_00);
+    await expect(createBudgetCategory("user-a", budget.id, "  อาหาร  ", 1_000_00)).rejects.toThrow(
+      BUDGET_ERROR_DUPLICATE_TH,
+    );
+    await expect(createBudgetCategory("user-a", budget.id, "อาหาร ", 1_000_00)).rejects.toThrow(
+      BUDGET_ERROR_DUPLICATE_TH,
+    );
+  });
+
+  it("stores a category label with leading/trailing whitespace already trimmed", async () => {
+    const budget = await upsertMonthlyBudget("user-a", "2026-07", 30_000_00);
+    const category = await createBudgetCategory("user-a", budget.id, "  เดินทาง  ", 1_000_00);
+    expect(category.label).toBe("เดินทาง");
+  });
+
   it("allows the same category label in two different months (no cross-month collision)", async () => {
     const julyBudget = await upsertMonthlyBudget("user-a", "2026-07", 30_000_00);
     const augustBudget = await upsertMonthlyBudget("user-a", "2026-08", 30_000_00);

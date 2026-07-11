@@ -133,6 +133,15 @@ describe("calculateCategorySpend — transaction inclusion rules", () => {
     const spend = calculateCategorySpend([tx({ type: "expense", category: "   ", amountSatang: 750 })], "2026-07");
     expect(spend.uncategorizedSatang).toBe(750);
   });
+
+  it("matches a transaction whose category has surrounding whitespace to the trimmed budget label", () => {
+    const spend = calculateCategorySpend(
+      [tx({ type: "expense", category: "  อาหาร  ", amountSatang: 600 })],
+      "2026-07",
+    );
+    expect(spend.byLabel["อาหาร"]).toBe(600);
+    expect(spend.byLabel["  อาหาร  "]).toBeUndefined();
+  });
 });
 
 describe("statusForCategory — status thresholds", () => {
