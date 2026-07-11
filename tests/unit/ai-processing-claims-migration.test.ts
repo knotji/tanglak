@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 const migrationPath = join(
   process.cwd(),
-  "supabase/migrations/202607110002_ai_processing_claims.sql",
+  "supabase/migrations/202607110003_ai_processing_claims.sql",
 );
 const initialSchemaPath = join(
   process.cwd(),
