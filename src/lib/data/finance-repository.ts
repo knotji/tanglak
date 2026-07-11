@@ -4,6 +4,7 @@ import { mapDebt, mapTransaction, mapDocument, mapDocumentExtraction, mapImportB
 import { timeAsync } from "@/lib/observability/timing";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { assertMoneySatang } from "@/lib/finance/money-guards";
+import { logSafeError } from "@/lib/observability/safe-diagnostics";
 import type { Debt, Transaction, FinanceDocument, DocumentExtraction, ImportBatch, ImportRow, Account } from "@/types/domain";
 
 export type TransactionInput = {
@@ -1089,6 +1090,218 @@ export async function updateImportRow(
 
 // === History Staging Batch Commit Logic ===
 
+function isRowResolved(row: ImportRow): boolean {
+  return row.reviewStatus === "imported" || row.reviewStatus === "skipped";
+}
+
+/**
+ * Commits exactly one staging row's "import" decision, synchronously, with
+ * no `await` between the resolved-state check and the mutation. JS is
+ * single-threaded and only yields at `await` points, so a function body
+ * with none is atomic with respect to any other concurrently-running async
+ * call into the mock store -- this mirrors the row-level locking the real
+ * `import_commit_row` Postgres function provides via `select ... for update`.
+ */
+function commitImportRowMock(
+  userId: string,
+  batchId: string,
+  rowId: string,
+  type: Transaction["type"],
+  amountSatang: number,
+  occurredAt: string,
+  merchant: string | undefined,
+  category: string | undefined,
+  sourceAccountId: string | undefined,
+  destinationAccountId: string | undefined,
+  debtId: string | undefined,
+): { transactionId: string; alreadyImported: boolean } {
+  const state = getMockState();
+  const rowIdx = state.importRows.findIndex(
+    (r) => r.id === rowId && r.userId === userId && r.importBatchId === batchId,
+  );
+  if (rowIdx < 0) throw new Error("Staging row not found");
+  const row = state.importRows[rowIdx];
+
+  if (isRowResolved(row)) {
+    return { transactionId: row.createdTransactionId ?? "", alreadyImported: true };
+  }
+
+  if (debtId) {
+    const debt = state.debts.find((d) => d.id === debtId && d.userId === userId);
+    if (!debt) throw new Error("Debt not found");
+  }
+
+  assertMoneySatang(amountSatang, type === "debt_payment" ? "positive" : "nonnegative", "amountSatang");
+
+  const transaction: Transaction = {
+    id: crypto.randomUUID(),
+    userId,
+    type,
+    status: "confirmed",
+    amountSatang,
+    currency: "THB",
+    occurredAt,
+    merchant,
+    category,
+    debtId,
+    source: "history_import",
+    sourceAccountId,
+    destinationAccountId,
+    importBatchId: batchId,
+    importRowId: rowId,
+    isHistorical: true,
+  };
+  state.transactions.unshift(transaction);
+  if (debtId) recalculateMockDebtPaid(userId, debtId);
+
+  state.importRows[rowIdx] = {
+    ...row,
+    createdTransactionId: transaction.id,
+    reviewStatus: "imported",
+    importDecision: "import",
+    updatedAt: new Date().toISOString(),
+  };
+
+  return { transactionId: transaction.id, alreadyImported: false };
+}
+
+/**
+ * Real-DB counterpart of `commitImportRowMock`: delegates the entire
+ * lock-check-insert-link sequence to the `import_commit_row` Postgres
+ * function (202607110002_history_import_idempotency.sql), which performs it
+ * as a single atomic operation using `select ... for update` row locking --
+ * safe against concurrent commit requests for the same row without any
+ * application-level mutex.
+ */
+async function commitImportRowRpc(
+  userId: string,
+  batchId: string,
+  rowId: string,
+  type: Transaction["type"],
+  amountSatang: number,
+  occurredAt: string,
+  merchant: string | undefined,
+  category: string | undefined,
+  sourceAccountId: string | undefined,
+  destinationAccountId: string | undefined,
+  debtId: string | undefined,
+): Promise<{ transactionId: string; alreadyImported: boolean }> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("import_commit_row", {
+    p_user_id: userId,
+    p_batch_id: batchId,
+    p_row_id: rowId,
+    p_type: type,
+    p_amount_satang: amountSatang,
+    p_occurred_at: occurredAt,
+    p_merchant: merchant ?? null,
+    p_category: category ?? null,
+    p_payment_method: null,
+    p_note: null,
+    p_source_account_id: sourceAccountId ?? null,
+    p_destination_account_id: destinationAccountId ?? null,
+    p_debt_id: debtId ?? null,
+  });
+  if (error) throw new Error(error.message);
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { transaction_id: string; already_imported: boolean }
+    | undefined;
+  if (!row) throw new Error("Import commit did not return a result");
+  return { transactionId: row.transaction_id, alreadyImported: row.already_imported };
+}
+
+async function commitImportRow(
+  userId: string,
+  batchId: string,
+  rowId: string,
+  type: Transaction["type"],
+  amountSatang: number,
+  occurredAt: string,
+  merchant: string | undefined,
+  category: string | undefined,
+  sourceAccountId: string | undefined,
+  destinationAccountId: string | undefined,
+  debtId: string | undefined,
+): Promise<{ transactionId: string; alreadyImported: boolean }> {
+  // Validate independently of whatever the client already checked, using
+  // the same financial value guards as every other write path.
+  assertMoneySatang(amountSatang, type === "debt_payment" ? "positive" : "nonnegative", "amountSatang");
+  if (debtId) await assertDebtBelongsToUser(userId, debtId);
+
+  if (isMockAuthEnabled()) {
+    return commitImportRowMock(
+      userId,
+      batchId,
+      rowId,
+      type,
+      amountSatang,
+      occurredAt,
+      merchant,
+      category,
+      sourceAccountId,
+      destinationAccountId,
+      debtId,
+    );
+  }
+  return commitImportRowRpc(
+    userId,
+    batchId,
+    rowId,
+    type,
+    amountSatang,
+    occurredAt,
+    merchant,
+    category,
+    sourceAccountId,
+    destinationAccountId,
+    debtId,
+  );
+}
+
+/**
+ * Updates a staging row's terminal status (skip / merge link) only if it is
+ * not already resolved. The `.not("review_status", "in", ...)` clause makes
+ * the underlying UPDATE itself the concurrency guard: Postgres locks the
+ * matching row for the statement's duration, so two concurrent calls for
+ * the same row_id serialize, and whichever runs second sees the row already
+ * resolved and matches zero rows (a safe, silent no-op) rather than
+ * clobbering the first call's result.
+ */
+async function updateImportRowIfUnresolved(
+  userId: string,
+  id: string,
+  input: Partial<Pick<ImportRow, "reviewStatus" | "importDecision" | "createdTransactionId">>,
+): Promise<void> {
+  if (isMockAuthEnabled()) {
+    const state = getMockState();
+    const idx = state.importRows.findIndex((r) => r.id === id && r.userId === userId);
+    if (idx < 0) throw new Error("Staging row not found");
+    if (isRowResolved(state.importRows[idx])) return;
+    state.importRows[idx] = {
+      ...state.importRows[idx],
+      ...input,
+      updatedAt: new Date().toISOString(),
+    } as ImportRow;
+    return;
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const payload: Record<string, unknown> = {};
+  if (input.reviewStatus !== undefined) payload.review_status = input.reviewStatus;
+  if (input.importDecision !== undefined) payload.import_decision = input.importDecision;
+  if (input.createdTransactionId !== undefined) payload.created_transaction_id = input.createdTransactionId;
+
+  const { error } = await supabase
+    .from("import_rows")
+    .update(payload)
+    .eq("id", id)
+    .eq("user_id", userId)
+    .not("review_status", "in", '("imported","skipped")');
+  if (error) throw new Error(error.message);
+}
+
+export type ImportRowFailure = { rowId: string; message: string };
+
 export async function importReviewedRows(
   userId: string,
   batchId: string,
@@ -1104,117 +1317,132 @@ export async function importReviewedRows(
     amountSatang?: number;
     duplicateTransactionId?: string;
   }[],
-): Promise<{ importedCount: number; mergedCount: number; skippedCount: number }> {
+): Promise<{
+  importedCount: number;
+  mergedCount: number;
+  skippedCount: number;
+  failedCount: number;
+  remainingCount: number;
+  failures: ImportRowFailure[];
+}> {
+  // Fail fast and cleanly if this batch does not belong to the caller,
+  // rather than letting a foreign batchId silently no-op through every
+  // per-row check and only surface as an obscure error from the batch
+  // counter update at the very end.
+  const batch = await getImportBatch(userId, batchId);
+  if (!batch) {
+    throw new Error("ไม่พบชุดนำเข้าข้อมูล");
+  }
+
+  // Read the row states once, up front, so idempotency decisions for this
+  // call are based on a single consistent snapshot rather than re-reading
+  // (and potentially observing a different state) row by row.
+  const existingRows = await listImportRows(userId, batchId);
+  const rowById = new Map(existingRows.map((r) => [r.id, r]));
+
   let importedCount = 0;
   let mergedCount = 0;
   let skippedCount = 0;
+  let failedCount = 0;
+  const failures: ImportRowFailure[] = [];
 
   for (const dec of rowDecisions) {
-    if (dec.decision === "import") {
-      const type = dec.transactionType || "expense";
-      const amount = dec.amountSatang || 0;
+    const existing = rowById.get(dec.rowId);
+    if (!existing) {
+      failedCount++;
+      failures.push({ rowId: dec.rowId, message: "ไม่พบรายการนี้ในชุดข้อมูล" });
+      continue;
+    }
 
-      // Idempotency guard: skip rows already linked to a transaction
-      const existingRow = getMockState().importRows.find((r) => r.id === dec.rowId && r.userId === userId);
-      if (isMockAuthEnabled() && existingRow?.createdTransactionId) {
-        importedCount++; // count as imported but don't create duplicate
-        continue;
-      }
-
-      let createdTxId = "";
-      if (type === "debt_payment" && dec.debtId) {
-        // Debt payment path
-        const dp = await addDebtPayment(userId, dec.debtId, amount);
-        createdTxId = dp.transaction.id;
-        // If a transaction was created, link it back to the batch/row
-        if (createdTxId) {
-          await updateTransaction(userId, createdTxId, {
-            importBatchId: batchId,
-            importRowId: dec.rowId,
-            isHistorical: true,
-            source: "history_import",
-          });
-        }
+    // Idempotency: a row already resolved (imported, merged, or skipped) by
+    // this call or an earlier one is frozen -- retries, double submits, and
+    // concurrent requests must never re-process it, regardless of what
+    // decision this particular request sends for it.
+    if (isRowResolved(existing)) {
+      if (existing.reviewStatus === "imported") {
+        if (existing.importDecision === "merge_existing") mergedCount++;
+        else importedCount++;
       } else {
-        // Normal transaction path
-        // Decide sourceAccountId and destinationAccountId based on accountId ownership
+        skippedCount++;
+      }
+      continue;
+    }
+
+    try {
+      if (dec.decision === "import") {
+        const type = dec.transactionType || "expense";
+        const amount = dec.amountSatang || 0;
         const sourceAccountId = type === "expense" || type === "transfer" ? accountId : undefined;
         const destinationAccountId = type === "income" || type === "transfer" ? accountId : undefined;
 
-        const tx = await createTransaction(userId, {
+        await commitImportRow(
+          userId,
+          batchId,
+          dec.rowId,
           type,
-          amountSatang: amount,
-          occurredAt: dec.occurredAt || new Date().toISOString(),
-          merchant: dec.merchant,
-          category: dec.category,
+          amount,
+          dec.occurredAt || new Date().toISOString(),
+          dec.merchant,
+          dec.category,
           sourceAccountId,
           destinationAccountId,
-          debtId: dec.debtId,
-          source: "history_import",
-          documentId: undefined,
-        });
-
-        // Set the link on the created transaction
-        await updateTransaction(userId, tx.id, {
+          dec.debtId,
+        );
+        importedCount++;
+      } else if (dec.decision === "merge_existing" && dec.duplicateTransactionId) {
+        await updateTransaction(userId, dec.duplicateTransactionId, {
           importBatchId: batchId,
           importRowId: dec.rowId,
-          isHistorical: true,
         });
-        createdTxId = tx.id;
+        await updateImportRowIfUnresolved(userId, dec.rowId, {
+          reviewStatus: "imported",
+          importDecision: "merge_existing",
+          createdTransactionId: dec.duplicateTransactionId,
+        });
+        mergedCount++;
+      } else if (dec.decision === "skip") {
+        await updateImportRowIfUnresolved(userId, dec.rowId, {
+          reviewStatus: "skipped",
+          importDecision: "skip",
+        });
+        skippedCount++;
       }
-
-      // Update staging row status
-      await updateImportRow(userId, dec.rowId, {
-        reviewStatus: "imported",
-        importDecision: "import",
-        createdTransactionId: createdTxId,
+    } catch (error) {
+      // A single row's failure must not abort the rest of the batch, and
+      // must not be reported as if the whole commit succeeded. The row
+      // itself is left in whatever state it was in (still unresolved), so
+      // a retry will naturally re-attempt exactly this row and no others.
+      failedCount++;
+      const safeMessage = error instanceof Error ? error.message : "นำเข้ารายการนี้ไม่สำเร็จ";
+      failures.push({ rowId: dec.rowId, message: safeMessage });
+      logSafeError("Import row commit failed", {
+        operation: "history-import",
+        stage: "confirm.row",
+        batchId,
+        error,
       });
-      importedCount++;
-    } else if (dec.decision === "merge_existing" && dec.duplicateTransactionId) {
-      // Merge transaction path
-      // Link the existing transaction to this batch and staging row as evidence
-      await updateTransaction(userId, dec.duplicateTransactionId, {
-        importBatchId: batchId,
-        importRowId: dec.rowId,
-      });
-
-      // Update staging row status
-      await updateImportRow(userId, dec.rowId, {
-        reviewStatus: "imported",
-        importDecision: "merge_existing",
-        createdTransactionId: dec.duplicateTransactionId,
-      });
-      mergedCount++;
-    } else if (dec.decision === "skip") {
-      // Skip path
-      await updateImportRow(userId, dec.rowId, {
-        reviewStatus: "skipped",
-        importDecision: "skip",
-      });
-      skippedCount++;
     }
   }
 
-  // Update batch progress
-  const batch = await getImportBatch(userId, batchId);
-  if (batch) {
-    const newImported = (batch.importedRows || 0) + importedCount;
-    const newSkipped = (batch.skippedRows || 0) + skippedCount;
-    // status is 'completed' if all staging rows are resolved, else 'partially_imported'
-    const stagingRows = await listImportRows(userId, batchId);
-    const unresolvedCount = stagingRows.filter((r) => r.importDecision === "unresolved").length;
-    const status = unresolvedCount === 0 ? "completed" : "partially_imported";
+  // Always recompute batch counters from the actual current row state
+  // (never accumulate deltas onto whatever was previously stored) so this
+  // is correct and idempotent no matter how many times, or how partially,
+  // this function has been called for this batch.
+  const finalRows = await listImportRows(userId, batchId);
+  const importedTotal = finalRows.filter((r) => r.reviewStatus === "imported").length;
+  const skippedTotal = finalRows.filter((r) => r.reviewStatus === "skipped").length;
+  const unresolvedCount = finalRows.filter((r) => r.importDecision === "unresolved").length;
+  const status = unresolvedCount === 0 ? "completed" : "partially_imported";
 
-    await updateImportBatch(userId, batchId, {
-      importedRows: newImported,
-      skippedRows: newSkipped,
-      status,
-      completedAt: new Date().toISOString(),
-      accountId,
-    });
-  }
+  await updateImportBatch(userId, batchId, {
+    importedRows: importedTotal,
+    skippedRows: skippedTotal,
+    status,
+    completedAt: new Date().toISOString(),
+    accountId,
+  });
 
-  return { importedCount, mergedCount, skippedCount };
+  return { importedCount, mergedCount, skippedCount, failedCount, remainingCount: unresolvedCount, failures };
 }
 
 // === History Staging Batch Rollback Logic ===
@@ -1236,11 +1464,10 @@ export async function rollbackImportBatch(userId: string, batchId: string): Prom
       (tx) => tx.importBatchId === batchId && tx.isHistorical === true && tx.userId === userId
     );
     const targetTxIds = targetTxs.map((tx) => tx.id);
+    const affectedDebtIds = Array.from(
+      new Set(targetTxs.map((tx) => tx.debtId).filter((id): id is string => Boolean(id))),
+    );
 
-    // Delete associated debt payments
-    state.debts.forEach((_debt) => {
-      // Recalculate debt progress logic handled by repository usually, mock state needs manual recalculation
-    });
     // In mock store, delete transactions
     state.transactions = state.transactions.filter((tx) => !targetTxIds.includes(tx.id));
 
@@ -1261,6 +1488,10 @@ export async function rollbackImportBatch(userId: string, batchId: string): Prom
       }
     });
 
+    // 3b. Recalculate cached debt totals now that their historical
+    // debt-payment transactions no longer exist.
+    affectedDebtIds.forEach((debtId) => recalculateMockDebtPaid(userId, debtId));
+
     // 4. Set batch status
     const batchIdx = state.importBatches.findIndex((b) => b.id === batchId && b.userId === userId);
     if (batchIdx >= 0) {
@@ -1275,83 +1506,28 @@ export async function rollbackImportBatch(userId: string, batchId: string): Prom
     return;
   }
 
+  // The entire rollback sequence (delete debt_payments, delete historical
+  // transactions, unlink merged transactions, reset staging rows,
+  // recalculate affected debts, mark the batch rolled_back) is delegated to
+  // the import_rollback_batch Postgres function
+  // (202607110002_history_import_idempotency.sql) so it commits or fails as
+  // a single atomic unit -- a crash between steps can no longer leave
+  // import_rows pointing at deleted transactions with the batch still
+  // showing 'completed'.
   const supabase = await createSupabaseServerClient();
-
-  // State validation: check batch is rollbackable
-  const { data: batchData, error: batchFetchError } = await supabase
-    .from("import_batches")
-    .select("status")
-    .eq("id", batchId)
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (batchFetchError) throw new Error(batchFetchError.message);
-  if (!batchData) throw new Error("ไม่พบชุดนำเข้าข้อมูล");
-  if (batchData.status === "rolled_back") return; // idempotent: safe re-entry
-  if (batchData.status !== "completed" && batchData.status !== "partially_imported") {
-    throw new Error("ไม่สามารถ Rollback ชุดข้อมูลที่ยังไม่ได้นำเข้า");
+  const { error } = await supabase.rpc("import_rollback_batch", {
+    p_user_id: userId,
+    p_batch_id: batchId,
+  });
+  if (error) {
+    if (error.message.includes("import batch not found")) {
+      throw new Error("ไม่พบชุดนำเข้าข้อมูล");
+    }
+    if (error.message.includes("cannot roll back a batch")) {
+      throw new Error("ไม่สามารถ Rollback ชุดข้อมูลที่ยังไม่ได้นำเข้า");
+    }
+    throw new Error(error.message);
   }
-
-  // 1. Get transactions created by this batch
-  const { data: txs, error: txError } = await supabase
-    .from("transactions")
-    .select("id")
-    .eq("import_batch_id", batchId)
-    .eq("user_id", userId)
-    .eq("is_historical", true);
-
-  if (txError) throw new Error(txError.message);
-  const txIds = (txs ?? []).map((t) => t.id);
-
-  if (txIds.length > 0) {
-    // Delete associated debt payments first to prevent orphans
-    const { error: dpError } = await supabase
-      .from("debt_payments")
-      .delete()
-      .in("transaction_id", txIds)
-      .eq("user_id", userId);
-    if (dpError) throw new Error(dpError.message);
-
-    // Delete historical transactions
-    const { error: delTxError } = await supabase
-      .from("transactions")
-      .delete()
-      .in("id", txIds)
-      .eq("user_id", userId);
-    if (delTxError) throw new Error(delTxError.message);
-  }
-
-  // 2. Unlink merged transactions
-  const { error: unlinkError } = await supabase
-    .from("transactions")
-    .update({ import_batch_id: null, import_row_id: null })
-    .eq("import_batch_id", batchId)
-    .eq("user_id", userId);
-  if (unlinkError) throw new Error(unlinkError.message);
-
-  // 3. Reset staging rows
-  const { error: resetRowsError } = await supabase
-    .from("import_rows")
-    .update({
-      review_status: "ready",
-      import_decision: "unresolved",
-      created_transaction_id: null,
-    })
-    .eq("import_batch_id", batchId)
-    .eq("user_id", userId);
-  if (resetRowsError) throw new Error(resetRowsError.message);
-
-  // 4. Mark batch rolled_back
-  const { error: batchUpdateError } = await supabase
-    .from("import_batches")
-    .update({
-      status: "rolled_back",
-      imported_rows: 0,
-      skipped_rows: 0,
-      rolled_back_at: new Date().toISOString(),
-    })
-    .eq("id", batchId)
-    .eq("user_id", userId);
-  if (batchUpdateError) throw new Error(batchUpdateError.message);
 }
 
 export async function listAccounts(userId: string): Promise<Account[]> {
