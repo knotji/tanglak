@@ -182,6 +182,8 @@ export function ReviewForm({
   const [isDeleting, setIsDeleting] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
   const [manualMode, setManualMode] = useState(false);
+  const isFailed = doc.status === "failed" || doc.status === "failed_retryable" || doc.status === "failed_permanent";
+  const canRetry = doc.status === "failed" || doc.status === "failed_retryable";
   const failedMessage = doc.errorMessage && !/Zod|expected|received|[\[\{]|Gemini|quota|stack|Error/i.test(doc.errorMessage)
     ? doc.errorMessage
     : DOCUMENT_EXTRACTION_FALLBACK_MESSAGE;
@@ -396,7 +398,7 @@ export function ReviewForm({
             </span>
           </div>
           <div className="flex gap-2">
-            {doc.status === "failed" && (
+            {canRetry && (
               <button
                 type="button"
                 onClick={handleRetry}
@@ -420,20 +422,22 @@ export function ReviewForm({
         </div>
 
         {/* Failed State Screen */}
-        {doc.status === "failed" && !manualMode && (
+        {isFailed && !manualMode && (
           <div className="rounded-[16px] border border-red-200 bg-red-50/50 p-6 text-center shadow-[0_12px_24px_rgba(239,68,68,0.05)]">
             <AlertTriangle className="mx-auto text-red-500" size={48} />
             <h3 className="mt-4 text-lg font-bold text-red-700">การอ่านสลิปไม่สำเร็จ</h3>
             <p className="mt-2 whitespace-pre-line text-sm text-red-600">{failedMessage}</p>
             <div className="mt-6 flex justify-center gap-3">
-              <button
-                onClick={handleRetry}
-                disabled={isRetrying}
-                className="flex items-center gap-2 rounded-[16px] bg-primary px-6 py-3 font-bold text-white shadow-sm hover:bg-primary-dark disabled:opacity-50"
-              >
-                <RefreshCw size={18} className={isRetrying ? "animate-spin" : ""} />
-                ลองประมวลผลอีกครั้ง
-              </button>
+              {canRetry ? (
+                <button
+                  onClick={handleRetry}
+                  disabled={isRetrying}
+                  className="flex items-center gap-2 rounded-[16px] bg-primary px-6 py-3 font-bold text-white shadow-sm hover:bg-primary-dark disabled:opacity-50"
+                >
+                  <RefreshCw size={18} className={isRetrying ? "animate-spin" : ""} />
+                  ลองประมวลผลอีกครั้ง
+                </button>
+              ) : null}
               <button
                 onClick={() => setManualMode(true)}
                 className="rounded-[16px] border border-border bg-white px-6 py-3 font-bold text-foreground shadow-sm hover:bg-gray-50"
@@ -452,7 +456,7 @@ export function ReviewForm({
         )}
 
         {/* Main Interface Grid */}
-        {(doc.status !== "failed" || manualMode) && (
+        {(!isFailed || manualMode) && (
           <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
             {/* Left: Document Image/PDF Preview */}
             <div className="md:col-span-5 flex flex-col gap-2">

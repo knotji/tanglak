@@ -652,6 +652,47 @@ export async function updateDocument(
   return mapDocument(data);
 }
 
+const PROCESSABLE_DOCUMENT_STATUSES: FinanceDocument["status"][] = [
+  "uploaded",
+  "failed_retryable",
+  "failed",
+];
+
+export async function claimDocumentForProcessing(
+  userId: string,
+  id: string,
+): Promise<FinanceDocument | null> {
+  if (isMockAuthEnabled()) {
+    const state = getMockState();
+    const index = state.documents.findIndex((d) => d.id === id && d.userId === userId);
+    if (index < 0) return null;
+    const current = state.documents[index];
+    if (!PROCESSABLE_DOCUMENT_STATUSES.includes(current.status)) return null;
+    state.documents[index] = {
+      ...current,
+      status: "processing",
+      errorMessage: undefined,
+      updatedAt: new Date().toISOString(),
+    };
+    return state.documents[index];
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("documents")
+    .update({
+      status: "processing",
+      error_message: null,
+    })
+    .eq("id", id)
+    .eq("user_id", userId)
+    .in("status", PROCESSABLE_DOCUMENT_STATUSES)
+    .select("*")
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? mapDocument(data) : null;
+}
+
 export async function deleteDocument(userId: string, id: string): Promise<void> {
   if (isMockAuthEnabled()) {
     const state = getMockState();
@@ -683,6 +724,10 @@ export async function createDocumentExtraction(
   },
 ): Promise<DocumentExtraction> {
   if (isMockAuthEnabled()) {
+    const state = getMockState();
+    state.documentExtractions = state.documentExtractions.filter(
+      (existing) => !(existing.documentId === input.documentId && existing.userId === userId),
+    );
     const extraction: DocumentExtraction = {
       id: crypto.randomUUID(),
       userId,
@@ -697,11 +742,18 @@ export async function createDocumentExtraction(
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    getMockState().documentExtractions.unshift(extraction);
+    state.documentExtractions.unshift(extraction);
     return extraction;
   }
 
   const supabase = await createSupabaseServerClient();
+  const { error: deleteError } = await supabase
+    .from("document_extractions")
+    .delete()
+    .eq("document_id", input.documentId)
+    .eq("user_id", userId);
+  if (deleteError) throw new Error(deleteError.message);
+
   const { data, error } = await supabase
     .from("document_extractions")
     .insert({

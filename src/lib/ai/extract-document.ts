@@ -1,10 +1,16 @@
 import { isMockAuthEnabled } from "@/lib/auth/session";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { extractFinancialDocument } from "./gemini";
-import { getDocument, createDocumentExtraction, updateDocument } from "@/lib/data/finance-repository";
+import {
+  claimDocumentForProcessing,
+  createDocumentExtraction,
+  getDocument,
+  updateDocument,
+} from "@/lib/data/finance-repository";
 import type { ExtractedFinancialDocument } from "./schemas";
 import { extractedFinancialDocumentSchema } from "./schemas";
-import { safeDocumentExtractionMessage, toDocumentExtractionError } from "./extraction-errors";
+import { DocumentExtractionError, safeDocumentExtractionMessage, toDocumentExtractionError } from "./extraction-errors";
+import { DOCUMENT_PROCESSING_TIMEOUT_MS, withTimeout } from "./resilience";
 import { logSafeError } from "@/lib/observability/safe-diagnostics";
 
 /**
@@ -12,45 +18,65 @@ import { logSafeError } from "@/lib/observability/safe-diagnostics";
  */
 export async function processAndExtractDocument(
   userId: string,
-  documentId: string
+  documentId: string,
+  options?: {
+    timeoutMs?: number;
+    providerTimeoutMs?: number;
+    providerMaxAttempts?: number;
+    providerBackoffMs?: (attempt: number, retryAfterMs?: number) => number;
+  },
 ): Promise<ExtractedFinancialDocument> {
-  const doc = await getDocument(userId, documentId);
-  if (!doc) {
+  const currentDoc = await getDocument(userId, documentId);
+  if (!currentDoc) {
     throw new Error("Document record not found");
   }
 
-  // 1. Update status to 'processing'
-  await updateDocument(userId, documentId, { status: "processing", errorMessage: null });
+  const doc = await claimDocumentForProcessing(userId, documentId);
+  if (!doc) {
+    throw new DocumentExtractionError("processing_claim_failed", { retryable: true });
+  }
 
   try {
-    let result: ExtractedFinancialDocument;
+    const result = await withTimeout(
+      async (signal) => {
+        if (isMockAuthEnabled()) {
+          // Intercept and return mock data for testing
+          return getMockExtraction(doc.originalFilename || "", doc.documentType || "other", currentDoc.status);
+        }
 
-    if (isMockAuthEnabled()) {
-      // Intercept and return mock data for testing
-      result = getMockExtraction(doc.originalFilename || "", doc.documentType || "other", doc.status);
-    } else {
-      const supabase = await createSupabaseServerClient();
-      
-      // Download private file from Supabase storage
-      const { data, error } = await supabase.storage
-        .from("financial-documents")
-        .download(doc.storagePath);
+        const supabase = await createSupabaseServerClient();
 
-      if (error || !data) {
-        throw new Error(`Failed to download file from storage: ${error?.message || "No data"}`);
-      }
+        // Download private file from Supabase storage
+        const { data, error } = await Promise.race([
+          supabase.storage
+            .from("financial-documents")
+            .download(doc.storagePath),
+          new Promise<never>((_, reject) => {
+            signal.addEventListener("abort", () => reject(new DocumentExtractionError("timeout")), { once: true });
+          }),
+        ]);
 
-      // Convert file blob to base64
-      const arrayBuffer = await data.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      const base64 = buffer.toString("base64");
+        if (error || !data) {
+          throw new DocumentExtractionError("provider_error");
+        }
 
-      // Call Gemini REST endpoint
-      result = await extractFinancialDocument({
-        mimeType: doc.mimeType,
-        base64,
-      });
-    }
+        // Convert file blob to base64
+        const arrayBuffer = await data.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const base64 = buffer.toString("base64");
+
+        // Call Gemini REST endpoint
+        return extractFinancialDocument({
+          mimeType: doc.mimeType,
+          base64,
+          signal,
+          timeoutMs: options?.providerTimeoutMs,
+          maxAttempts: options?.providerMaxAttempts,
+          backoffMs: options?.providerBackoffMs,
+        });
+      },
+      options?.timeoutMs ?? DOCUMENT_PROCESSING_TIMEOUT_MS,
+    );
 
     // 2. Persist extraction layers in document_extractions table
     await createDocumentExtraction(userId, {
@@ -64,9 +90,9 @@ export async function processAndExtractDocument(
       requiresReview: true,
     });
 
-    // 3. Update document status to 'needs_review' on success
+    // 3. Update document status to review-ready on success
     await updateDocument(userId, documentId, {
-      status: "needs_review",
+      status: "review_ready",
       documentType: result.documentType,
     });
 
@@ -85,7 +111,7 @@ export async function processAndExtractDocument(
     });
     // Update document status to 'failed' on failure
     await updateDocument(userId, documentId, {
-      status: "failed",
+      status: extractionError.retryable ? "failed_retryable" : "failed_permanent",
       errorMessage: safeDocumentExtractionMessage(extractionError),
     });
     throw extractionError;
@@ -102,12 +128,12 @@ function getMockExtraction(
 ): ExtractedFinancialDocument {
   const nameLower = filename.toLowerCase();
 
-  if (nameLower.includes("retry_success") && previousStatus !== "failed") {
-    throw new Error("Mocked Gemini Failure Before Retry");
+  if (nameLower.includes("retry_success") && previousStatus !== "failed" && previousStatus !== "failed_retryable") {
+    throw new DocumentExtractionError("transient_provider_error");
   }
 
   if (nameLower.includes("failed")) {
-    throw new Error("Gemini quota/rate limit error (Mocked Gemini Failure)");
+    throw new DocumentExtractionError("transient_provider_error");
   }
 
   // 1. Salary Slip Mock

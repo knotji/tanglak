@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { sanitizeFilename } from "@/app/actions/documents";
 import { extractedFinancialDocumentSchema } from "@/lib/ai/schemas";
-import { classifySchemaValidationError, DOCUMENT_EXTRACTION_FALLBACK_MESSAGE } from "@/lib/ai/extraction-errors";
+import {
+  classifySchemaValidationError,
+  DOCUMENT_EXTRACTION_PERMANENT_MESSAGE,
+} from "@/lib/ai/extraction-errors";
 import { scoreDuplicateCandidate } from "@/lib/finance/duplicates";
 import { salaryNetIncomeSatang, deliveryTotalPaidSatang } from "@/lib/finance/calculations";
 import { bahtToSatang } from "@/lib/finance/money";
@@ -108,7 +111,7 @@ describe("Gemini Schema Parsing & Validation", () => {
       const classified = classifySchemaValidationError(result.error);
       expect(classified.code).toBe("incomplete_financial_extraction");
       expect(classified.missingFields).toEqual(["transaction.amount"]);
-      expect(classified.message).toBe(DOCUMENT_EXTRACTION_FALLBACK_MESSAGE);
+      expect(classified.message).toBe(DOCUMENT_EXTRACTION_PERMANENT_MESSAGE);
     }
   });
 
@@ -132,7 +135,7 @@ describe("Gemini Schema Parsing & Validation", () => {
     if (!result.success) {
       const classified = classifySchemaValidationError(result.error);
       // Safe Thai UI message only — no raw Zod issue text leaks through.
-      expect(classified.message).toBe(DOCUMENT_EXTRACTION_FALLBACK_MESSAGE);
+      expect(classified.message).toBe(DOCUMENT_EXTRACTION_PERMANENT_MESSAGE);
       expect(classified.message).not.toMatch(/zod|nonnegative|greater than or equal/i);
     }
   });

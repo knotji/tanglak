@@ -91,12 +91,13 @@ test.describe("financial value guards", () => {
   test.describe.serial("document review negative-field rejection", () => {
     let releasePipelineLock: (() => Promise<void>) | undefined;
 
-    test.beforeAll(async () => {
+    test.beforeEach(async () => {
       releasePipelineLock = await acquirePipelineLock();
     });
 
-    test.afterAll(async () => {
+    test.afterEach(async () => {
       await releasePipelineLock?.();
+      releasePipelineLock = undefined;
     });
 
     test("document review with a negative amount is rejected before it reaches the server", async ({ page }) => {
