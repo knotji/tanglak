@@ -5,7 +5,7 @@ import { GenericBankPDFParser } from "./adapters/generic-bank-pdf";
 import { GenericCreditCardPDFParser } from "./adapters/generic-credit-card-pdf";
 import { validateRunningBalance } from "./validators";
 import { computeRowFingerprint } from "./row-fingerprint";
-import { listRecentConfirmedTransactions } from "../data/finance-repository";
+import { listDuplicateCandidates } from "../data/finance-repository";
 import type { ImportRow, ImportRowDecision, ImportRowStatus } from "@/types/domain";
 
 const PARSERS: ImportParser[] = [
@@ -44,8 +44,12 @@ export async function processStagingRows(
   batchId: string,
   parseResult: ParseResult,
 ): Promise<Omit<ImportRow, "id" | "createdAt" | "updatedAt">[]> {
-  // Retrieve recent transactions for duplicate matching
-  const existingTxs = await listRecentConfirmedTransactions(userId);
+  // Extract all unique amounts and reference numbers from parsed rows
+  const amounts = Array.from(new Set(parseResult.rows.map(r => r.amountSatang)));
+  const refNumbers = Array.from(new Set(parseResult.rows.map(r => r.referenceNumber).filter(Boolean))) as string[];
+
+  // Retrieve recent transaction candidates for duplicate matching
+  const existingTxs = await listDuplicateCandidates(userId, amounts, refNumbers);
 
   const stagingRows: Omit<ImportRow, "id" | "createdAt" | "updatedAt">[] = [];
 

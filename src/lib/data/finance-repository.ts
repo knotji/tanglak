@@ -702,6 +702,43 @@ export async function listRecentConfirmedTransactions(userId: string): Promise<T
   return (data ?? []).map(mapTransaction);
 }
 
+export async function listDuplicateCandidates(
+  userId: string,
+  amounts: number[],
+  refNumbers: string[]
+): Promise<Transaction[]> {
+  if (amounts.length === 0) return [];
+
+  if (isMockAuthEnabled()) {
+    const amountsSet = new Set(amounts);
+    const refNumbersSet = new Set(refNumbers.filter(Boolean));
+    return getMockState().transactions.filter(
+      (tx) =>
+        tx.userId === userId &&
+        tx.status === "confirmed" &&
+        (amountsSet.has(tx.amountSatang) || (tx.referenceNumber && refNumbersSet.has(tx.referenceNumber)))
+    );
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const cleanRefNumbers = refNumbers.filter(Boolean);
+  let query = supabase
+    .from("transactions")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("status", "confirmed");
+
+  if (cleanRefNumbers.length > 0) {
+    query = query.or(`amount_satang.in.(${amounts.join(",")}),reference_number.in.(${cleanRefNumbers.join(",")})`);
+  } else {
+    query = query.in("amount_satang", amounts);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  return (data ?? []).map(mapTransaction);
+}
+
 // === History Import Batches Repository ===
 
 export async function createImportBatch(
