@@ -112,7 +112,7 @@ test.describe.serial("PDF statement import — deterministic parsing edge cases"
 
     // Rollback deletes the historical transactions this batch created.
     await page.getByRole("button", { name: "ย้อนกลับ (Rollback)" }).click();
-    await page.goto("/transactions");
+    await page.goto("/transactions?month=2026-07");
     await expect(page.getByText("MERCHANT 003 BKK")).not.toBeVisible();
   });
 
