@@ -3,11 +3,25 @@ import { ZodError, type ZodIssue } from "zod";
 export const DOCUMENT_EXTRACTION_FALLBACK_MESSAGE =
   "การอ่านข้อมูลบางส่วนไม่ครบ\nลองประมวลผลอีกครั้ง หรือกรอกข้อมูลด้วยตนเอง";
 
+export const DOCUMENT_EXTRACTION_TIMEOUT_MESSAGE =
+  "การประมวลผลใช้เวลานานเกินไป\nลองใหม่อีกครั้งได้โดยไม่ต้องอัปโหลดเอกสารใหม่";
+
+export const DOCUMENT_EXTRACTION_RATE_LIMIT_MESSAGE =
+  "ระบบอ่านเอกสารกำลังมีผู้ใช้งานมาก\nกรุณาลองใหม่อีกครั้งในอีกสักครู่";
+
+export const DOCUMENT_EXTRACTION_PERMANENT_MESSAGE =
+  "ยังอ่านเอกสารนี้ไม่ได้ครบ\nกรอกข้อมูลด้วยตนเองได้ทันที";
+
 export type DocumentExtractionErrorCode =
+  | "timeout"
+  | "rate_limited"
+  | "transient_provider_error"
   | "provider_parse_failed"
   | "provider_error"
   | "schema_validation_failed"
-  | "incomplete_financial_extraction";
+  | "incomplete_financial_extraction"
+  | "unsupported_document"
+  | "processing_claim_failed";
 
 const FINANCIAL_FIELD_PATHS = new Set([
   "documentType",
@@ -25,15 +39,39 @@ export class DocumentExtractionError extends Error {
   readonly code: DocumentExtractionErrorCode;
   readonly userMessage: string;
   readonly missingFields: string[];
+  readonly retryable: boolean;
 
-  constructor(code: DocumentExtractionErrorCode, options?: { cause?: unknown; missingFields?: string[] }) {
-    super(DOCUMENT_EXTRACTION_FALLBACK_MESSAGE);
+  constructor(
+    code: DocumentExtractionErrorCode,
+    options?: { cause?: unknown; missingFields?: string[]; retryable?: boolean; userMessage?: string },
+  ) {
+    const userMessage = options?.userMessage ?? defaultUserMessage(code);
+    super(userMessage);
     this.name = "DocumentExtractionError";
     this.code = code;
-    this.userMessage = DOCUMENT_EXTRACTION_FALLBACK_MESSAGE;
+    this.userMessage = userMessage;
     this.missingFields = options?.missingFields ?? [];
+    this.retryable = options?.retryable ?? defaultRetryable(code);
     this.cause = options?.cause;
   }
+}
+
+function defaultRetryable(code: DocumentExtractionErrorCode): boolean {
+  return code === "timeout" || code === "rate_limited" || code === "transient_provider_error";
+}
+
+function defaultUserMessage(code: DocumentExtractionErrorCode): string {
+  if (code === "timeout") return DOCUMENT_EXTRACTION_TIMEOUT_MESSAGE;
+  if (code === "rate_limited") return DOCUMENT_EXTRACTION_RATE_LIMIT_MESSAGE;
+  if (
+    code === "unsupported_document" ||
+    code === "schema_validation_failed" ||
+    code === "incomplete_financial_extraction" ||
+    code === "provider_parse_failed"
+  ) {
+    return DOCUMENT_EXTRACTION_PERMANENT_MESSAGE;
+  }
+  return DOCUMENT_EXTRACTION_FALLBACK_MESSAGE;
 }
 
 function issuePath(issue: ZodIssue): string {

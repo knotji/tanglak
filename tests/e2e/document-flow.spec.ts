@@ -25,12 +25,13 @@ async function loginAndCompleteOnboarding(page: import("@playwright/test").Page)
 test.describe.serial("Gemini Document Upload & Review Flow", () => {
   let releasePipelineLock: (() => Promise<void>) | undefined;
 
-  test.beforeAll(async () => {
+  test.beforeEach(async () => {
     releasePipelineLock = await acquirePipelineLock();
   });
 
-  test.afterAll(async () => {
+  test.afterEach(async () => {
     await releasePipelineLock?.();
+    releasePipelineLock = undefined;
   });
 
   test("upload salary slip, review and confirm salary", async ({ page }) => {

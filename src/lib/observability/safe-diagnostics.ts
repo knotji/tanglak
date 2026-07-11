@@ -9,6 +9,7 @@ type SafeDiagnosticInput = {
   provider?: unknown;
   modelName?: unknown;
   durationMs?: unknown;
+  attemptCount?: unknown;
   missingFields?: unknown;
 };
 
@@ -68,6 +69,7 @@ export function createSafeDiagnostic(input: SafeDiagnosticInput): SafeDiagnostic
   const provider = safeString(input.provider, 80);
   const modelName = safeString(input.modelName, 80);
   const durationMs = safeNumber(input.durationMs);
+  const attemptCount = safeNumber(input.attemptCount);
   const missingFields = safeStringList(input.missingFields);
   const code = errorCode(input.errorCode, input.error);
   const devMessage = sanitizedDevelopmentMessage(input.error);
@@ -80,6 +82,7 @@ export function createSafeDiagnostic(input: SafeDiagnosticInput): SafeDiagnostic
   if (provider) diagnostic.provider = provider;
   if (modelName) diagnostic.modelName = modelName;
   if (durationMs !== undefined) diagnostic.durationMs = durationMs;
+  if (attemptCount !== undefined) diagnostic.attemptCount = attemptCount;
   if (missingFields) diagnostic.missingFields = missingFields;
   if (input.error !== undefined) diagnostic.errorName = errorName(input.error);
   if (code) diagnostic.errorCode = code;

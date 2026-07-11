@@ -54,8 +54,11 @@ export type DebtScheduleStatus = "upcoming" | "partial" | "paid" | "overdue";
 export type DocumentStatus =
   | "uploaded"
   | "processing"
+  | "review_ready"
   | "needs_review"
   | "confirmed"
+  | "failed_retryable"
+  | "failed_permanent"
   | "failed";
 
 export type ReminderStatus =

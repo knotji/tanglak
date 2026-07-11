@@ -161,7 +161,7 @@ describe("Gemini logging redaction", () => {
 
     await expect(
       extractFinancialDocument({ mimeType: "image/png", base64: "fake-base64" }),
-    ).rejects.toThrow("การอ่านข้อมูลบางส่วนไม่ครบ");
+    ).rejects.toThrow("ยังอ่านเอกสารนี้ไม่ได้ครบ");
 
     const serialized = JSON.stringify(spy.mock.calls);
     expect(serialized).toContain("schema-validate");

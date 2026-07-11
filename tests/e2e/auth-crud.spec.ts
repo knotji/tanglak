@@ -65,7 +65,7 @@ test("add transaction, delete with confirmation, add debt and payment, persist a
   await page.getByRole("button", { name: "ปิดหนี้" }).first().click();
   await expect(page.getByText("เปิดใหม่")).toBeVisible();
   await page.getByRole("button", { name: "เปิดใหม่" }).first().click();
-  await expect(page.getByText("ปิดหนี้")).toBeVisible();
+  await expect(page.getByRole("button", { name: /ปิดหนี้/ }).first()).toBeVisible();
 
   await page.reload();
   await expect(page.getByText("KTC Test")).toBeVisible();

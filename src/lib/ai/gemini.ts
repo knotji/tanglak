@@ -1,6 +1,15 @@
 import { extractedFinancialDocumentSchema } from "@/lib/ai/schemas";
 import { extractionSystemPrompt } from "@/lib/ai/prompts";
 import { classifySchemaValidationError, DocumentExtractionError } from "@/lib/ai/extraction-errors";
+import {
+  abortError,
+  delay,
+  parseRetryAfterMs,
+  PROVIDER_MAX_ATTEMPTS,
+  PROVIDER_REQUEST_TIMEOUT_MS,
+  retryDelayMs,
+  withTimeout,
+} from "@/lib/ai/resilience";
 import { parseDocumentTimestamp } from "@/lib/ai/timestamp";
 import { logSafeError } from "@/lib/observability/safe-diagnostics";
 import { ZodError } from "zod";
@@ -38,6 +47,10 @@ function normalizeParsedTimestamp(parsedJson: unknown): unknown {
 export async function extractFinancialDocument(input: {
   mimeType: string;
   base64: string;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  maxAttempts?: number;
+  backoffMs?: (attempt: number, retryAfterMs?: number) => number;
 }) {
   if (!process.env.GEMINI_API_KEY) {
     throw new DocumentExtractionError("provider_error");
@@ -45,42 +58,120 @@ export async function extractFinancialDocument(input: {
 
   const model = process.env.GEMINI_MODEL ?? "gemini-3.1-flash-lite";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`;
+  const maxAttempts = input.maxAttempts ?? PROVIDER_MAX_ATTEMPTS;
+  const startedAt = Date.now();
+  let lastError: DocumentExtractionError | undefined;
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [
-        {
-          parts: [
-            { text: "Here is the document to extract." },
-            {
-              inline_data: {
-                mime_type: input.mimeType,
-                data: input.base64,
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const response = await withTimeout(
+        (signal) =>
+          fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal,
+            body: JSON.stringify({
+              contents: [
+                {
+                  parts: [
+                    { text: "Here is the document to extract." },
+                    {
+                      inline_data: {
+                        mime_type: input.mimeType,
+                        data: input.base64,
+                      },
+                    },
+                  ],
+                },
+              ],
+              systemInstruction: {
+                parts: [
+                  { text: extractionSystemPrompt }
+                ]
               },
-            },
-          ],
-        },
-      ],
-      systemInstruction: {
-        parts: [
-          { text: extractionSystemPrompt }
-        ]
-      },
-      generationConfig: {
-        response_mime_type: "application/json"
-      },
-    }),
-  });
+              generationConfig: {
+                response_mime_type: "application/json"
+              },
+            }),
+          }),
+        input.timeoutMs ?? PROVIDER_REQUEST_TIMEOUT_MS,
+        input.signal,
+      );
 
-  if (!response.ok) {
-    throw new DocumentExtractionError("provider_error");
+      if (!response.ok) {
+        throw classifyProviderResponse(response);
+      }
+
+      return await parseGeminiResponse(response, model);
+    } catch (error) {
+      const classified = toProviderAttemptError(error);
+      lastError = classified;
+      const shouldRetry = classified.retryable && attempt < maxAttempts;
+
+      logSafeError(shouldRetry ? "Gemini extraction attempt failed; retrying" : "Gemini extraction attempt failed", {
+        operation: "gemini.extractFinancialDocument",
+        stage: "provider-request",
+        provider: "gemini",
+        modelName: model,
+        errorCode: classified.code,
+        durationMs: Date.now() - startedAt,
+        attemptCount: attempt,
+        error: classified,
+      });
+
+      if (!shouldRetry) throw classified;
+
+      const retryAfterMs = error instanceof ProviderHttpError ? error.retryAfterMs : undefined;
+      const waitMs = input.backoffMs ? input.backoffMs(attempt, retryAfterMs) : retryDelayMs(attempt, retryAfterMs);
+      await delay(waitMs, input.signal);
+    }
   }
 
-  const payload = (await response.json()) as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-  };
+  throw lastError ?? new DocumentExtractionError("provider_error");
+}
+
+class ProviderHttpError extends DocumentExtractionError {
+  readonly retryAfterMs?: number;
+
+  constructor(code: "rate_limited" | "transient_provider_error" | "unsupported_document", retryAfterMs?: number) {
+    super(code);
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
+function classifyProviderResponse(response: Response): ProviderHttpError {
+  if (response.status === 429) {
+    return new ProviderHttpError("rate_limited", parseRetryAfterMs(response.headers.get("retry-after")));
+  }
+  if (response.status >= 500 && response.status <= 599) {
+    return new ProviderHttpError("transient_provider_error");
+  }
+  return new ProviderHttpError("unsupported_document");
+}
+
+function toProviderAttemptError(error: unknown): DocumentExtractionError {
+  if (error instanceof DocumentExtractionError) return error;
+  if (error instanceof DOMException && error.name === "AbortError") return new DocumentExtractionError("timeout");
+  return abortError((error as { signal?: AbortSignal } | undefined)?.signal) ?? new DocumentExtractionError("provider_error", { cause: error });
+}
+
+async function parseGeminiResponse(response: Response, model: string) {
+  let payload: { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+  try {
+    payload = (await response.json()) as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    };
+  } catch (error) {
+    logSafeError("Gemini extraction provider response was invalid JSON", {
+      operation: "gemini.extractFinancialDocument",
+      stage: "provider-response",
+      provider: "gemini",
+      modelName: model,
+      errorCode: "provider_parse_failed",
+      error,
+    });
+    throw new DocumentExtractionError("provider_parse_failed", { cause: error });
+  }
   const text = payload.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) {
     throw new DocumentExtractionError("provider_parse_failed");
