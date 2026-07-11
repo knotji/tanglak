@@ -45,6 +45,24 @@ describe("safe diagnostics", () => {
     expect(serialized).not.toContain("rawModelOutput");
   });
 
+  it("allows non-sensitive missing field names while dropping unknown raw values", () => {
+    const diagnostic = createSafeDiagnostic({
+      operation: "gemini.extractFinancialDocument",
+      stage: "schema-validate",
+      errorCode: "incomplete_financial_extraction",
+      missingFields: ["transaction.amount", "transaction.occurredAt"],
+      // @ts-expect-error proving unknown fields are not part of the allowlist.
+      extractedAmount: 45000,
+    });
+
+    const serialized = JSON.stringify(diagnostic);
+    expect(diagnostic).toMatchObject({
+      missingFields: "transaction.amount,transaction.occurredAt",
+      errorCode: "incomplete_financial_extraction",
+    });
+    expect(serialized).not.toContain("45000");
+  });
+
   it("logs safe diagnostics without serializing provider errors wholesale", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
@@ -106,6 +124,54 @@ describe("Gemini logging redaction", () => {
     expect(serialized).not.toContain("Somchai");
   });
 
+  it("logs safe schema failure codes without raw Zod issue details", async () => {
+    process.env = {
+      ...originalEnv,
+      GEMINI_API_KEY: "test-key",
+      GEMINI_MODEL: "gemini-test",
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            candidates: [
+              {
+                content: {
+                  parts: [
+                    {
+                      text: JSON.stringify({
+                        documentType: "receipt",
+                        transaction: {
+                          type: "expense",
+                          occurredAt: "2026-07-10T12:00:00+07:00",
+                        },
+                      }),
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(
+      extractFinancialDocument({ mimeType: "image/png", base64: "fake-base64" }),
+    ).rejects.toThrow("การอ่านข้อมูลบางส่วนไม่ครบ");
+
+    const serialized = JSON.stringify(spy.mock.calls);
+    expect(serialized).toContain("schema-validate");
+    expect(serialized).toContain("incomplete_financial_extraction");
+    expect(serialized).toContain("transaction.amount");
+    expect(serialized).not.toContain("expected");
+    expect(serialized).not.toContain("received");
+    expect(serialized).not.toContain("ZodError");
+  });
+
   it("does not include provider response bodies in thrown errors", async () => {
     process.env = {
       ...originalEnv,
@@ -121,7 +187,7 @@ describe("Gemini logging redaction", () => {
 
     await expect(
       extractFinancialDocument({ mimeType: "image/png", base64: "fake-base64" }),
-    ).rejects.toThrow("Gemini extraction failed: Status 500");
+    ).rejects.toThrow("การอ่านข้อมูลบางส่วนไม่ครบ");
     await expect(
       extractFinancialDocument({ mimeType: "image/png", base64: "fake-base64" }),
     ).rejects.not.toThrow("salary 45000");

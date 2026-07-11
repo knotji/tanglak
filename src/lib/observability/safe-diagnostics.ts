@@ -9,6 +9,7 @@ type SafeDiagnosticInput = {
   provider?: unknown;
   modelName?: unknown;
   durationMs?: unknown;
+  missingFields?: unknown;
 };
 
 export type SafeDiagnostic = Record<string, string | number>;
@@ -48,6 +49,15 @@ function sanitizedDevelopmentMessage(error: unknown): string | undefined {
   return safeString(error.message, 180);
 }
 
+function safeStringList(value: unknown): string | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const safeItems = value
+    .map((item) => safeString(item, 80))
+    .filter((item): item is string => Boolean(item))
+    .slice(0, 12);
+  return safeItems.length > 0 ? safeItems.join(",") : undefined;
+}
+
 export function createSafeDiagnostic(input: SafeDiagnosticInput): SafeDiagnostic {
   const diagnostic: SafeDiagnostic = {};
   const operation = safeString(input.operation);
@@ -58,6 +68,7 @@ export function createSafeDiagnostic(input: SafeDiagnosticInput): SafeDiagnostic
   const provider = safeString(input.provider, 80);
   const modelName = safeString(input.modelName, 80);
   const durationMs = safeNumber(input.durationMs);
+  const missingFields = safeStringList(input.missingFields);
   const code = errorCode(input.errorCode, input.error);
   const devMessage = sanitizedDevelopmentMessage(input.error);
 
@@ -69,6 +80,7 @@ export function createSafeDiagnostic(input: SafeDiagnosticInput): SafeDiagnostic
   if (provider) diagnostic.provider = provider;
   if (modelName) diagnostic.modelName = modelName;
   if (durationMs !== undefined) diagnostic.durationMs = durationMs;
+  if (missingFields) diagnostic.missingFields = missingFields;
   if (input.error !== undefined) diagnostic.errorName = errorName(input.error);
   if (code) diagnostic.errorCode = code;
   if (devMessage) diagnostic.errorMessage = devMessage;

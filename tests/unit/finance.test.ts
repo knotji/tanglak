@@ -138,7 +138,7 @@ describe("AI response validation", () => {
     const parsed = extractedFinancialDocumentSchema.parse({
       documentType: "receipt",
       confidence: 0.82,
-      transaction: { type: "expense", amount: 189, currency: "THB" },
+      transaction: { type: "expense", amount: 189, currency: "THB", occurredAt: "2026-07-10T12:00:00+07:00" },
       warnings: [],
       unclearFields: [],
       requiresReview: true,

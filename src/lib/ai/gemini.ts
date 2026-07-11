@@ -1,13 +1,15 @@
 import { extractedFinancialDocumentSchema } from "@/lib/ai/schemas";
 import { extractionSystemPrompt } from "@/lib/ai/prompts";
+import { classifySchemaValidationError, DocumentExtractionError } from "@/lib/ai/extraction-errors";
 import { logSafeError } from "@/lib/observability/safe-diagnostics";
+import { ZodError } from "zod";
 
 export async function extractFinancialDocument(input: {
   mimeType: string;
   base64: string;
 }) {
   if (!process.env.GEMINI_API_KEY) {
-    throw new Error("GEMINI_API_KEY is not configured");
+    throw new DocumentExtractionError("provider_error");
   }
 
   const model = process.env.GEMINI_MODEL ?? "gemini-3.1-flash-lite";
@@ -42,7 +44,7 @@ export async function extractFinancialDocument(input: {
   });
 
   if (!response.ok) {
-    throw new Error(`Gemini extraction failed: Status ${response.status}`);
+    throw new DocumentExtractionError("provider_error");
   }
 
   const payload = (await response.json()) as {
@@ -50,21 +52,38 @@ export async function extractFinancialDocument(input: {
   };
   const text = payload.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) {
-    throw new Error("Gemini returned no response text");
+    throw new DocumentExtractionError("provider_parse_failed");
   }
 
-  // Parse and validate the response
+  let parsedJson: unknown;
   try {
-    const parsedJson = JSON.parse(text.trim());
-    return extractedFinancialDocumentSchema.parse(parsedJson);
+    parsedJson = JSON.parse(text.trim());
   } catch (error) {
     logSafeError("Gemini extraction response parse failed", {
       operation: "gemini.extractFinancialDocument",
       stage: "parse-response",
       provider: "gemini",
       modelName: model,
+      errorCode: "provider_parse_failed",
       error,
     });
-    throw error;
+    throw new DocumentExtractionError("provider_parse_failed", { cause: error });
+  }
+
+  try {
+    return extractedFinancialDocumentSchema.parse(parsedJson);
+  } catch (error) {
+    const extractionError =
+      error instanceof ZodError ? classifySchemaValidationError(error) : new DocumentExtractionError("schema_validation_failed", { cause: error });
+    logSafeError("Gemini extraction schema validation failed", {
+      operation: "gemini.extractFinancialDocument",
+      stage: "schema-validate",
+      provider: "gemini",
+      modelName: model,
+      errorCode: extractionError.code,
+      missingFields: extractionError.missingFields,
+      error: extractionError,
+    });
+    throw extractionError;
   }
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { sanitizeFilename } from "@/app/actions/documents";
 import { extractedFinancialDocumentSchema } from "@/lib/ai/schemas";
+import { classifySchemaValidationError, DOCUMENT_EXTRACTION_FALLBACK_MESSAGE } from "@/lib/ai/extraction-errors";
 import { scoreDuplicateCandidate } from "@/lib/finance/duplicates";
 import { salaryNetIncomeSatang, deliveryTotalPaidSatang } from "@/lib/finance/calculations";
 import { bahtToSatang } from "@/lib/finance/money";
@@ -47,6 +48,68 @@ describe("Gemini Schema Parsing & Validation", () => {
     expect(parsed.transaction?.destinationAccountLastFour).toBe("1234");
     expect(parsed.transaction?.bank).toBe("SCB");
     expect(parsed.transaction?.possibleOwnAccountTransfer).toBe(true);
+  });
+
+  it("defaults missing Gemini metadata without changing financial fields", () => {
+    const parsed = extractedFinancialDocumentSchema.parse({
+      documentType: "receipt",
+      transaction: {
+        type: "expense",
+        amount: 189,
+        currency: "THB",
+        occurredAt: "2026-07-10T12:00:00+07:00",
+      },
+    });
+
+    expect(parsed.confidence).toBe(0);
+    expect(parsed.warnings).toEqual([]);
+    expect(parsed.unclearFields).toEqual([]);
+    expect(parsed.requiresReview).toBe(true);
+    expect(parsed.transaction?.amount).toBe(189);
+  });
+
+  it("rejects malformed metadata when Gemini sends it", () => {
+    expect(() =>
+      extractedFinancialDocumentSchema.parse({
+        documentType: "receipt",
+        confidence: "0.8",
+        transaction: {
+          type: "expense",
+          amount: 189,
+          occurredAt: "2026-07-10T12:00:00+07:00",
+        },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      extractedFinancialDocumentSchema.parse({
+        documentType: "receipt",
+        warnings: "none",
+        transaction: {
+          type: "expense",
+          amount: 189,
+          occurredAt: "2026-07-10T12:00:00+07:00",
+        },
+      }),
+    ).toThrow();
+  });
+
+  it("fails missing required financial fields instead of inventing values", () => {
+    const result = extractedFinancialDocumentSchema.safeParse({
+      documentType: "receipt",
+      transaction: {
+        type: "expense",
+        occurredAt: "2026-07-10T12:00:00+07:00",
+      },
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const classified = classifySchemaValidationError(result.error);
+      expect(classified.code).toBe("incomplete_financial_extraction");
+      expect(classified.missingFields).toEqual(["transaction.amount"]);
+      expect(classified.message).toBe(DOCUMENT_EXTRACTION_FALLBACK_MESSAGE);
+    }
   });
 });
 

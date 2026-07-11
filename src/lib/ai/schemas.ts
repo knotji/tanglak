@@ -19,7 +19,8 @@ export const debtTypeSchema = z.enum([
   "other",
 ]);
 
-export const extractedFinancialDocumentSchema = z.object({
+export const extractedFinancialDocumentSchema = z
+  .object({
   documentType: z.enum([
     "salary_slip",
     "transfer_slip",
@@ -29,7 +30,7 @@ export const extractedFinancialDocumentSchema = z.object({
     "loan_schedule",
     "other",
   ]),
-  confidence: z.number().min(0).max(1),
+  confidence: z.number().min(0).max(1).default(0),
   transaction: z
     .object({
       type: transactionTypeSchema.optional(),
@@ -95,10 +96,113 @@ export const extractedFinancialDocumentSchema = z.object({
       accountLastFour: z.string().optional(),
     })
     .optional(),
-  warnings: z.array(z.string()),
-  unclearFields: z.array(z.string()),
-  requiresReview: z.literal(true),
-});
+  warnings: z.array(z.string()).default([]),
+  unclearFields: z.array(z.string()).default([]),
+  requiresReview: z.literal(true).default(true),
+})
+  .superRefine((data, ctx) => {
+    if (data.documentType === "salary_slip") {
+      if (data.salary?.netIncome === undefined && data.transaction?.amount === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.invalid_type,
+          expected: "number",
+          received: "undefined",
+          path: ["salary", "netIncome"],
+          message: "Required",
+        });
+      }
+      if (data.transaction?.occurredAt === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.invalid_type,
+          expected: "string",
+          received: "undefined",
+          path: ["transaction", "occurredAt"],
+          message: "Required",
+        });
+      }
+    }
+
+    if (["receipt", "delivery_receipt", "other"].includes(data.documentType)) {
+      if (data.transaction?.type === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.invalid_type,
+          expected: "string",
+          received: "undefined",
+          path: ["transaction", "type"],
+          message: "Required",
+        });
+      }
+      if (data.receipt?.totalPaid === undefined && data.transaction?.amount === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.invalid_type,
+          expected: "number",
+          received: "undefined",
+          path: ["transaction", "amount"],
+          message: "Required",
+        });
+      }
+      if (data.transaction?.occurredAt === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.invalid_type,
+          expected: "string",
+          received: "undefined",
+          path: ["transaction", "occurredAt"],
+          message: "Required",
+        });
+      }
+    }
+
+    if (["transfer_slip"].includes(data.documentType)) {
+      if (data.transaction?.type === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.invalid_type,
+          expected: "string",
+          received: "undefined",
+          path: ["transaction", "type"],
+          message: "Required",
+        });
+      }
+      if (data.transaction?.amount === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.invalid_type,
+          expected: "number",
+          received: "undefined",
+          path: ["transaction", "amount"],
+          message: "Required",
+        });
+      }
+      if (data.transaction?.occurredAt === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.invalid_type,
+          expected: "string",
+          received: "undefined",
+          path: ["transaction", "occurredAt"],
+          message: "Required",
+        });
+      }
+    }
+
+    if (["debt_statement", "loan_schedule"].includes(data.documentType)) {
+      if (data.debt?.dueDate === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.invalid_type,
+          expected: "string",
+          received: "undefined",
+          path: ["debt", "dueDate"],
+          message: "Required",
+        });
+      }
+      if (data.debt?.amountDue === undefined && data.debt?.minimumPayment === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.invalid_type,
+          expected: "number",
+          received: "undefined",
+          path: ["debt", "amountDue"],
+          message: "Required",
+        });
+      }
+    }
+  });
 
 export type ExtractedFinancialDocument = z.infer<
   typeof extractedFinancialDocumentSchema
