@@ -149,6 +149,7 @@ export type FinanceDocument = {
   mimeType: string;
   fileSizeBytes: number;
   errorMessage?: string;
+  processingStartedAt?: string;
   createdAt: string;
   updatedAt: string;
 };

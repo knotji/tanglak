@@ -116,6 +116,7 @@ interface DocumentRow {
   mime_type: string;
   file_size_bytes: number | string;
   error_message?: string | null;
+  processing_started_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -147,6 +148,7 @@ export function mapDocument(row: DocumentRow): FinanceDocument {
     mimeType: row.mime_type,
     fileSizeBytes: Number(row.file_size_bytes),
     errorMessage: row.error_message ?? undefined,
+    processingStartedAt: row.processing_started_at ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
