@@ -60,12 +60,18 @@ export default async function SettingsPage() {
 
       <SettingsSection title="ข้อมูล">
         <SettingsLink href="/settings/data" label="ข้อมูลและการนำเข้า" detail="ประวัติและการจัดการข้อมูล" />
-        <SettingsLink href="/history-import" label="นำเข้า CSV/PDF Statement" detail="ตรวจรายการก่อนบันทึก" />
-        <SettingsLink href="/settings/data" label="ประวัติการนำเข้า" detail="สถานะไทยและ rollback" />
         <SettingsLink href="/upload" label="ประวัติอัปโหลดเอกสาร" detail="เอกสารส่วนตัวใน Storage" />
         <div className="px-4 py-3 text-sm leading-6 text-text-secondary">
           ไฟล์ถูกใช้เพื่ออ่านข้อมูลการเงินเท่านั้น ข้อมูลจาก AI ต้องให้คุณยืนยันก่อนบันทึก
           และตั้งหลักไม่เก็บกุญแจ service-role ในฝั่ง client
+        </div>
+      </SettingsSection>
+
+      <SettingsSection title="ขั้นสูง">
+        <SettingsLink href="/history-import" label="การนำเข้ารายการแบบเดิม" detail="ตรวจรายการก่อนบันทึก" />
+        <SettingsLink href="/settings/data" label="ประวัติการนำเข้า" detail="สถานะไทยและ rollback" />
+        <div className="px-4 py-3 text-sm leading-6 text-text-secondary">
+          เหมาะสำหรับข้อมูลจำนวนมากและต้องตรวจสอบหลายรายการ ส่วนใหญ่แนะนำให้อัปโหลดสลิปหรือเพิ่มรายการเองแทน
         </div>
       </SettingsSection>
 
