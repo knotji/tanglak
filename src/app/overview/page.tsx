@@ -10,11 +10,12 @@ import { listAllTransactions } from "@/lib/data/finance-repository";
 import { calculateMonthlyTotals, calculateHistoricalInsights } from "@/lib/finance/calculations";
 import { formatTHB } from "@/lib/finance/money";
 import { timePage } from "@/lib/observability/timing";
+import { getBangkokMonthString } from "@/lib/finance/date";
 
 export default async function OverviewPage() {
   return timePage("/overview", async () => {
     const user = await requireUser();
-    const month = new Date().toISOString().slice(0, 7);
+    const month = getBangkokMonthString();
     const [, allTransactions] = await Promise.all([
       requireCompletedOnboarding(user),
       listAllTransactions(user.id),

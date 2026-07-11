@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { listTransactions } from "@/lib/data/finance-repository";
 import { formatTHB } from "@/lib/finance/money";
+import { getBangkokMonthString } from "@/lib/finance/date";
 
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return new NextResponse("Unauthorized", { status: 401 });
-  const month = new Date().toISOString().slice(0, 7);
+  const month = getBangkokMonthString();
   const transactions = await listTransactions(user.id, month);
   const header = [
     "วันที่",
