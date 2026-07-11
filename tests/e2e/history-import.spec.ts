@@ -68,7 +68,7 @@ test.describe.serial("History Statement Import Flow", () => {
     // 4. Review Board Transition
     await expect(page).toHaveURL(/\/history-import\/[a-f0-9-]+\/review/);
     await expect(page.getByText("statement_july.pdf")).toBeVisible();
-    await expect(page.getByRole("button", { name: "ทั้งหมด", exact: true })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "ทั้งหมด" })).toBeVisible();
 
     // Statement metadata detected from the fixture (bank name, masked account, layout badge)
     await expect(page.getByText("KBank")).toBeVisible();
