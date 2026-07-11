@@ -40,7 +40,7 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
     await page.goto("/upload");
     // Trigger file upload card
     const fileChooserPromise = page.waitForEvent("filechooser");
-    await page.locator("section:has-text('ถ่ายรูป หรือเลือกไฟล์')").click();
+    await page.getByRole("button", { name: "ถ่ายรูป หรือเลือกไฟล์หลักฐาน" }).click();
     const fileChooser = await fileChooserPromise;
     await fileChooser.setFiles({
       name: "my_salary_slip.png",
@@ -82,7 +82,7 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
 
     await page.goto("/upload");
     const fileChooserPromise = page.waitForEvent("filechooser");
-    await page.getByRole("button", { name: "เดลิเวอรี" }).click();
+    await page.getByRole("button", { name: "ใบเสร็จ/ค่าอาหาร" }).click();
     const fileChooser = await fileChooserPromise;
     await fileChooser.setFiles({
       name: "delivery_grab.jpg",
@@ -125,7 +125,7 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
 
     await page.goto("/upload");
     const fileChooserPromise = page.waitForEvent("filechooser");
-    await page.getByRole("button", { name: "ใบแจ้งหนี้" }).click();
+    await page.getByRole("button", { name: "สลิปชำระหนี้หรือบัตรเครดิต" }).click();
     const fileChooser = await fileChooserPromise;
     await fileChooser.setFiles({
       name: "ktc_statement.pdf",
@@ -167,7 +167,7 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
     // Now upload transfer slip that matches it
     await page.goto("/upload");
     const fileChooserPromise = page.waitForEvent("filechooser");
-    await page.getByRole("button", { name: "ชำระหนี้" }).click();
+    await page.getByRole("button", { name: "สลิปชำระหนี้หรือบัตรเครดิต" }).click();
     const fileChooser = await fileChooserPromise;
     await fileChooser.setFiles({
       name: "transfer_slip.png",
@@ -196,7 +196,7 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
 
     await page.goto("/upload");
     const fileChooserPromise = page.waitForEvent("filechooser");
-    await page.locator("section:has-text('ถ่ายรูป หรือเลือกไฟล์')").click();
+    await page.getByRole("button", { name: "ถ่ายรูป หรือเลือกไฟล์หลักฐาน" }).click();
     const fileChooser = await fileChooserPromise;
     await fileChooser.setFiles({
       name: "failed_slip.png",
@@ -239,7 +239,7 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
 
     await page.goto("/upload");
     const fileChooserPromise = page.waitForEvent("filechooser");
-    await page.locator("section:has-text('ถ่ายรูป หรือเลือกไฟล์')").click();
+    await page.getByRole("button", { name: "ถ่ายรูป หรือเลือกไฟล์หลักฐาน" }).click();
     const fileChooser = await fileChooserPromise;
     await fileChooser.setFiles({
       name: "retry_success_receipt.png",
@@ -294,7 +294,7 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
 
     await page.goto("/upload");
     const fileChooserPromise = page.waitForEvent("filechooser");
-    await page.getByRole("button", { name: "เดลิเวอรี" }).click();
+    await page.getByRole("button", { name: "ใบเสร็จ/ค่าอาหาร" }).click();
     const fileChooser = await fileChooserPromise;
     await fileChooser.setFiles({
       name: "delivery_grab_mobile.jpg",
@@ -320,10 +320,12 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
     await page.locator("form").getByRole("button", { name: "เข้าสู่ระบบ" }).click();
     await expect(page).toHaveURL(/\/today/);
 
-    // Upload another salary slip
+    // Upload another salary slip -- the mock extraction pipeline is keyed
+    // by filename ("salary"), not by which quick-select tile was clicked,
+    // so any tile that triggers the file picker works here.
     await page.goto("/upload");
     const fileChooserPromise = page.waitForEvent("filechooser");
-    await page.getByRole("button", { name: "เงินเดือน" }).click();
+    await page.getByRole("button", { name: "สลิปรับเงิน" }).click();
     const fileChooser = await fileChooserPromise;
     await fileChooser.setFiles({
       name: "my_salary_slip2.png",

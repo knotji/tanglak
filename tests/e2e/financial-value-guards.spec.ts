@@ -105,7 +105,7 @@ test.describe("financial value guards", () => {
 
       await page.goto("/upload");
       const fileChooserPromise = page.waitForEvent("filechooser");
-      await page.getByRole("button", { name: "เดลิเวอรี" }).click();
+      await page.getByRole("button", { name: "ใบเสร็จ/ค่าอาหาร" }).click();
       const fileChooser = await fileChooserPromise;
       await fileChooser.setFiles({
         name: "delivery_grab_negative.jpg",
@@ -130,7 +130,7 @@ test.describe("financial value guards", () => {
 
       await page.goto("/upload");
       const fileChooserPromise = page.waitForEvent("filechooser");
-      await page.getByRole("button", { name: "เดลิเวอรี" }).click();
+      await page.getByRole("button", { name: "ใบเสร็จ/ค่าอาหาร" }).click();
       const fileChooser = await fileChooserPromise;
       await fileChooser.setFiles({
         name: "delivery_grab_positive.jpg",
