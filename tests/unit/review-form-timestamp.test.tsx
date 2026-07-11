@@ -147,4 +147,271 @@ describe("ReviewForm receipt timestamp display", () => {
 
     vi.useRealTimers();
   });
+
+  it('shows a neutral Thai helper "11 ก.ค. 2026 เวลา 07:26" for an extracted timestamp, linked via aria-describedby', async () => {
+    const extraction = buildExtraction({
+      documentType: "receipt",
+      confidence: 0.9,
+      transaction: {
+        type: "expense",
+        amount: 189,
+        currency: "THB",
+        occurredAt: "2026-07-11T07:26:00+07:00",
+        merchant: "Seven-Eleven",
+      },
+      warnings: [],
+      unclearFields: [],
+      requiresReview: true,
+    });
+
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <ReviewForm
+          document={buildDocument()}
+          extraction={extraction}
+          debts={[]}
+          duplicateTransactions={[]}
+          previewUrl="https://example.test/preview.png"
+        />,
+      );
+    });
+
+    const input = container.querySelector<HTMLInputElement>('input[name="occurredAt"]')!;
+    const describedById = input.getAttribute("aria-describedby");
+    expect(describedById).toBeTruthy();
+    const helper = container.querySelector(`#${describedById}`);
+    expect(helper).not.toBeNull();
+    expect(helper!.textContent).toContain("11 ก.ค. 2026 เวลา 07:26");
+    expect(helper!.textContent).toContain("อ่านจากเอกสาร");
+    // Canonical value driving form submission must remain the plain
+    // datetime-local wall-clock string, unaffected by the Thai helper text.
+    expect(input.value).toBe("2026-07-11T07:26");
+  });
+
+  it("updates the Thai helper live as the user edits the datetime-local input, with no timezone shift", async () => {
+    const extraction = buildExtraction({
+      documentType: "receipt",
+      confidence: 0.9,
+      transaction: {
+        type: "expense",
+        amount: 189,
+        currency: "THB",
+        occurredAt: "2026-07-11T07:26:00+07:00",
+        merchant: "Seven-Eleven",
+      },
+      warnings: [],
+      unclearFields: [],
+      requiresReview: true,
+    });
+
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <ReviewForm
+          document={buildDocument()}
+          extraction={extraction}
+          debts={[]}
+          duplicateTransactions={[]}
+          previewUrl="https://example.test/preview.png"
+        />,
+      );
+    });
+
+    const input = container.querySelector<HTMLInputElement>('input[name="occurredAt"]')!;
+    const describedById = input.getAttribute("aria-describedby")!;
+
+    const nativeSetter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value",
+    )!.set!;
+
+    await act(async () => {
+      nativeSetter.call(input, "2026-12-31T23:55");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const helper = container.querySelector(`#${describedById}`);
+    // Reflects the newly typed value exactly, not the original 07:26 value
+    // and not a UTC-shifted reinterpretation of the new local digits.
+    expect(helper!.textContent).toContain("31 ธ.ค. 2026 เวลา 23:55");
+  });
+
+  it("shows an uncertain-state warning helper for an inferred (date-only source) timestamp", async () => {
+    const extraction = buildExtraction({
+      documentType: "receipt",
+      confidence: 0.7,
+      transaction: {
+        type: "expense",
+        amount: 189,
+        currency: "THB",
+        occurredAt: "2026-07-11T12:00:00+07:00",
+        merchant: "Seven-Eleven",
+      },
+      warnings: [],
+      unclearFields: [],
+      requiresReview: true,
+    });
+
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <ReviewForm
+          document={buildDocument()}
+          extraction={extraction}
+          debts={[]}
+          duplicateTransactions={[]}
+          previewUrl="https://example.test/preview.png"
+        />,
+      );
+    });
+
+    const input = container.querySelector<HTMLInputElement>('input[name="occurredAt"]')!;
+    const describedById = input.getAttribute("aria-describedby")!;
+    const helper = container.querySelector(`#${describedById}`);
+    expect(helper!.textContent).toContain("11 ก.ค. 2026 เวลา 12:00");
+    expect(helper!.textContent).toContain("ควรตรวจสอบวันที่และเวลา");
+    // Never expose the internal parser state name.
+    expect(helper!.textContent).not.toContain("inferred");
+  });
+
+  it("shows a clear fill-in prompt when the datetime-local input is cleared to empty", async () => {
+    const extraction = buildExtraction({
+      documentType: "receipt",
+      confidence: 0.9,
+      transaction: {
+        type: "expense",
+        amount: 189,
+        currency: "THB",
+        occurredAt: "2026-07-11T07:26:00+07:00",
+        merchant: "Seven-Eleven",
+      },
+      warnings: [],
+      unclearFields: [],
+      requiresReview: true,
+    });
+
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <ReviewForm
+          document={buildDocument()}
+          extraction={extraction}
+          debts={[]}
+          duplicateTransactions={[]}
+          previewUrl="https://example.test/preview.png"
+        />,
+      );
+    });
+
+    const input = container.querySelector<HTMLInputElement>('input[name="occurredAt"]')!;
+    const describedById = input.getAttribute("aria-describedby")!;
+
+    const nativeSetter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value",
+    )!.set!;
+
+    await act(async () => {
+      nativeSetter.call(input, "");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const helper = container.querySelector(`#${describedById}`);
+    expect(helper!.textContent).toContain("กรุณาระบุวันและเวลา");
+  });
+
+  it("falls back to the empty-value fill-in prompt when the native input rejects an out-of-range calendar date", async () => {
+    // A native (and jsdom-simulated) datetime-local input self-sanitizes an
+    // invalid calendar date like Feb 30 to an empty string rather than
+    // passing it through — so in practice this path collapses into the
+    // "missing" prompt. The "invalid" display state itself is still
+    // exercised directly at the formatter level (see date-thai-format.test.ts),
+    // defensively covering any value that reaches the component already
+    // malformed (e.g. restored from an unexpected source).
+    const extraction = buildExtraction({
+      documentType: "receipt",
+      confidence: 0.9,
+      transaction: {
+        type: "expense",
+        amount: 189,
+        currency: "THB",
+        occurredAt: "2026-07-11T07:26:00+07:00",
+        merchant: "Seven-Eleven",
+      },
+      warnings: [],
+      unclearFields: [],
+      requiresReview: true,
+    });
+
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <ReviewForm
+          document={buildDocument()}
+          extraction={extraction}
+          debts={[]}
+          duplicateTransactions={[]}
+          previewUrl="https://example.test/preview.png"
+        />,
+      );
+    });
+
+    const input = container.querySelector<HTMLInputElement>('input[name="occurredAt"]')!;
+    const describedById = input.getAttribute("aria-describedby")!;
+
+    const nativeSetter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value",
+    )!.set!;
+
+    await act(async () => {
+      nativeSetter.call(input, "2026-02-30T07:26");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    expect(input.value).toBe("");
+    const helper = container.querySelector(`#${describedById}`);
+    expect(helper!.textContent).toContain("กรุณาระบุวันและเวลา");
+  });
+
+  it("shows an uncertain-state helper (not a false extracted confirmation) when no document timestamp was extracted at all", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-11T08:00:00Z"));
+
+    const extraction = buildExtraction({
+      documentType: "receipt",
+      confidence: 0.5,
+      transaction: {
+        type: "expense",
+        amount: 189,
+        currency: "THB",
+        merchant: "Seven-Eleven",
+      },
+      warnings: [],
+      unclearFields: ["transaction.occurredAt"],
+      requiresReview: true,
+    });
+
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <ReviewForm
+          document={buildDocument()}
+          extraction={extraction}
+          debts={[]}
+          duplicateTransactions={[]}
+          previewUrl="https://example.test/preview.png"
+        />,
+      );
+    });
+
+    const input = container.querySelector<HTMLInputElement>('input[name="occurredAt"]')!;
+    const describedById = input.getAttribute("aria-describedby")!;
+    const helper = container.querySelector(`#${describedById}`);
+    expect(helper!.textContent).toContain("ควรตรวจสอบวันที่และเวลา");
+    expect(helper!.textContent).not.toContain("อ่านจากเอกสาร");
+
+    vi.useRealTimers();
+  });
 });
