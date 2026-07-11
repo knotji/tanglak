@@ -260,13 +260,28 @@ export async function confirmBatchAction(
 ): Promise<{ ok: boolean; message: string }> {
   try {
     const user = await requireUser();
-    
-    // Commit the selections
-    await importReviewedRows(user.id, batchId, accountId, decisions);
+
+    const batch = await getImportBatch(user.id, batchId);
+    if (!batch) {
+      return { ok: false, message: "ไม่พบชุดนำเข้าข้อมูล" };
+    }
+
+    // Commit the selections. This is safe to call again for the same batch
+    // (double submit, retry after a timeout, a second concurrent request,
+    // or a refresh-and-resubmit) -- rows already resolved by an earlier
+    // call are left untouched, never recreated.
+    const result = await importReviewedRows(user.id, batchId, accountId, decisions);
 
     revalidatePath("/history-import");
     revalidatePath("/transactions");
     revalidatePath("/overview");
+
+    if (result.failedCount > 0) {
+      return {
+        ok: true,
+        message: `นำเข้าข้อมูลสำเร็จบางส่วน: สำเร็จ ${result.importedCount + result.mergedCount} รายการ, ไม่สำเร็จ ${result.failedCount} รายการ, เหลือค้าง ${result.remainingCount} รายการ กรุณาลองใหม่อีกครั้ง`,
+      };
+    }
     return { ok: true, message: "นำเข้าข้อมูลสำเร็จ" };
   } catch (error) {
     logSafeError("Batch confirmation failed", {
