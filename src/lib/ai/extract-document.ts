@@ -3,9 +3,10 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { extractFinancialDocument } from "./gemini";
 import {
   claimDocumentForProcessing,
+  completeDocumentProcessing,
   createDocumentExtraction,
+  failDocumentProcessing,
   getDocument,
-  updateDocument,
 } from "@/lib/data/finance-repository";
 import type { ExtractedFinancialDocument } from "./schemas";
 import { extractedFinancialDocumentSchema } from "./schemas";
@@ -24,6 +25,8 @@ export async function processAndExtractDocument(
     providerTimeoutMs?: number;
     providerMaxAttempts?: number;
     providerBackoffMs?: (attempt: number, retryAfterMs?: number) => number;
+    processingLeaseMs?: number;
+    now?: Date;
   },
 ): Promise<ExtractedFinancialDocument> {
   const currentDoc = await getDocument(userId, documentId);
@@ -31,10 +34,17 @@ export async function processAndExtractDocument(
     throw new Error("Document record not found");
   }
 
-  const doc = await claimDocumentForProcessing(userId, documentId);
+  const doc = await claimDocumentForProcessing(userId, documentId, {
+    leaseMs: options?.processingLeaseMs,
+    now: options?.now,
+  });
   if (!doc) {
     throw new DocumentExtractionError("processing_claim_failed", { retryable: true });
   }
+  if (!doc.processingStartedAt) {
+    throw new DocumentExtractionError("processing_claim_failed", { retryable: true });
+  }
+  const claimStartedAt = doc.processingStartedAt;
 
   try {
     const result = await withTimeout(
@@ -78,7 +88,17 @@ export async function processAndExtractDocument(
       options?.timeoutMs ?? DOCUMENT_PROCESSING_TIMEOUT_MS,
     );
 
-    // 2. Persist extraction layers in document_extractions table
+    const completedDoc = await completeDocumentProcessing(userId, documentId, claimStartedAt, {
+      documentType: result.documentType,
+      leaseMs: options?.processingLeaseMs,
+    });
+    if (!completedDoc) {
+      throw new DocumentExtractionError("processing_claim_failed", { retryable: true });
+    }
+
+    // 2. Persist extraction layers in document_extractions table after the
+    // claim has been finalized. A late processor cannot reach this point once
+    // its lease has expired or been replaced.
     await createDocumentExtraction(userId, {
       documentId,
       model: process.env.GEMINI_MODEL || "gemini-3.1-flash-lite",
@@ -88,12 +108,6 @@ export async function processAndExtractDocument(
       warnings: result.warnings,
       unclearFields: result.unclearFields,
       requiresReview: true,
-    });
-
-    // 3. Update document status to review-ready on success
-    await updateDocument(userId, documentId, {
-      status: "review_ready",
-      documentType: result.documentType,
     });
 
     return result;
@@ -109,8 +123,7 @@ export async function processAndExtractDocument(
       missingFields: extractionError.missingFields,
       error: extractionError,
     });
-    // Update document status to 'failed' on failure
-    await updateDocument(userId, documentId, {
+    await failDocumentProcessing(userId, documentId, claimStartedAt, {
       status: extractionError.retryable ? "failed_retryable" : "failed_permanent",
       errorMessage: safeDocumentExtractionMessage(extractionError),
     });

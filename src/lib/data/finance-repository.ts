@@ -6,6 +6,8 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { assertMoneySatang } from "@/lib/finance/money-guards";
 import type { Debt, Transaction, FinanceDocument, DocumentExtraction, ImportBatch, ImportRow, Account } from "@/types/domain";
 
+export const DOCUMENT_PROCESSING_LEASE_MS = 2 * 60 * 1000;
+
 export type TransactionInput = {
   type: Transaction["type"];
   amountSatang: number;
@@ -563,6 +565,7 @@ export async function createDocument(
       mimeType: input.mimeType,
       fileSizeBytes: input.fileSizeBytes,
       errorMessage: input.errorMessage,
+      processingStartedAt: undefined,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -581,6 +584,7 @@ export async function createDocument(
     mime_type: input.mimeType,
     file_size_bytes: input.fileSizeBytes,
     error_message: input.errorMessage,
+    processing_started_at: null,
   };
   if (input.id) {
     insertPayload.id = input.id;
@@ -630,6 +634,7 @@ export async function updateDocument(
       status: input.status ?? state.documents[index].status,
       documentType: input.hasOwnProperty("documentType") ? input.documentType : state.documents[index].documentType,
       errorMessage: input.hasOwnProperty("errorMessage") ? (input.errorMessage ?? undefined) : state.documents[index].errorMessage,
+      processingStartedAt: input.status && input.status !== "processing" ? undefined : state.documents[index].processingStartedAt,
       updatedAt: new Date().toISOString(),
     };
     return state.documents[index];
@@ -640,6 +645,7 @@ export async function updateDocument(
   if (input.status !== undefined) updatePayload.status = input.status;
   if (input.documentType !== undefined) updatePayload.document_type = input.documentType;
   if (input.errorMessage !== undefined) updatePayload.error_message = input.errorMessage;
+  if (input.status !== undefined && input.status !== "processing") updatePayload.processing_started_at = null;
 
   const { data, error } = await supabase
     .from("documents")
@@ -661,18 +667,31 @@ const PROCESSABLE_DOCUMENT_STATUSES: FinanceDocument["status"][] = [
 export async function claimDocumentForProcessing(
   userId: string,
   id: string,
+  options?: {
+    now?: Date;
+    leaseMs?: number;
+  },
 ): Promise<FinanceDocument | null> {
+  const now = options?.now ?? new Date();
+  const leaseMs = options?.leaseMs ?? DOCUMENT_PROCESSING_LEASE_MS;
+  const claimedAt = now.toISOString();
+  const staleBefore = new Date(now.getTime() - leaseMs).toISOString();
+
   if (isMockAuthEnabled()) {
     const state = getMockState();
     const index = state.documents.findIndex((d) => d.id === id && d.userId === userId);
     if (index < 0) return null;
     const current = state.documents[index];
-    if (!PROCESSABLE_DOCUMENT_STATUSES.includes(current.status)) return null;
+    const isStaleProcessing =
+      current.status === "processing" &&
+      (!current.processingStartedAt || current.processingStartedAt < staleBefore);
+    if (!PROCESSABLE_DOCUMENT_STATUSES.includes(current.status) && !isStaleProcessing) return null;
     state.documents[index] = {
       ...current,
       status: "processing",
       errorMessage: undefined,
-      updatedAt: new Date().toISOString(),
+      processingStartedAt: claimedAt,
+      updatedAt: claimedAt,
     };
     return state.documents[index];
   }
@@ -683,10 +702,113 @@ export async function claimDocumentForProcessing(
     .update({
       status: "processing",
       error_message: null,
+      processing_started_at: claimedAt,
     })
     .eq("id", id)
     .eq("user_id", userId)
-    .in("status", PROCESSABLE_DOCUMENT_STATUSES)
+    .or(
+      `status.in.(${PROCESSABLE_DOCUMENT_STATUSES.join(",")}),and(status.eq.processing,processing_started_at.lt.${staleBefore}),and(status.eq.processing,processing_started_at.is.null,updated_at.lt.${staleBefore})`,
+    )
+    .select("*")
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? mapDocument(data) : null;
+}
+
+export async function completeDocumentProcessing(
+  userId: string,
+  id: string,
+  claimStartedAt: string,
+  input: {
+    documentType: string;
+    now?: Date;
+    leaseMs?: number;
+  },
+): Promise<FinanceDocument | null> {
+  const now = input.now ?? new Date();
+  const leaseMs = input.leaseMs ?? DOCUMENT_PROCESSING_LEASE_MS;
+  const activeSince = new Date(now.getTime() - leaseMs).toISOString();
+
+  if (isMockAuthEnabled()) {
+    const state = getMockState();
+    const index = state.documents.findIndex((d) => d.id === id && d.userId === userId);
+    if (index < 0) return null;
+    const current = state.documents[index];
+    if (
+      current.status !== "processing" ||
+      current.processingStartedAt !== claimStartedAt ||
+      current.processingStartedAt < activeSince
+    ) {
+      return null;
+    }
+    state.documents[index] = {
+      ...current,
+      status: "review_ready",
+      documentType: input.documentType,
+      errorMessage: undefined,
+      processingStartedAt: undefined,
+      updatedAt: now.toISOString(),
+    };
+    return state.documents[index];
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("documents")
+    .update({
+      status: "review_ready",
+      document_type: input.documentType,
+      error_message: null,
+      processing_started_at: null,
+    })
+    .eq("id", id)
+    .eq("user_id", userId)
+    .eq("status", "processing")
+    .eq("processing_started_at", claimStartedAt)
+    .gte("processing_started_at", activeSince)
+    .select("*")
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? mapDocument(data) : null;
+}
+
+export async function failDocumentProcessing(
+  userId: string,
+  id: string,
+  claimStartedAt: string,
+  input: {
+    status: "failed_retryable" | "failed_permanent";
+    errorMessage: string;
+  },
+): Promise<FinanceDocument | null> {
+  if (isMockAuthEnabled()) {
+    const state = getMockState();
+    const index = state.documents.findIndex((d) => d.id === id && d.userId === userId);
+    if (index < 0) return null;
+    const current = state.documents[index];
+    if (current.status !== "processing" || current.processingStartedAt !== claimStartedAt) return null;
+    state.documents[index] = {
+      ...current,
+      status: input.status,
+      errorMessage: input.errorMessage,
+      processingStartedAt: undefined,
+      updatedAt: new Date().toISOString(),
+    };
+    return state.documents[index];
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("documents")
+    .update({
+      status: input.status,
+      error_message: input.errorMessage,
+      processing_started_at: null,
+    })
+    .eq("id", id)
+    .eq("user_id", userId)
+    .eq("status", "processing")
+    .eq("processing_started_at", claimStartedAt)
     .select("*")
     .maybeSingle();
   if (error) throw new Error(error.message);
