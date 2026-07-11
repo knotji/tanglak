@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { deleteTransactionAction } from "@/app/actions/finance";
@@ -11,20 +12,28 @@ import { MobileBottomSheet } from "@/components/MobileBottomSheet";
 import { PageHeader } from "@/components/PageHeader";
 import { TransactionGroup } from "@/components/TransactionGroup";
 import { ManualTransactionForm } from "@/features/transactions/ManualTransactionForm";
-import type { Transaction, TransactionType } from "@/types/domain";
+import { shiftMonth } from "@/lib/finance/date";
+import type { Account, Transaction, TransactionType } from "@/types/domain";
 
 export function TransactionsClient({
   transactions,
   accounts,
+  selectedMonth,
+  currentMonth,
   monthLabel,
+  importContext = false,
 }: {
   transactions: Transaction[];
-  accounts: import("@/types/domain").Account[];
+  accounts: Account[];
+  selectedMonth: string;
+  currentMonth: string;
   monthLabel: string;
+  importContext?: boolean;
 }) {
   const router = useRouter();
   const [filter, setFilter] = useState("all");
-  const [isPending, startTransition] = useTransition();
+  const [isFilterPending, startFilterTransition] = useTransition();
+  const [isMonthPending, startMonthTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Transaction | undefined>();
   const [message, setMessage] = useState<string | null>(null);
@@ -41,6 +50,16 @@ export function TransactionsClient({
     }, {});
   }, [filtered]);
   const sortedDays = Object.keys(groups).sort((a, b) => b.localeCompare(a));
+  const previousMonth = shiftMonth(selectedMonth, -1);
+  const nextMonth = shiftMonth(selectedMonth, 1);
+  const isCurrentMonth = selectedMonth === currentMonth;
+  const isPending = isFilterPending || isMonthPending;
+
+  function goToMonth(month: string) {
+    startMonthTransition(() => {
+      router.push(`/transactions?month=${month}`);
+    });
+  }
 
   async function confirmDelete(transaction: Transaction) {
     const warning =
@@ -66,6 +85,45 @@ export function TransactionsClient({
           + เพิ่มรายการ
         </button>
       </div>
+
+      <div className="flex flex-wrap items-center gap-2 rounded-[16px] border border-border bg-white p-2 shadow-sm">
+        <button
+          type="button"
+          onClick={() => goToMonth(previousMonth)}
+          aria-label={`เดือนก่อนหน้า ${previousMonth}`}
+          className="flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-surface text-foreground"
+        >
+          <ChevronLeft size={20} aria-hidden />
+        </button>
+        <div className="min-w-0 flex-1 text-center">
+          <div className="truncate text-sm font-bold text-foreground">{monthLabel}</div>
+        </div>
+        <button
+          type="button"
+          onClick={() => goToMonth(nextMonth)}
+          aria-label={`เดือนถัดไป ${nextMonth}`}
+          className="flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-surface text-foreground"
+        >
+          <ChevronRight size={20} aria-hidden />
+        </button>
+        {!isCurrentMonth ? (
+          <button
+            type="button"
+            onClick={() => goToMonth(currentMonth)}
+            className="min-h-11 rounded-xl bg-primary-soft px-3 text-xs font-bold text-primary"
+          >
+            เดือนนี้
+          </button>
+        ) : null}
+      </div>
+
+      {importContext ? (
+        <div className="rounded-[16px] border border-primary/20 bg-primary-soft px-4 py-3 text-sm text-primary">
+          <p className="font-bold">กำลังแสดงรายการเดือน{monthLabel}</p>
+          <p className="text-xs font-semibold">นำเข้าจาก Statement ชุดล่าสุด</p>
+        </div>
+      ) : null}
+
       {message ? (
         <div className="rounded-[16px] bg-primary-soft px-4 py-3 text-sm font-bold text-primary">
           {message}
@@ -73,7 +131,7 @@ export function TransactionsClient({
       ) : null}
       <FilterChips
         value={filter}
-        onChange={(value) => startTransition(() => setFilter(value as TransactionType | "all"))}
+        onChange={(value) => startFilterTransition(() => setFilter(value as TransactionType | "all"))}
         options={[
           { label: "ทั้งหมด", value: "all" },
           { label: "รายจ่าย", value: "expense" },
@@ -83,7 +141,7 @@ export function TransactionsClient({
       />
       <LocalImportReview />
       {sortedDays.length ? (
-        <div className={`space-y-3 transition-opacity duration-200 ${isPending ? "opacity-60 pointer-events-none" : ""}`}>
+        <div className={`space-y-3 transition-opacity duration-200 ${isPending ? "pointer-events-none opacity-60" : ""}`}>
           {sortedDays.map((day) => (
             <TransactionGroup
               key={day}
@@ -99,7 +157,10 @@ export function TransactionsClient({
           ))}
         </div>
       ) : (
-        <EmptyState title="ยังไม่มีรายการ" body="เพิ่มรายรับหรือรายจ่ายแรกของเดือนนี้" />
+        <EmptyState
+          title={`ยังไม่มีรายการในเดือน${monthLabel}`}
+          body={`เดือน${monthLabel}ยังไม่มีรายรับหรือรายจ่ายที่บันทึกไว้`}
+        />
       )}
       <MobileBottomSheet
         title={editing ? "แก้ไขรายการ" : "เพิ่มรายการ"}

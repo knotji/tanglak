@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { requireUser } from "@/lib/auth/session";
 import { requireCompletedOnboarding } from "@/lib/auth/onboarding";
 import { getImportBatch, listImportRows } from "@/lib/data/finance-repository";
+import { getImportSummaryTransactionMonth } from "@/lib/import/summary-navigation";
 import { rollbackBatchAction } from "@/app/actions/history-import";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -25,6 +26,8 @@ export default async function HistoryImportSummaryPage({ params }: SummaryPagePr
 
   const rows = await listImportRows(user.id, batchId);
   const batchContext = batch.originalFilename || batch.id;
+  const transactionMonth = getImportSummaryTransactionMonth({ rows, batch });
+  const transactionsHref = `/transactions?month=${transactionMonth}&importBatchId=${encodeURIComponent(batch.id)}`;
 
   // Statistics calculation
   const importedCount = rows.filter(r => r.importDecision === "import" && r.reviewStatus === "imported").length;
@@ -104,7 +107,7 @@ export default async function HistoryImportSummaryPage({ params }: SummaryPagePr
         {/* Actions Button Grid */}
         <div className="flex flex-col gap-2 mt-4">
           <Link
-            href="/transactions"
+            href={transactionsHref}
             className="flex min-h-12 items-center justify-center rounded-xl bg-primary text-sm font-bold text-white shadow-sm hover:bg-primary-dark"
           >
             ดูรายการธุรกรรมทั้งหมด

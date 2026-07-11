@@ -87,8 +87,10 @@ test.describe.serial("History Statement Import Flow", () => {
     await expect(page.getByRole("heading", { name: "สรุปผลการนำเข้า" })).toBeVisible();
     await expect(page.getByText("นำเข้าธุรกรรมใหม่")).toBeVisible();
 
-    // 7. Verify Transactions List
-    await page.goto("/transactions");
+    // 7. Verify Transactions List opens in the imported statement month.
+    await page.getByRole("link", { name: "ดูรายการธุรกรรมทั้งหมด" }).click();
+    await expect(page).toHaveURL(/\/transactions\?month=2026-07&importBatchId=[a-f0-9-]+/);
+    await expect(page.getByText("นำเข้าจาก Statement ชุดล่าสุด")).toBeVisible();
     await expect(page.getByText("MERCHANT 001 BKK").first()).toBeVisible();
 
     // 8. Rollback Batch
@@ -96,7 +98,7 @@ test.describe.serial("History Statement Import Flow", () => {
     await page.getByRole("button", { name: "ย้อนกลับ (Rollback)" }).click();
 
     // Verify transactions are deleted
-    await page.goto("/transactions");
+    await page.goto("/transactions?month=2026-07");
     await expect(page.getByText("MERCHANT 001 BKK")).not.toBeVisible();
 
     // 9. Rollback is idempotent — calling it again on the now rolled-back batch is safe

@@ -166,7 +166,9 @@ describe("TransactionsClient filter transition state", () => {
         <TransactionsClient
           transactions={mockTransactions}
           accounts={[]}
-          monthLabel="เดือนนี้"
+          selectedMonth="2026-07"
+          currentMonth="2026-07"
+          monthLabel="กรกฎาคม 2026"
         />
       );
     });
