@@ -58,7 +58,7 @@ guards and cannot create extraction rows or overwrite newer state.
 
 ## Migration Order
 
-Deploy `supabase/migrations/202607110002_ai_processing_claims.sql` before
+Deploy `supabase/migrations/202607110003_ai_processing_claims.sql` before
 application code that writes:
 
 - `review_ready`
