@@ -2,11 +2,16 @@
 
 import { useActionState, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { InlineError } from "@/components/feedback/InlineError";
 import { LoadingButton } from "@/components/feedback/LoadingButton";
+import { MoneyAmount } from "@/components/MoneyAmount";
+import {
+  BudgetProgress,
+  MonthSelector,
+  calculateBudgetPercentage,
+} from "@/components/finance";
 import {
   copyPreviousMonthAction,
   deleteBudgetCategoryAction,
@@ -14,35 +19,18 @@ import {
   saveMonthlyIncomeAction,
 } from "@/app/actions/budget";
 import { formatTHB } from "@/lib/finance/money";
-import { shiftMonth } from "@/lib/finance/date";
 import type { BudgetSummary } from "@/lib/finance/budget-calculations";
 
-const STATUS_LABEL: Record<string, string> = {
-  healthy: "ปกติ",
-  near_limit: "ใกล้เต็มงบ",
-  overspent: "เกินงบ",
-  no_budget: "ยังไม่ตั้งงบ",
-};
-
-const STATUS_CLASS: Record<string, string> = {
-  healthy: "bg-emerald-50 text-emerald-700",
-  near_limit: "bg-amber-50 text-amber-700",
-  overspent: "bg-red-50 text-red-700",
-  no_budget: "bg-gray-100 text-gray-600",
-};
-
-function StatusBadge({ status }: { status: string }) {
-  return (
-    <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${STATUS_CLASS[status] ?? STATUS_CLASS.no_budget}`}>
-      {STATUS_LABEL[status] ?? status}
-    </span>
-  );
-}
-
-function IncomeForm({ month }: { month: string }) {
+function IncomeForm({ month, hasBudget }: { month: string; hasBudget: boolean }) {
   const [state, action, pending] = useActionState(saveMonthlyIncomeAction, { ok: false });
   return (
     <form action={action} className="rounded-[16px] border border-border bg-surface p-4">
+      {!hasBudget ? (
+        <div className="mb-3">
+          <p className="text-sm font-bold text-foreground">เริ่มตั้งงบเดือนนี้</p>
+          <p className="mt-0.5 text-xs leading-5 text-text-secondary">ตั้งงบเพื่อรู้ว่าเดือนนี้ยังใช้ได้อีกเท่าไร</p>
+        </div>
+      ) : null}
       <input type="hidden" name="month" value={month} />
       <label className="space-y-1 text-sm">
         <span className="font-medium">รายรับต่อเดือน (คาดการณ์)</span>
@@ -56,7 +44,7 @@ function IncomeForm({ month }: { month: string }) {
       </label>
       {state.message ? (
         state.ok ? (
-          <p className="mt-2 text-sm text-emerald-700">{state.message}</p>
+          <p className="mt-2 text-sm font-bold text-income">{state.message}</p>
         ) : (
           <div className="mt-2">
             <InlineError message={state.message} />
@@ -79,7 +67,7 @@ function CategoryForm({
 }) {
   const [state, action, pending] = useActionState(saveBudgetCategoryAction, { ok: false });
   return (
-    <form action={action} className="rounded-[16px] border border-dashed border-border bg-white p-3">
+    <form action={action} className="rounded-[16px] border border-dashed border-border bg-surface p-3">
       <input type="hidden" name="month" value={month} />
       <input type="hidden" name="monthlyBudgetId" value={monthlyBudgetId} />
       <div className="grid grid-cols-2 gap-2">
@@ -119,8 +107,11 @@ function CategoryRow({ month, category }: { month: string; category: BudgetSumma
   const router = useRouter();
   const [state, action, pending] = useActionState(saveBudgetCategoryAction, { ok: false });
   const [deleting, setDeleting] = useState(false);
+  const percentage = calculateBudgetPercentage(category.spentSatang, category.budgetedSatang);
   const percentLabel =
-    category.usagePercent === null ? "-" : `${Math.round(category.usagePercent * 100)}%`;
+    category.budgetedSatang <= 0
+      ? "ยังไม่ได้ตั้งงบสำหรับหมวดนี้"
+      : `${percentage}% ของงบหมวดนี้`;
 
   async function handleDelete() {
     if (!category.budgetCategoryId) return;
@@ -132,18 +123,11 @@ function CategoryRow({ month, category }: { month: string; category: BudgetSumma
   }
 
   return (
-    <div className="rounded-[16px] border border-border bg-white p-3">
-      <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate font-bold">{category.label}</p>
-          <p className="text-xs text-text-secondary">
-            ใช้ไป {formatTHB(category.spentSatang)} จาก {formatTHB(category.budgetedSatang)} ({percentLabel})
-          </p>
-        </div>
-        <StatusBadge status={category.status} />
-      </div>
+    <div className="rounded-[16px] border border-border bg-surface p-3">
+      <BudgetProgress label={category.label} spentSatang={category.spentSatang} budgetSatang={category.budgetedSatang} />
+      <p className="mt-2 text-[11px] font-medium text-text-secondary">{percentLabel}</p>
       {category.budgetCategoryId ? (
-        <form action={action} className="mt-2 flex items-center gap-2">
+        <form action={action} className="mt-3 flex items-center gap-2 border-t border-border pt-3">
           <input type="hidden" name="month" value={month} />
           <input type="hidden" name="categoryId" value={category.budgetCategoryId} />
           <input
@@ -167,7 +151,9 @@ function CategoryRow({ month, category }: { month: string; category: BudgetSumma
           </button>
         </form>
       ) : (
-        <p className="mt-2 text-xs text-text-secondary">รายการนี้ยังไม่มีงบตั้งไว้ (มาจากธุรกรรมจริง)</p>
+        <p className="mt-3 border-t border-border pt-3 text-xs text-text-secondary">
+          รายการนี้ยังไม่มีงบตั้งไว้ (มาจากธุรกรรมจริง)
+        </p>
       )}
       {state.message && !state.ok ? (
         <div className="mt-2">
@@ -178,14 +164,31 @@ function CategoryRow({ month, category }: { month: string; category: BudgetSumma
   );
 }
 
-function CopyPreviousMonthForm({ fromMonth, toMonth }: { fromMonth: string; toMonth: string }) {
+function CopyPreviousMonthForm({
+  fromMonth,
+  toMonth,
+  preview,
+}: {
+  fromMonth: string;
+  toMonth: string;
+  preview: Array<{ label: string; amountSatang: number }>;
+}) {
   const [state, action, pending] = useActionState(copyPreviousMonthAction, { ok: false });
   return (
-    <form action={action} className="rounded-[16px] border border-border bg-white p-3">
+    <form action={action} className="rounded-[16px] border border-border bg-surface p-3">
       <input type="hidden" name="fromMonth" value={fromMonth} />
       <input type="hidden" name="toMonth" value={toMonth} />
+      {preview.length ? (
+        <details className="mb-3 text-xs text-text-secondary">
+          <summary className="cursor-pointer font-bold text-primary">จะคัดลอกอะไรบ้าง</summary>
+          <p className="mt-2">
+            จะคัดลอก {preview.length} หมวดหมู่ รวมงบเดิม {formatTHB(preview.reduce((sum, c) => sum + c.amountSatang, 0))}
+          </p>
+          <p className="mt-1">รายรับของเดือนนี้จะไม่ถูกคัดลอกทับ ถ้าตั้งไว้แล้ว</p>
+        </details>
+      ) : null}
       {state.message ? (
-        <p className={`mb-2 text-sm ${state.ok ? "text-emerald-700" : "text-overdue"}`}>{state.message}</p>
+        <p className={`mb-2 text-sm font-bold ${state.ok ? "text-income" : "text-overdue"}`}>{state.message}</p>
       ) : null}
       <LoadingButton pending={pending} className="w-full" pendingLabel="กำลังคัดลอก...">
         คัดลอกงบจากเดือนก่อนหน้า
@@ -202,6 +205,7 @@ export function BudgetClient({
   previousMonth,
   monthLabel,
   canCopyPreviousMonth,
+  previousMonthCategoryPreview,
 }: {
   summary: BudgetSummary;
   monthlyBudgetId?: string;
@@ -210,10 +214,10 @@ export function BudgetClient({
   previousMonth: string;
   monthLabel: string;
   canCopyPreviousMonth: boolean;
+  previousMonthCategoryPreview: Array<{ label: string; amountSatang: number }>;
 }) {
   const router = useRouter();
-  const nextMonth = shiftMonth(selectedMonth, 1);
-  const isCurrentMonth = selectedMonth === currentMonth;
+  const isHistorical = selectedMonth < currentMonth;
 
   function goToMonth(month: string) {
     router.push(`/budget?month=${month}`);
@@ -223,34 +227,12 @@ export function BudgetClient({
     <AppShell>
       <PageHeader title="งบประมาณรายเดือน" subtitle={monthLabel} />
 
-      <div className="flex flex-wrap items-center gap-2 rounded-[16px] border border-border bg-white p-2 shadow-sm">
-        <button
-          type="button"
-          onClick={() => goToMonth(previousMonth)}
-          aria-label={`เดือนก่อนหน้า ${previousMonth}`}
-          className="flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-surface text-foreground"
-        >
-          <ChevronLeft size={20} aria-hidden />
-        </button>
-        <div className="min-w-0 flex-1 text-center">
-          <div className="truncate text-sm font-bold text-foreground">{monthLabel}</div>
-        </div>
-        <button
-          type="button"
-          onClick={() => goToMonth(nextMonth)}
-          aria-label={`เดือนถัดไป ${nextMonth}`}
-          className="flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-surface text-foreground"
-        >
-          <ChevronRight size={20} aria-hidden />
-        </button>
-        {!isCurrentMonth ? (
-          <button
-            type="button"
-            onClick={() => goToMonth(currentMonth)}
-            className="min-h-11 rounded-xl bg-primary-soft px-3 text-xs font-bold text-primary"
-          >
-            เดือนนี้
-          </button>
+      <div className="flex items-center gap-2">
+        <MonthSelector value={selectedMonth} currentMonth={currentMonth} onMonthChange={goToMonth} label="เลือกเดือนงบประมาณ" />
+        {isHistorical ? (
+          <span className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-[11px] font-bold text-text-secondary">
+            เดือนที่ผ่านมา
+          </span>
         ) : null}
       </div>
 
@@ -260,44 +242,44 @@ export function BudgetClient({
         </div>
       ) : null}
 
-      <IncomeForm month={selectedMonth} />
+      <IncomeForm month={selectedMonth} hasBudget={summary.hasBudget} />
 
-      {canCopyPreviousMonth ? <CopyPreviousMonthForm fromMonth={previousMonth} toMonth={selectedMonth} /> : null}
+      {canCopyPreviousMonth ? (
+        <CopyPreviousMonthForm fromMonth={previousMonth} toMonth={selectedMonth} preview={previousMonthCategoryPreview} />
+      ) : null}
 
       <section className="rounded-[16px] border border-border bg-surface p-4" aria-label="สรุปงบประมาณ">
-        <h2 className="text-sm font-bold text-foreground">สรุปภาพรวม</h2>
-        <dl className="mt-2 grid grid-cols-2 gap-3 text-sm">
+        <p className="text-sm font-semibold text-text-secondary">เหลืองบรวม</p>
+        <MoneyAmount
+          satang={summary.remainingTotalSatang}
+          tone={summary.remainingTotalSatang < 0 ? "expense" : "income"}
+          className="mt-1 block text-[32px] font-bold leading-none"
+        />
+        <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-border pt-3 text-sm">
           <div>
-            <dt className="text-text-secondary">รายรับคาดการณ์</dt>
-            <dd className="font-bold">{formatTHB(summary.expectedIncomeSatang)}</dd>
+            <dt className="text-text-secondary">รายรับที่ตั้งไว้</dt>
+            <dd className="tabular font-bold">{formatTHB(summary.expectedIncomeSatang)}</dd>
           </div>
           <div>
-            <dt className="text-text-secondary">งบที่วางแผนรวม</dt>
-            <dd className="font-bold">{formatTHB(summary.plannedTotalSatang)}</dd>
+            <dt className="text-text-secondary">วางงบแล้ว</dt>
+            <dd className="tabular font-bold">{formatTHB(summary.plannedTotalSatang)}</dd>
           </div>
           <div>
-            <dt className="text-text-secondary">ใช้ไปแล้ว</dt>
-            <dd className="font-bold">{formatTHB(summary.spentTotalSatang)}</dd>
-          </div>
-          <div>
-            <dt className="text-text-secondary">คงเหลือจากงบ</dt>
-            <dd className={`font-bold ${summary.remainingTotalSatang < 0 ? "text-overdue" : ""}`}>
-              {formatTHB(summary.remainingTotalSatang)}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-text-secondary">รายรับที่ยังไม่จัดสรร</dt>
-            <dd className={`font-bold ${summary.unallocatedIncomeSatang < 0 ? "text-overdue" : ""}`}>
+            <dt className="text-text-secondary">ยังไม่ได้จัดสรร</dt>
+            <dd className={`tabular font-bold ${summary.unallocatedIncomeSatang < 0 ? "text-overdue" : ""}`}>
               {formatTHB(summary.unallocatedIncomeSatang)}
             </dd>
           </div>
           <div>
-            <dt className="text-text-secondary">ยอดเกินงบรวม</dt>
-            <dd className="font-bold text-overdue">{formatTHB(summary.overspentTotalSatang)}</dd>
+            <dt className="text-text-secondary">ใช้ไปแล้ว</dt>
+            <dd className="tabular font-bold">{formatTHB(summary.spentTotalSatang)}</dd>
           </div>
         </dl>
+        {summary.overspentTotalSatang > 0 ? (
+          <p className="mt-3 text-xs font-bold text-overdue">ยอดเกินงบรวม {formatTHB(summary.overspentTotalSatang)}</p>
+        ) : null}
         {summary.uncategorizedSpentSatang > 0 ? (
-          <p className="mt-3 text-xs text-text-secondary">
+          <p className="mt-2 text-xs text-text-secondary">
             มีรายจ่ายที่ยังไม่ระบุหมวดหมู่ {formatTHB(summary.uncategorizedSpentSatang)} (ไม่นับรวมในหมวดหมู่ด้านล่าง)
           </p>
         ) : null}
@@ -306,7 +288,7 @@ export function BudgetClient({
       <section className="flex flex-col gap-2" aria-label="งบประมาณตามหมวดหมู่">
         <h2 className="px-1 text-sm font-bold text-foreground">งบตามหมวดหมู่</h2>
         {summary.categories.length === 0 ? (
-          <p className="rounded-[16px] border border-dashed border-border bg-white p-4 text-center text-sm text-text-secondary">
+          <p className="rounded-[16px] border border-dashed border-border bg-surface p-4 text-center text-sm text-text-secondary">
             ยังไม่มีหมวดหมู่งบประมาณ เพิ่มหมวดแรกด้านล่าง
           </p>
         ) : (

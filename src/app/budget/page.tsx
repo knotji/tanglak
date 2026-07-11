@@ -33,6 +33,9 @@ export default async function BudgetPage({
       budget ? listBudgetCategories(user.id, budget.id) : Promise.resolve([]),
       getMonthlyBudget(user.id, previousMonth),
     ]);
+    const previousMonthCategories = previousMonthBudget
+      ? await listBudgetCategories(user.id, previousMonthBudget.id)
+      : [];
 
     const summary = buildBudgetSummary(selectedMonth, budget, categories, transactions);
 
@@ -45,6 +48,10 @@ export default async function BudgetPage({
         previousMonth={previousMonth}
         monthLabel={formatBangkokMonthLabel(selectedMonth)}
         canCopyPreviousMonth={previousMonthBudget !== null}
+        previousMonthCategoryPreview={previousMonthCategories.map((category) => ({
+          label: category.label,
+          amountSatang: category.amountSatang,
+        }))}
       />
     );
   });
