@@ -15,6 +15,29 @@ export function getBangkokTodayString(date: Date = new Date()): string {
 }
 
 /**
+ * Gets the current Bangkok wall-clock date/time as a `YYYY-MM-DDTHH:mm`
+ * string suitable for a `datetime-local` input's default value. Using
+ * `new Date().toISOString()` for this purpose is a known footgun: it
+ * returns UTC, but `datetime-local` treats whatever string it's given as
+ * plain wall-clock time with no timezone conversion — so a UTC value ends
+ * up displayed as if it were already Bangkok time, silently off by up to
+ * 7 hours (and by a full day near local midnight).
+ */
+export function getBangkokNowDateTimeLocalString(date: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const get = (type: string) => parts.find((p) => p.type === type)!.value;
+  return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
+}
+
+/**
  * Gets the current local month in Bangkok (Asia/Bangkok) as a YYYY-MM string.
  */
 export function getBangkokMonthString(date: Date = new Date()): string {

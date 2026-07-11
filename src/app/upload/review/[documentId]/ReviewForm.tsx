@@ -15,6 +15,7 @@ import type { FinanceDocument, DocumentExtraction, Debt, Transaction } from "@/t
 import type { ExtractedFinancialDocument } from "@/lib/ai/schemas";
 import { DOCUMENT_EXTRACTION_FALLBACK_MESSAGE } from "@/lib/ai/extraction-errors";
 import { formatTHB } from "@/lib/finance/money";
+import { getBangkokTodayString, getBangkokNowDateTimeLocalString } from "@/lib/finance/date";
 import {
   AlertTriangle,
   HelpCircle,
@@ -72,13 +73,13 @@ export function ReviewForm({
     initialSalary.socialSecurity?.toString() || "0"
   );
   const [paymentDate, setPaymentDate] = useState(
-    initialTx.occurredAt?.slice(0, 10) || new Date().toISOString().slice(0, 10)
+    initialTx.occurredAt?.slice(0, 10) || getBangkokTodayString()
   );
 
   // 2. Receipt / Delivery receipt fields
   const [merchant, setMerchant] = useState(initialTx.merchant || "");
   const [occurredAt, setOccurredAt] = useState(
-    initialTx.occurredAt?.slice(0, 16) || new Date().toISOString().slice(0, 16)
+    initialTx.occurredAt?.slice(0, 16) || getBangkokNowDateTimeLocalString()
   );
   const [subtotal, setSubtotal] = useState(initialReceipt.subtotal?.toString() || "");
   const [deliveryFee, setDeliveryFee] = useState(initialReceipt.deliveryFee?.toString() || "0");
@@ -95,7 +96,7 @@ export function ReviewForm({
   // 3. Transfer slip fields
   const [transferAmount, setTransferAmount] = useState(initialTx.amount?.toString() || "");
   const [transferDate, setTransferDate] = useState(
-    initialTx.occurredAt?.slice(0, 16) || new Date().toISOString().slice(0, 16)
+    initialTx.occurredAt?.slice(0, 16) || getBangkokNowDateTimeLocalString()
   );
   const [destinationName, setDestinationName] = useState(initialTx.merchant || "");
   const [refNumber, setRefNumber] = useState(initialTx.referenceNumber || "");
