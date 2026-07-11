@@ -266,3 +266,25 @@ export type ImportRow = {
   createdAt: string;
   updatedAt: string;
 };
+
+export type MonthlyBudget = {
+  id: string;
+  userId: string;
+  /** Canonical Bangkok month key, always `YYYY-MM`. */
+  month: string;
+  incomeSatang: number;
+  strategy: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type BudgetCategory = {
+  id: string;
+  userId: string;
+  monthlyBudgetId: string;
+  label: string;
+  amountSatang: number;
+  createdAt: string;
+  updatedAt: string;
+};

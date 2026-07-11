@@ -1,4 +1,4 @@
-import type { Account, Debt, FinanceDocument, DocumentExtraction, Transaction, ImportBatch, ImportRow } from "@/types/domain";
+import type { Account, Debt, FinanceDocument, DocumentExtraction, Transaction, ImportBatch, ImportRow, MonthlyBudget, BudgetCategory } from "@/types/domain";
 import { createHash } from "node:crypto";
 
 type MockState = {
@@ -11,6 +11,8 @@ type MockState = {
   importBatches: ImportBatch[];
   importRows: ImportRow[];
   accounts: Account[];
+  monthlyBudgets: MonthlyBudget[];
+  budgetCategories: BudgetCategory[];
 };
 
 const globalForMock = globalThis as typeof globalThis & {
@@ -28,6 +30,8 @@ export function getMockState(): MockState {
     importBatches: [],
     importRows: [],
     accounts: [],
+    monthlyBudgets: [],
+    budgetCategories: [],
   };
   return globalForMock.__tanglakMockState;
 }

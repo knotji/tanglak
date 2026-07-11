@@ -1,11 +1,13 @@
 import { isMockAuthEnabled } from "@/lib/auth/session";
 import { getMockState } from "@/lib/data/mock-store";
-import { mapDebt, mapTransaction, mapDocument, mapDocumentExtraction, mapImportBatch, mapImportRow } from "@/lib/data/mappers";
+import { mapDebt, mapTransaction, mapDocument, mapDocumentExtraction, mapImportBatch, mapImportRow, mapMonthlyBudget, mapBudgetCategory } from "@/lib/data/mappers";
 import { timeAsync } from "@/lib/observability/timing";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { assertMoneySatang } from "@/lib/finance/money-guards";
+import { BUDGET_ERROR_DUPLICATE_TH, BUDGET_ERROR_NOT_FOUND_TH } from "@/lib/finance/budget-guards";
+import { isValidMonthQuery } from "@/lib/finance/date";
 import { logSafeError } from "@/lib/observability/safe-diagnostics";
-import type { Debt, Transaction, FinanceDocument, DocumentExtraction, ImportBatch, ImportRow, Account } from "@/types/domain";
+import type { Debt, Transaction, FinanceDocument, DocumentExtraction, ImportBatch, ImportRow, Account, MonthlyBudget, BudgetCategory } from "@/types/domain";
 
 export const DOCUMENT_PROCESSING_LEASE_MS = 2 * 60 * 1000;
 
@@ -1767,3 +1769,292 @@ export async function createAccount(
   };
 }
 
+
+// === Monthly Budget Repository ===
+
+const MONTHLY_BUDGET_COLUMNS = "id, user_id, month, income_satang, strategy, status, created_at, updated_at";
+const BUDGET_CATEGORY_COLUMNS = "id, user_id, monthly_budget_id, label, amount_satang, created_at, updated_at";
+
+function assertValidMonth(month: string): void {
+  if (!isValidMonthQuery(month)) {
+    throw new Error("Invalid month");
+  }
+}
+
+export async function getMonthlyBudget(userId: string, month: string): Promise<MonthlyBudget | null> {
+  assertValidMonth(month);
+
+  if (isMockAuthEnabled()) {
+    const budget = getMockState().monthlyBudgets.find((b) => b.userId === userId && b.month === month);
+    return budget ?? null;
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("monthly_budgets")
+    .select(MONTHLY_BUDGET_COLUMNS)
+    .eq("user_id", userId)
+    .eq("month", month)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? mapMonthlyBudget(data) : null;
+}
+
+/**
+ * Creates the monthly budget for a month if it does not exist yet, or
+ * updates its expected income if it does -- this single operation covers
+ * both "first-time monthly budget setup" and "edit monthly income" without
+ * risking a duplicate-row race, since the underlying table has a unique
+ * (user_id, month) constraint. A concurrent duplicate insert attempt is
+ * caught and safely resolved by re-reading and updating instead of erroring.
+ */
+export async function upsertMonthlyBudget(
+  userId: string,
+  month: string,
+  incomeSatang: number,
+): Promise<MonthlyBudget> {
+  assertValidMonth(month);
+  assertMoneySatang(incomeSatang, "nonnegative", "incomeSatang");
+
+  if (isMockAuthEnabled()) {
+    const state = getMockState();
+    const index = state.monthlyBudgets.findIndex((b) => b.userId === userId && b.month === month);
+    if (index >= 0) {
+      state.monthlyBudgets[index] = {
+        ...state.monthlyBudgets[index],
+        incomeSatang,
+        updatedAt: new Date().toISOString(),
+      };
+      return state.monthlyBudgets[index];
+    }
+    const budget: MonthlyBudget = {
+      id: crypto.randomUUID(),
+      userId,
+      month,
+      incomeSatang,
+      strategy: "minimum_first",
+      status: "draft",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    state.monthlyBudgets.push(budget);
+    return budget;
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const existing = await getMonthlyBudget(userId, month);
+  if (existing) {
+    const { data, error } = await supabase
+      .from("monthly_budgets")
+      .update({ income_satang: incomeSatang })
+      .eq("id", existing.id)
+      .eq("user_id", userId)
+      .select(MONTHLY_BUDGET_COLUMNS)
+      .single();
+    if (error) throw new Error(error.message);
+    return mapMonthlyBudget(data);
+  }
+
+  const { data, error } = await supabase
+    .from("monthly_budgets")
+    .insert({ user_id: userId, month, income_satang: incomeSatang })
+    .select(MONTHLY_BUDGET_COLUMNS)
+    .single();
+  if (error) {
+    // Lost a create race to a concurrent request -- fall back to updating
+    // the now-existing row instead of failing.
+    if (error.code === "23505") {
+      const recheck = await getMonthlyBudget(userId, month);
+      if (recheck) {
+        const { data: updated, error: updateError } = await supabase
+          .from("monthly_budgets")
+          .update({ income_satang: incomeSatang })
+          .eq("id", recheck.id)
+          .eq("user_id", userId)
+          .select(MONTHLY_BUDGET_COLUMNS)
+          .single();
+        if (updateError) throw new Error(updateError.message);
+        return mapMonthlyBudget(updated);
+      }
+    }
+    throw new Error(error.message);
+  }
+  return mapMonthlyBudget(data);
+}
+
+export async function listBudgetCategories(userId: string, monthlyBudgetId: string): Promise<BudgetCategory[]> {
+  if (isMockAuthEnabled()) {
+    return getMockState()
+      .budgetCategories.filter((c) => c.userId === userId && c.monthlyBudgetId === monthlyBudgetId)
+      .sort((a, b) => a.label.localeCompare(b.label, "th"));
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("budget_categories")
+    .select(BUDGET_CATEGORY_COLUMNS)
+    .eq("user_id", userId)
+    .eq("monthly_budget_id", monthlyBudgetId)
+    .order("label", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []).map(mapBudgetCategory);
+}
+
+export async function createBudgetCategory(
+  userId: string,
+  monthlyBudgetId: string,
+  label: string,
+  amountSatang: number,
+): Promise<BudgetCategory> {
+  assertMoneySatang(amountSatang, "nonnegative", "amountSatang");
+  const trimmedLabel = label.trim();
+
+  if (isMockAuthEnabled()) {
+    const state = getMockState();
+    const budget = state.monthlyBudgets.find((b) => b.id === monthlyBudgetId && b.userId === userId);
+    if (!budget) throw new Error(BUDGET_ERROR_NOT_FOUND_TH);
+    const duplicate = state.budgetCategories.some(
+      (c) => c.userId === userId && c.monthlyBudgetId === monthlyBudgetId && c.label === trimmedLabel,
+    );
+    if (duplicate) throw new Error(BUDGET_ERROR_DUPLICATE_TH);
+    const category: BudgetCategory = {
+      id: crypto.randomUUID(),
+      userId,
+      monthlyBudgetId,
+      label: trimmedLabel,
+      amountSatang,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    state.budgetCategories.push(category);
+    return category;
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data: budget, error: budgetError } = await supabase
+    .from("monthly_budgets")
+    .select("id")
+    .eq("id", monthlyBudgetId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (budgetError) throw new Error(budgetError.message);
+  if (!budget) throw new Error(BUDGET_ERROR_NOT_FOUND_TH);
+
+  const { data, error } = await supabase
+    .from("budget_categories")
+    .insert({ user_id: userId, monthly_budget_id: monthlyBudgetId, label: trimmedLabel, amount_satang: amountSatang })
+    .select(BUDGET_CATEGORY_COLUMNS)
+    .single();
+  if (error) {
+    if (error.code === "23505") throw new Error(BUDGET_ERROR_DUPLICATE_TH);
+    throw new Error(error.message);
+  }
+  return mapBudgetCategory(data);
+}
+
+export async function updateBudgetCategory(
+  userId: string,
+  id: string,
+  amountSatang: number,
+): Promise<BudgetCategory> {
+  assertMoneySatang(amountSatang, "nonnegative", "amountSatang");
+
+  if (isMockAuthEnabled()) {
+    const state = getMockState();
+    const index = state.budgetCategories.findIndex((c) => c.id === id);
+    if (index < 0) throw new Error(BUDGET_ERROR_NOT_FOUND_TH);
+    assertOwner(userId, state.budgetCategories[index].userId);
+    state.budgetCategories[index] = {
+      ...state.budgetCategories[index],
+      amountSatang,
+      updatedAt: new Date().toISOString(),
+    };
+    return state.budgetCategories[index];
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("budget_categories")
+    .update({ amount_satang: amountSatang })
+    .eq("id", id)
+    .eq("user_id", userId)
+    .select(BUDGET_CATEGORY_COLUMNS)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error(BUDGET_ERROR_NOT_FOUND_TH);
+  return mapBudgetCategory(data);
+}
+
+export async function deleteBudgetCategory(userId: string, id: string): Promise<void> {
+  if (isMockAuthEnabled()) {
+    const state = getMockState();
+    const existing = state.budgetCategories.find((c) => c.id === id);
+    if (!existing) return;
+    assertOwner(userId, existing.userId);
+    state.budgetCategories = state.budgetCategories.filter((c) => c.id !== id);
+    return;
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.from("budget_categories").delete().eq("id", id).eq("user_id", userId);
+  if (error) throw new Error(error.message);
+}
+
+export type CopyPreviousMonthResult = {
+  budget: MonthlyBudget;
+  copiedCount: number;
+  skippedCount: number;
+};
+
+/**
+ * Copies a prior month's budget (income, if the target budget is newly
+ * created, plus every category not already present in the target month)
+ * into the target month. Idempotent: categories already present in the
+ * target (by label) are counted as skipped, never duplicated -- both when
+ * detected up front and when a concurrent/retried call races on the
+ * underlying unique constraint.
+ */
+export async function copyPreviousMonthBudget(
+  userId: string,
+  fromMonth: string,
+  toMonth: string,
+): Promise<CopyPreviousMonthResult> {
+  assertValidMonth(fromMonth);
+  assertValidMonth(toMonth);
+
+  const sourceBudget = await getMonthlyBudget(userId, fromMonth);
+  if (!sourceBudget) throw new Error(BUDGET_ERROR_NOT_FOUND_TH);
+
+  const existingTargetBudget = await getMonthlyBudget(userId, toMonth);
+  const targetBudget = await upsertMonthlyBudget(
+    userId,
+    toMonth,
+    existingTargetBudget ? existingTargetBudget.incomeSatang : sourceBudget.incomeSatang,
+  );
+
+  const sourceCategories = await listBudgetCategories(userId, sourceBudget.id);
+  const targetCategories = await listBudgetCategories(userId, targetBudget.id);
+  const existingLabels = new Set(targetCategories.map((c) => c.label));
+
+  let copiedCount = 0;
+  let skippedCount = 0;
+  for (const category of sourceCategories) {
+    if (existingLabels.has(category.label)) {
+      skippedCount++;
+      continue;
+    }
+    try {
+      await createBudgetCategory(userId, targetBudget.id, category.label, category.amountSatang);
+      copiedCount++;
+    } catch (error) {
+      if (error instanceof Error && error.message === BUDGET_ERROR_DUPLICATE_TH) {
+        // Lost a race to a concurrent copy/create -- already present, not an error.
+        skippedCount++;
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  return { budget: targetBudget, copiedCount, skippedCount };
+}
