@@ -4,7 +4,6 @@ import { PageHeader } from "@/components/PageHeader";
 import { UploadClient } from "./UploadClient";
 import { requireUser } from "@/lib/auth/session";
 import { requireCompletedOnboarding } from "@/lib/auth/onboarding";
-import Link from "next/link";
 
 export default async function UploadPage() {
   const user = await requireUser();
@@ -13,17 +12,11 @@ export default async function UploadPage() {
   return (
     <AppShell>
       <PageHeader
-        title="ส่งหลักฐานมาให้ตั้งหลักอ่าน"
-        subtitle="สลิป ใบเสร็จ หรือ Statement คุณตรวจได้ทุกอย่างก่อนบันทึก"
+        title="อัปโหลดสลิป"
+        subtitle="เริ่มจากรายการของเดือนนี้ แล้วค่อยเพิ่มทีละรายการได้"
       />
-      
-      <UploadClient />
 
-      <div className="my-4 text-center text-sm">
-        <Link href="/history-import" className="font-bold text-primary hover:underline">
-          มี Statement หลายรายการ? นำเข้าประวัติย้อนหลัง ➔
-        </Link>
-      </div>
+      <UploadClient />
 
       <NextActionCard
         title="คุณเป็นคนยืนยันเสมอ"

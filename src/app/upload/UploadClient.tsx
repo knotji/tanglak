@@ -1,32 +1,32 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Link from "next/link";
 import {
-  Banknote,
-  Camera,
+  ArrowDownLeft,
+  ArrowUpRight,
   CreditCard,
-  FileText,
-  HandCoins,
-  ReceiptText,
-  ScanLine,
-  ShoppingBag,
-  UploadCloud,
+  FilePenLine,
   FileIcon,
+  ReceiptText,
   Trash2,
   AlertTriangle,
+  Camera,
 } from "lucide-react";
 import { uploadAndExtractAction } from "@/app/actions/documents";
 import { StepProgress } from "@/components/feedback/StepProgress";
 
+/**
+ * Slip-first document type quick-select. Bank-statement/CSV import
+ * ("debt_statement"/"loan_schedule") is deliberately not offered here --
+ * that flow still exists (see /history-import) but is no longer promoted
+ * as a primary upload path. See docs/SLIP_FIRST_PRODUCT_DIRECTION.md.
+ */
 const documentTypes = [
-  { label: "เงินเดือน", icon: Banknote, value: "salary_slip" },
-  { label: "รายจ่าย", icon: HandCoins, value: "receipt" },
-  { label: "ใบเสร็จ", icon: ReceiptText, value: "receipt" },
-  { label: "เดลิเวอรี", icon: ShoppingBag, value: "delivery_receipt" },
-  { label: "ชำระหนี้", icon: CreditCard, value: "transfer_slip" },
-  { label: "ใบแจ้งหนี้", icon: FileText, value: "debt_statement" },
-  { label: "Statement", icon: ScanLine, value: "debt_statement" },
-  { label: "อื่น ๆ", icon: UploadCloud, value: "other" },
+  { label: "สลิปโอนเงินออก", icon: ArrowUpRight, value: "transfer_slip" },
+  { label: "สลิปรับเงิน", icon: ArrowDownLeft, value: "transfer_slip" },
+  { label: "ใบเสร็จ/ค่าอาหาร", icon: ReceiptText, value: "receipt" },
+  { label: "สลิปชำระหนี้หรือบัตรเครดิต", icon: CreditCard, value: "transfer_slip" },
 ];
 
 const uploadSteps = [
@@ -145,9 +145,9 @@ export function UploadClient() {
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-[16px] bg-primary-soft text-primary">
             <Camera size={26} aria-hidden />
           </div>
-          <p className="mt-4 text-xl font-bold">ถ่ายรูป หรือเลือกไฟล์</p>
+          <p className="mt-4 text-xl font-bold">อัปโหลดสลิป</p>
           <p id="document-upload-help" className="mt-1 text-sm leading-6 text-text-secondary">
-            รองรับ JPG, PNG, WEBP, PDF (สูงสุด 15MB)
+            ถ่ายรูปหรือเลือกไฟล์ — รองรับ JPG, PNG, WEBP, PDF (สูงสุด 15MB)
           </p>
         </section>
       ) : (
@@ -228,16 +228,16 @@ export function UploadClient() {
         </div>
       )}
 
-      {/* Grid of Document Types for Fast Select */}
+      {/* Slip-type quick select -- primary upload intents only. */}
       {!selectedFile && (
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           {documentTypes.map((type) => {
             const Icon = type.icon;
             return (
               <button
                 key={type.label}
                 onClick={() => handleTypeClick(type.value)}
-                className="flex min-h-20 flex-col items-center justify-center gap-2 rounded-[16px] border border-border bg-surface px-2 text-xs font-bold text-foreground transition hover:border-primary/40 hover:bg-primary-soft/10"
+                className="flex min-h-20 flex-col items-center justify-center gap-2 rounded-[16px] border border-border bg-surface px-2 text-center text-xs font-bold text-foreground transition hover:border-primary/40 hover:bg-primary-soft/10"
               >
                 <Icon size={18} className="text-primary" aria-hidden />
                 {type.label}
@@ -245,6 +245,18 @@ export function UploadClient() {
             );
           })}
         </div>
+      )}
+
+      {/* Secondary: manual entry, always available -- never traps the user
+          inside AI processing. */}
+      {!selectedFile && (
+        <Link
+          href="/transactions"
+          className="flex min-h-11 items-center justify-center gap-2 rounded-[16px] border border-border bg-surface text-sm font-bold text-primary"
+        >
+          <FilePenLine size={18} aria-hidden />
+          เพิ่มรายการเอง
+        </Link>
       )}
     </div>
   );
