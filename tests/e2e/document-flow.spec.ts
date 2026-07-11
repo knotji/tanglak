@@ -197,9 +197,13 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
     await page.getByRole("button", { name: "วิเคราะห์ด้วย AI" }).click();
     await expect(page).toHaveURL(/\/upload\/review\//);
 
-    // Verify failed message
+    // Verify failed message is safe Thai copy, not raw provider/schema internals.
     await expect(page.getByText("การอ่านสลิปไม่สำเร็จ")).toBeVisible();
-    await expect(page.getByText("Gemini quota/rate limit error")).toBeVisible();
+    await expect(page.getByText("การอ่านข้อมูลบางส่วนไม่ครบ")).toBeVisible();
+    await expect(page.getByText("ลองประมวลผลอีกครั้ง หรือกรอกข้อมูลด้วยตนเอง")).toBeVisible();
+    await expect(page.getByText("Gemini quota/rate limit error")).toHaveCount(0);
+    await expect(page.getByText("expected number")).toHaveCount(0);
+    await expect(page.getByText("received undefined")).toHaveCount(0);
 
     // Use manual fallback
     await page.getByRole("button", { name: "กรอกข้อมูลด้วยตนเอง" }).click();
@@ -214,6 +218,37 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
     await page.goto("/transactions");
     await expect(page.getByText("Manual Coffee Shop")).toBeVisible();
     await expect(page.getByText("฿140").first()).toBeVisible();
+  });
+
+  test("retry reuses the existing failed document and navigates to review on success", async ({ page }) => {
+    await page.goto("/auth");
+    await page.getByLabel("อีเมล").fill(email);
+    await page.getByLabel("รหัสผ่าน", { exact: true }).fill(password);
+    await page.locator("form").getByRole("button", { name: "เข้าสู่ระบบ" }).click();
+    await expect(page).toHaveURL(/\/today/);
+
+    await page.goto("/upload");
+    const fileChooserPromise = page.waitForEvent("filechooser");
+    await page.locator("section:has-text('ถ่ายรูป หรือเลือกไฟล์')").click();
+    const fileChooser = await fileChooserPromise;
+    await fileChooser.setFiles({
+      name: "retry_success_receipt.png",
+      mimeType: "image/png",
+      buffer: Buffer.from("mock-retry-success-data"),
+    });
+
+    await page.getByRole("button", { name: "วิเคราะห์ด้วย AI" }).click();
+    await expect(page).toHaveURL(/\/upload\/review\//);
+    const failedReviewUrl = page.url();
+    await expect(page.getByText("การอ่านข้อมูลบางส่วนไม่ครบ")).toBeVisible();
+
+    const retryDialog = page.waitForEvent("dialog").then((dialog) => dialog.accept());
+    await page.getByRole("button", { name: "ลองประมวลผลอีกครั้ง" }).click();
+    await retryDialog;
+    await page.reload();
+    await expect(page.locator("input[name='totalPaid']")).toHaveValue("120");
+    await expect(page).toHaveURL(failedReviewUrl);
+    await expect(page.getByText("การอ่านสลิปไม่สำเร็จ")).toHaveCount(0);
   });
 
   test("user cannot access another user's document", async ({ page }) => {

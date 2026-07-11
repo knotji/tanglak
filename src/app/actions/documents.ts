@@ -18,6 +18,7 @@ import {
   listRecentConfirmedTransactions,
 } from "@/lib/data/finance-repository";
 import { processAndExtractDocument } from "@/lib/ai/extract-document";
+import { safeDocumentExtractionMessage } from "@/lib/ai/extraction-errors";
 import { bahtToSatang } from "@/lib/finance/money";
 import { getMockState } from "@/lib/data/mock-store";
 import { logSafeError } from "@/lib/observability/safe-diagnostics";
@@ -125,7 +126,7 @@ export async function uploadAndExtractAction(
       await processAndExtractDocument(user.id, documentId);
     } catch (extractError) {
       const isExpectedMockFailure =
-        extractError instanceof Error && extractError.message.includes("Mocked Gemini Failure");
+        extractError instanceof Error && extractError.cause instanceof Error && extractError.cause.message.includes("Mocked Gemini Failure");
       if (process.env.NODE_ENV === "development" || !isExpectedMockFailure) {
         logSafeError("Extraction failed but document row created", {
           operation: "document.uploadAndExtract",
@@ -167,7 +168,15 @@ export async function retryExtractionAction(documentId: string): Promise<Documen
     revalidatePath("/transactions");
     return { ok: true, message: "เริ่มประมวลผลใหม่อีกครั้งแล้ว" };
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "ประมวลผลใหม่ไม่สำเร็จ" };
+    logSafeError("Document retry extraction failed", {
+      operation: "document.retryExtraction",
+      stage: "extract",
+      documentId,
+      provider: "gemini",
+      modelName: process.env.GEMINI_MODEL || "gemini-3.1-flash-lite",
+      error,
+    });
+    return { ok: false, message: safeDocumentExtractionMessage(error) };
   }
 }
 

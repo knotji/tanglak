@@ -4,6 +4,8 @@ import { extractFinancialDocument } from "./gemini";
 import { getDocument, createDocumentExtraction, updateDocument } from "@/lib/data/finance-repository";
 import type { ExtractedFinancialDocument } from "./schemas";
 import { extractedFinancialDocumentSchema } from "./schemas";
+import { safeDocumentExtractionMessage, toDocumentExtractionError } from "./extraction-errors";
+import { logSafeError } from "@/lib/observability/safe-diagnostics";
 
 /**
  * Orchestrates the full server-side document extraction process.
@@ -25,7 +27,7 @@ export async function processAndExtractDocument(
 
     if (isMockAuthEnabled()) {
       // Intercept and return mock data for testing
-      result = getMockExtraction(doc.originalFilename || "", doc.documentType || "other");
+      result = getMockExtraction(doc.originalFilename || "", doc.documentType || "other", doc.status);
     } else {
       const supabase = await createSupabaseServerClient();
       
@@ -70,21 +72,39 @@ export async function processAndExtractDocument(
 
     return result;
   } catch (err) {
-    const message = err instanceof Error ? err.message : "การดึงข้อมูลล้มเหลว";
+    const extractionError = toDocumentExtractionError(err);
+    logSafeError("Document extraction failed", {
+      operation: "document.processAndExtract",
+      stage: "extract",
+      documentId,
+      provider: "gemini",
+      modelName: process.env.GEMINI_MODEL || "gemini-3.1-flash-lite",
+      errorCode: extractionError.code,
+      missingFields: extractionError.missingFields,
+      error: extractionError,
+    });
     // Update document status to 'failed' on failure
     await updateDocument(userId, documentId, {
       status: "failed",
-      errorMessage: message,
+      errorMessage: safeDocumentExtractionMessage(extractionError),
     });
-    throw err;
+    throw extractionError;
   }
 }
 
 /**
  * Returns mock extraction payloads for tests when mock auth is enabled.
  */
-function getMockExtraction(filename: string, selectedType: string): ExtractedFinancialDocument {
+function getMockExtraction(
+  filename: string,
+  selectedType: string,
+  previousStatus?: string,
+): ExtractedFinancialDocument {
   const nameLower = filename.toLowerCase();
+
+  if (nameLower.includes("retry_success") && previousStatus !== "failed") {
+    throw new Error("Mocked Gemini Failure Before Retry");
+  }
 
   if (nameLower.includes("failed")) {
     throw new Error("Gemini quota/rate limit error (Mocked Gemini Failure)");

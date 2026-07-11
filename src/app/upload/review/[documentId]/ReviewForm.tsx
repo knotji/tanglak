@@ -13,6 +13,7 @@ import {
 } from "@/app/actions/documents";
 import type { FinanceDocument, DocumentExtraction, Debt, Transaction } from "@/types/domain";
 import type { ExtractedFinancialDocument } from "@/lib/ai/schemas";
+import { DOCUMENT_EXTRACTION_FALLBACK_MESSAGE } from "@/lib/ai/extraction-errors";
 import { formatTHB } from "@/lib/finance/money";
 import {
   AlertTriangle,
@@ -47,6 +48,9 @@ export function ReviewForm({
   const [isDeleting, setIsDeleting] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
   const [manualMode, setManualMode] = useState(false);
+  const failedMessage = doc.errorMessage && !/Zod|expected|received|[\[\{]|Gemini|quota|stack|Error/i.test(doc.errorMessage)
+    ? doc.errorMessage
+    : DOCUMENT_EXTRACTION_FALLBACK_MESSAGE;
 
   // AI Normalized Preview Shortcuts
   const extData = (normalizedPreview || {}) as Partial<ExtractedFinancialDocument>;
@@ -147,7 +151,7 @@ export function ReviewForm({
       alert("เริ่มสแกนเอกสารอีกครั้งแล้ว");
       router.refresh();
     } else {
-      alert(res.message);
+      alert(res.message || DOCUMENT_EXTRACTION_FALLBACK_MESSAGE);
       setIsRetrying(false);
     }
   };
@@ -274,9 +278,7 @@ export function ReviewForm({
           <div className="rounded-[16px] border border-red-200 bg-red-50/50 p-6 text-center shadow-[0_12px_24px_rgba(239,68,68,0.05)]">
             <AlertTriangle className="mx-auto text-red-500" size={48} />
             <h3 className="mt-4 text-lg font-bold text-red-700">การอ่านสลิปไม่สำเร็จ</h3>
-            <p className="mt-2 text-sm text-red-600">
-              เกิดข้อผิดพลาด: {doc.errorMessage || "AI ไม่สามารถอ่านข้อมูล หรือมีปัญหาการเชื่อมต่อ"}
-            </p>
+            <p className="mt-2 whitespace-pre-line text-sm text-red-600">{failedMessage}</p>
             <div className="mt-6 flex justify-center gap-3">
               <button
                 onClick={handleRetry}
