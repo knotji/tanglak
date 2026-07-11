@@ -3,7 +3,7 @@
 import React, { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { confirmBatchAction, deleteBatchAction } from "@/app/actions/history-import";
-import type { ImportBatch, ImportRow, Debt, TransactionType } from "@/types/domain";
+import type { ImportBatch, ImportRow, Debt } from "@/types/domain";
 
 interface ReviewBoardClientProps {
   batch: ImportBatch;
@@ -18,7 +18,21 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
 
   const [rows, setRows] = useState<ImportRow[]>(initialRows);
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
-  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
+  const [excludedRowIds, setExcludedRowIds] = useState<Set<string>>(() => {
+    const initialExclusions = new Set<string>();
+    initialRows.forEach((row) => {
+      if (row.reviewStatus === "invalid") {
+        initialExclusions.add(row.id);
+      } else if (row.importDecision === "unresolved") {
+        if (row.reviewStatus === "possible_duplicate") {
+          initialExclusions.add(row.id);
+        }
+      } else if (row.importDecision === "skip") {
+        initialExclusions.add(row.id);
+      }
+    });
+    return initialExclusions;
+  });
   const [activeTab, setActiveTab] = useState<string>("all");
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -32,6 +46,9 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
   const debtPaymentCount = rows.filter(r => r.reviewStatus === "possible_debt_payment").length;
   const skippedCount = rows.filter(r => r.importDecision === "skip").length;
   const warningCount = rows.filter(r => r.validationWarnings.length > 0).length;
+
+  const importableCount = rows.filter(r => r.reviewStatus !== "invalid").length;
+  const includedCount = rows.filter(r => r.reviewStatus !== "invalid" && !excludedRowIds.has(r.id)).length;
 
   // Filter rows based on activeTab
   const filteredRows = rows.filter(row => {
@@ -67,27 +84,68 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
     | { layoutId?: string; confidence?: number; needsReview?: boolean; warnings?: string[] }
     | undefined;
 
-  // Select handlers
-  const handleSelectRow = (id: string) => {
-    const next = new Set(selectedRowIds);
-    if (next.has(id)) {
-      next.delete(id);
-    } else {
-      next.add(id);
-    }
-    setSelectedRowIds(next);
+  // Exclude/Include handlers
+  const handleToggleExclude = (id: string) => {
+    const row = rows.find((r) => r.id === id);
+    if (!row || row.reviewStatus === "invalid") return;
+
+    setExcludedRowIds((prev) => {
+      const next = new Set(prev);
+      const isCurrentlyExcluded = next.has(id);
+      if (isCurrentlyExcluded) {
+        next.delete(id);
+        setRows(rPrev => rPrev.map(r => r.id === id ? {
+          ...r,
+          importDecision: r.reviewStatus === "possible_duplicate" ? "merge_existing" : "import"
+        } : r));
+      } else {
+        next.add(id);
+        setRows(rPrev => rPrev.map(r => r.id === id ? { ...r, importDecision: "skip" } : r));
+      }
+      return next;
+    });
   };
 
-  const handleSelectAllFiltered = () => {
-    const next = new Set(selectedRowIds);
-    filteredRows.forEach(row => next.add(row.id));
-    setSelectedRowIds(next);
+  const handleIncludeAll = () => {
+    setExcludedRowIds((prev) => {
+      const next = new Set(prev);
+      rows.forEach((row) => {
+        if (row.reviewStatus !== "invalid") {
+          next.delete(row.id);
+        }
+      });
+      return next;
+    });
+    setRows((rPrev) =>
+      rPrev.map((r) =>
+        r.reviewStatus !== "invalid"
+          ? {
+              ...r,
+              importDecision: r.reviewStatus === "possible_duplicate" ? "merge_existing" : "import",
+            }
+          : r
+      )
+    );
   };
 
-  const handleDeselectAllFiltered = () => {
-    const next = new Set(selectedRowIds);
-    filteredRows.forEach(row => next.delete(row.id));
-    setSelectedRowIds(next);
+  const handleExcludeAll = () => {
+    setExcludedRowIds((prev) => {
+      const next = new Set(prev);
+      rows.forEach((row) => {
+        next.add(row.id);
+      });
+      return next;
+    });
+    setRows((rPrev) =>
+      rPrev.map((r) =>
+        r.reviewStatus !== "invalid"
+          ? {
+              ...r,
+              importDecision: "skip",
+            }
+          : r
+      )
+    );
   };
 
   // Modify row values
@@ -97,62 +155,44 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
       prev.map(row => {
         if (row.id === rowId) {
           const nextRow = { ...row, [field]: value };
-          // If decision changes, check if we need to adjust status
-          if (field === "importDecision" && value === "skip") {
-            // keep reviewStatus or modify
-          }
           return nextRow;
         }
         return row;
       })
     );
-  };
 
-  // Bulk operations
-  const handleBulkChangeType = (type: TransactionType) => {
-    if (selectedRowIds.size === 0) return;
-    setRows(prev =>
-      prev.map(row => {
-        if (selectedRowIds.has(row.id)) {
-          return { ...row, suggestedTransactionType: type };
+    if (field === "importDecision") {
+      setExcludedRowIds(prev => {
+        const next = new Set(prev);
+        if (value === "skip") {
+          next.add(rowId);
+        } else if (value === "import" || value === "merge_existing") {
+          next.delete(rowId);
         }
-        return row;
-      })
-    );
-  };
-
-  const handleBulkChangeCategory = (cat: string) => {
-    if (selectedRowIds.size === 0) return;
-    setRows(prev =>
-      prev.map(row => {
-        if (selectedRowIds.has(row.id)) {
-          return { ...row, suggestedCategory: cat };
-        }
-        return row;
-      })
-    );
-  };
-
-  const handleBulkSetDecision = (decision: "import" | "merge_existing" | "skip") => {
-    if (selectedRowIds.size === 0) return;
-    setRows(prev =>
-      prev.map(row => {
-        if (selectedRowIds.has(row.id)) {
-          return { ...row, importDecision: decision };
-        }
-        return row;
-      })
-    );
+        return next;
+      });
+    }
   };
 
   const handleSkipAllDuplicates = () => {
-    setRows(prev =>
-      prev.map(row => {
+    setExcludedRowIds((prev) => {
+      const next = new Set(prev);
+      rows.forEach((row) => {
         if (row.reviewStatus === "possible_duplicate") {
-          return { ...row, importDecision: "skip" };
+          next.add(row.id);
         }
-        return row;
-      })
+      });
+      return next;
+    });
+    setRows((rPrev) =>
+      rPrev.map((r) =>
+        r.reviewStatus === "possible_duplicate"
+          ? {
+              ...r,
+              importDecision: "skip",
+            }
+          : r
+      )
     );
   };
 
@@ -172,7 +212,7 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
   // Confirm Import Commit
   const handleConfirmImport = async () => {
     setErrorMsg(null);
-    const unresolvedCount = rows.filter(r => r.importDecision === "unresolved").length;
+    const unresolvedCount = rows.filter(r => r.reviewStatus !== "invalid" && !excludedRowIds.has(r.id) && r.importDecision === "unresolved").length;
     if (unresolvedCount > 0) {
       if (!window.confirm(`มีอีก ${unresolvedCount} รายการที่ยังไม่ได้เลือกผลการตรวจสอบ คุณต้องการข้ามรายการที่เหลือและนำเข้ารายการที่ระบุไว้ใช่หรือไม่?`)) {
         return;
@@ -180,18 +220,34 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
     }
 
     const payload = rows
-      .filter(r => r.importDecision !== "unresolved")
-      .map(r => ({
-        rowId: r.id,
-        decision: r.importDecision as "import" | "merge_existing" | "skip",
-        transactionType: r.suggestedTransactionType,
-        category: r.suggestedCategory,
-        debtId: r.suggestedDebtId,
-        occurredAt: r.occurredAt,
-        merchant: r.merchant || r.description,
-        amountSatang: r.amountSatang,
-        duplicateTransactionId: r.duplicateTransactionId,
-      }));
+      .filter(r => r.reviewStatus !== "invalid")
+      .filter(r => {
+        const isExcluded = excludedRowIds.has(r.id);
+        if (!isExcluded && r.importDecision === "unresolved") {
+          return false;
+        }
+        return true;
+      })
+      .map(r => {
+        const isExcluded = excludedRowIds.has(r.id);
+        let decision = r.importDecision;
+        if (isExcluded) {
+          decision = "skip";
+        } else if (decision === "unresolved" || decision === "skip") {
+          decision = r.reviewStatus === "possible_duplicate" ? "merge_existing" : "import";
+        }
+        return {
+          rowId: r.id,
+          decision: decision as "import" | "merge_existing" | "skip",
+          transactionType: r.suggestedTransactionType,
+          category: r.suggestedCategory,
+          debtId: r.suggestedDebtId,
+          occurredAt: r.occurredAt,
+          merchant: r.merchant || r.description,
+          amountSatang: r.amountSatang,
+          duplicateTransactionId: r.duplicateTransactionId,
+        };
+      });
 
     startTransition(async () => {
       const res = await confirmBatchAction(batch.id, batch.accountId, payload);
@@ -269,43 +325,6 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
         </div>
       </div>
 
-      {/* Bulk Toolbar */}
-      {selectedRowIds.size > 0 && (
-        <div className="rounded-xl border border-primary bg-indigo-50/50 p-3 text-xs flex flex-col gap-2 shadow-sm animate-fade-in">
-          <div className="flex items-center justify-between font-semibold text-primary">
-            <span>เลือกอยู่ {selectedRowIds.size} รายการ</span>
-            <button onClick={() => setSelectedRowIds(new Set())} className="underline">ยกเลิก</button>
-          </div>
-          <div className="flex flex-wrap gap-2 pt-1 border-t border-indigo-100">
-            <button onClick={() => handleBulkSetDecision("import")} className="rounded bg-primary px-2.5 py-1 font-bold text-white">นำเข้า</button>
-            <button onClick={() => handleBulkSetDecision("skip")} className="rounded bg-gray-200 px-2.5 py-1 font-semibold text-text-secondary">ข้าม</button>
-            <select
-              onChange={(e) => handleBulkChangeType(e.target.value as TransactionType)}
-              defaultValue=""
-              className="rounded border border-border bg-white px-2 py-0.5"
-            >
-              <option value="" disabled>ตั้งประเภท...</option>
-              <option value="expense">รายจ่าย</option>
-              <option value="income">รายรับ</option>
-              <option value="transfer">โอนเงิน</option>
-              <option value="debt_payment">ชำระหนี้</option>
-            </select>
-            <select
-              onChange={(e) => handleBulkChangeCategory(e.target.value)}
-              defaultValue=""
-              className="rounded border border-border bg-white px-2 py-0.5"
-            >
-              <option value="" disabled>ตั้งหมวดหมู่...</option>
-              <option value="รายได้">รายได้</option>
-              <option value="อาหาร">อาหาร</option>
-              <option value="เดลิเวอรี">เดลิเวอรี</option>
-              <option value="โอนเงิน">โอนเงิน</option>
-              <option value="อื่น ๆ">อื่น ๆ</option>
-            </select>
-          </div>
-        </div>
-      )}
-
       {/* Category Tabs */}
       <div className="flex gap-1 overflow-x-auto pb-1 border-b border-border text-xs scrollbar-none">
         {[
@@ -333,13 +352,17 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
 
       {/* Table actions bar */}
       <div className="flex items-center justify-between text-xs text-text-secondary">
-        <div className="flex items-center gap-2">
-          <button onClick={handleSelectAllFiltered} className="hover:underline text-primary font-semibold">เลือกทั้งหมด</button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span aria-live="polite" className="font-semibold text-text-secondary mr-2">
+            เลือก {includedCount} จาก {importableCount} รายการ
+          </span>
           <span>|</span>
-          <button onClick={handleDeselectAllFiltered} className="hover:underline">ไม่เลือกทั้งหมด</button>
+          <button onClick={handleIncludeAll} className="hover:underline text-primary font-semibold min-h-[44px] flex items-center px-1">เลือกทั้งหมด</button>
+          <span>|</span>
+          <button onClick={handleExcludeAll} className="hover:underline min-h-[44px] flex items-center px-1">ยกเลิกทั้งหมด</button>
         </div>
         {duplicateCount > 0 && (
-          <button onClick={handleSkipAllDuplicates} className="hover:underline text-rose-600 font-semibold">
+          <button onClick={handleSkipAllDuplicates} className="hover:underline text-rose-600 font-semibold min-h-[44px] flex items-center px-1">
             ข้ามรายการซ้ำทั้งหมด
           </button>
         )}
@@ -355,7 +378,7 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
           filteredRows.map((row) => {
             const isExpanded = expandedRowId === row.id;
             const fieldIdBase = `import-row-${row.id}`;
-            const isSelected = selectedRowIds.has(row.id);
+            const isExcluded = excludedRowIds.has(row.id);
             const dateObj = new Date(row.occurredAt);
             const displayTime = dateObj.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
             const displayDate = dateObj.toLocaleDateString("th-TH", { day: "2-digit", month: "short" });
@@ -364,7 +387,11 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
               <div
                 key={row.id}
                 className={`rounded-xl border border-border bg-white shadow-sm overflow-hidden transition-all duration-200 ${
-                  isSelected ? "border-primary bg-indigo-50/10" : ""
+                  row.reviewStatus === "invalid"
+                    ? "border-amber-300 bg-amber-50/5"
+                    : isExcluded
+                    ? "opacity-50 border-slate-200 bg-slate-50/50"
+                    : "border-primary bg-indigo-50/10"
                 }`}
               >
                 {/* Compact view */}
@@ -372,13 +399,37 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
                   className="flex items-center gap-3 p-3 cursor-pointer hover:bg-slate-50/50"
                   onClick={() => setExpandedRowId(isExpanded ? null : row.id)}
                 >
-                  <input
-                    type="checkbox"
-                    checked={isSelected}
-                    onChange={() => handleSelectRow(row.id)}
-                    onClick={(e) => e.stopPropagation()} // avoid expand
-                    className="h-4 w-4 rounded border-border"
-                  />
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleExclude(row.id);
+                    }}
+                    disabled={row.reviewStatus === "invalid"}
+                    aria-pressed={!isExcluded}
+                    aria-label={`${row.merchant || row.description} - ฿${(row.amountSatang / 100).toLocaleString()}: ${
+                      row.reviewStatus === "invalid"
+                        ? "ข้อมูลไม่ครบถ้วน ไม่สามารถนำเข้าได้"
+                        : isExcluded
+                        ? "นำเข้ารายการนี้"
+                        : "ไม่นำเข้ารายการนี้"
+                    }`}
+                    onKeyDown={(e) => {
+                      if (e.key === " " || e.key === "Enter") {
+                        e.stopPropagation();
+                        handleToggleExclude(row.id);
+                      }
+                    }}
+                    className={`min-h-[44px] min-w-[80px] shrink-0 flex items-center justify-center px-3 py-1.5 rounded-xl border font-bold text-xs focus:ring-2 focus:ring-primary focus:outline-none transition-colors ${
+                      row.reviewStatus === "invalid"
+                        ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                        : isExcluded
+                        ? "bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100"
+                        : "bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100"
+                    }`}
+                  >
+                    {row.reviewStatus === "invalid" ? "ข้อมูลไม่ครบ" : isExcluded ? "นำเข้า" : "ไม่นำเข้า"}
+                  </button>
                   <div className="text-center min-w-[36px]">
                     <span className="block font-bold text-foreground text-xs">{displayDate}</span>
                     <span className="block text-[9px] text-text-secondary">{displayTime}</span>
@@ -591,7 +642,7 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
           disabled={isPending}
           className="flex min-h-12 w-full items-center justify-center rounded-xl bg-primary text-sm font-bold text-white shadow hover:bg-primary-dark disabled:opacity-50"
         >
-          {isPending ? "กำลังบันทึกธุรกรรม..." : `ยืนยันการนำเข้าทั้งหมด (${rows.filter(r => r.importDecision !== "skip" && r.importDecision !== "unresolved").length} รายการ)`}
+          {isPending ? "กำลังบันทึกธุรกรรม..." : `ยืนยันการนำเข้าทั้งหมด (${includedCount} รายการ)`}
         </button>
 
         <button
