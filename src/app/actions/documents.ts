@@ -19,7 +19,7 @@ import {
 } from "@/lib/data/finance-repository";
 import { processAndExtractDocument } from "@/lib/ai/extract-document";
 import { safeDocumentExtractionMessage } from "@/lib/ai/extraction-errors";
-import { bahtToSatang } from "@/lib/finance/money";
+import { parseOptionalMoney, parseRequiredMoney } from "@/lib/finance/money-guards";
 import { getMockState } from "@/lib/data/mock-store";
 import { logSafeError } from "@/lib/observability/safe-diagnostics";
 
@@ -249,11 +249,21 @@ export async function confirmDocumentAction(
         return { ok: false, message: "ต้องระบุยอดเงินสุทธิและวันที่จ่ายเงิน" };
       }
 
-      // Re-validate and parse server-side in integer satang
-      const netIncomeSatang = bahtToSatang(netIncome);
-      const grossIncomeSatang = grossIncome ? bahtToSatang(grossIncome) : 0;
-      const taxSatang = tax ? bahtToSatang(tax) : 0;
-      const ssoSatang = socialSecurity ? bahtToSatang(socialSecurity) : 0;
+      // Re-validate and parse server-side in integer satang, independently
+      // of whatever the client-side ReviewForm already checked.
+      const netIncomeResult = parseRequiredMoney(netIncome, "nonnegative");
+      if (!netIncomeResult.ok) return { ok: false, message: netIncomeResult.error };
+      const grossIncomeResult = parseOptionalMoney(grossIncome, "nonnegative");
+      if (!grossIncomeResult.ok) return { ok: false, message: grossIncomeResult.error };
+      const taxResult = parseOptionalMoney(tax, "nonnegative");
+      if (!taxResult.ok) return { ok: false, message: taxResult.error };
+      const ssoResult = parseOptionalMoney(socialSecurity, "nonnegative");
+      if (!ssoResult.ok) return { ok: false, message: ssoResult.error };
+
+      const netIncomeSatang = netIncomeResult.satang!;
+      const grossIncomeSatang = grossIncomeResult.satang ?? 0;
+      const taxSatang = taxResult.satang ?? 0;
+      const ssoSatang = ssoResult.satang ?? 0;
 
       // Deductions as formatted note metadata
       const note = `สลิปเงินเดือนงวด: ${payPeriod || "-"}\nรายรับรวมก่อนหัก: ${grossIncome || "0"} บาท\nภาษี: ${tax || "0"} บาท\nประกันสังคม: ${socialSecurity || "0"} บาท`;
@@ -279,7 +289,9 @@ export async function confirmDocumentAction(
         return { ok: false, message: "ต้องระบุยอดเงินจ่ายจริงและวันที่ทำรายการ" };
       }
 
-      const totalPaidSatang = bahtToSatang(totalPaid);
+      const totalPaidResult = parseRequiredMoney(totalPaid, "nonnegative");
+      if (!totalPaidResult.ok) return { ok: false, message: totalPaidResult.error };
+      const totalPaidSatang = totalPaidResult.satang!;
 
       // Create transaction
       const transaction = await createTransaction(user.id, {
@@ -297,14 +309,20 @@ export async function confirmDocumentAction(
         try {
           const items = JSON.parse(itemsJson) as Array<{ name: string; quantity?: number; amount?: number }>;
           if (Array.isArray(items) && !isMockAuthEnabled()) {
+            const rows = items.map((item) => {
+              const itemAmountResult = parseOptionalMoney(item.amount, "nonnegative");
+              if (!itemAmountResult.ok) {
+                throw new Error(itemAmountResult.error);
+              }
+              return {
+                user_id: user.id,
+                transaction_id: transaction.id,
+                name: item.name,
+                quantity: item.quantity || 1,
+                amount_satang: itemAmountResult.satang ?? 0,
+              };
+            });
             const supabase = await createSupabaseServerClient();
-            const rows = items.map((item) => ({
-              user_id: user.id,
-              transaction_id: transaction.id,
-              name: item.name,
-              quantity: item.quantity || 1,
-              amount_satang: item.amount ? bahtToSatang(item.amount) : 0,
-            }));
             await supabase.from("transaction_items").insert(rows);
           }
         } catch (e) {
@@ -332,7 +350,11 @@ export async function confirmDocumentAction(
         return { ok: false, message: "ต้องระบุจำนวนเงินและวันที่ทำรายการ" };
       }
 
-      const amountSatang = bahtToSatang(amount);
+      // A debt payment must be strictly positive; other transfer/expense
+      // transactions may be zero but never negative.
+      const amountResult = parseRequiredMoney(amount, txType === "debt_payment" ? "positive" : "nonnegative");
+      if (!amountResult.ok) return { ok: false, message: amountResult.error };
+      const amountSatang = amountResult.satang!;
 
       if (txType === "debt_payment") {
         if (!debtId) {
@@ -372,10 +394,19 @@ export async function confirmDocumentAction(
         return { ok: false, message: "ต้องระบุวันครบกำหนดชำระ" };
       }
 
-      const amountDueSatang = amountDue ? bahtToSatang(amountDue) : 0;
-      const outstandingSatang = outstandingBalance ? bahtToSatang(outstandingBalance) : amountDueSatang;
-      const minimumSatang = minimumPayment ? bahtToSatang(minimumPayment) : amountDueSatang;
-      const statementSatang = statementBalance ? bahtToSatang(statementBalance) : amountDueSatang;
+      const amountDueResult = parseOptionalMoney(amountDue, "nonnegative");
+      if (!amountDueResult.ok) return { ok: false, message: amountDueResult.error };
+      const outstandingResult = parseOptionalMoney(outstandingBalance, "nonnegative");
+      if (!outstandingResult.ok) return { ok: false, message: outstandingResult.error };
+      const minimumResult = parseOptionalMoney(minimumPayment, "nonnegative");
+      if (!minimumResult.ok) return { ok: false, message: minimumResult.error };
+      const statementResult = parseOptionalMoney(statementBalance, "nonnegative");
+      if (!statementResult.ok) return { ok: false, message: statementResult.error };
+
+      const amountDueSatang = amountDueResult.satang ?? 0;
+      const outstandingSatang = outstandingResult.satang ?? amountDueSatang;
+      const minimumSatang = minimumResult.satang ?? amountDueSatang;
+      const statementSatang = statementResult.satang ?? amountDueSatang;
 
       const inputPayload = {
         name: debtName || `${creditor || "เจ้าหนี้"} xxxx-${accountLastFour || ""}`,
@@ -409,9 +440,12 @@ export async function confirmDocumentAction(
         return { ok: false, message: "ต้องระบุยอดเงินและวันที่ทำรายการ" };
       }
 
+      const totalPaidResult = parseRequiredMoney(totalPaid, txType === "debt_payment" ? "positive" : "nonnegative");
+      if (!totalPaidResult.ok) return { ok: false, message: totalPaidResult.error };
+
       await createTransaction(user.id, {
         type: txType,
-        amountSatang: bahtToSatang(totalPaid),
+        amountSatang: totalPaidResult.satang!,
         occurredAt: occurredAt.includes("T") ? occurredAt : `${occurredAt}T12:00:00+07:00`,
         merchant: merchant || "ไม่ระบุชื่อรายการ",
         category: "อื่น ๆ",

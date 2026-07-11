@@ -111,6 +111,94 @@ describe("Gemini Schema Parsing & Validation", () => {
       expect(classified.message).toBe(DOCUMENT_EXTRACTION_FALLBACK_MESSAGE);
     }
   });
+
+  it("rejects a negative transaction.amount from Gemini rather than accepting it as extracted", () => {
+    const result = extractedFinancialDocumentSchema.safeParse({
+      documentType: "receipt",
+      transaction: {
+        type: "expense",
+        amount: -189,
+        currency: "THB",
+        occurredAt: "2026-07-10T12:00:00+07:00",
+      },
+      warnings: [],
+      unclearFields: [],
+      requiresReview: true,
+    });
+
+    expect(result.success).toBe(false);
+    // Never auto-corrected: no code path turns this into a passing parse
+    // with amount coerced to 189 or 0.
+    if (!result.success) {
+      const classified = classifySchemaValidationError(result.error);
+      // Safe Thai UI message only — no raw Zod issue text leaks through.
+      expect(classified.message).toBe(DOCUMENT_EXTRACTION_FALLBACK_MESSAGE);
+      expect(classified.message).not.toMatch(/zod|nonnegative|greater than or equal/i);
+    }
+  });
+
+  it("rejects negative debt statement fields (amountDue, minimumPayment, outstandingBalance) from Gemini", () => {
+    const result = extractedFinancialDocumentSchema.safeParse({
+      documentType: "debt_statement",
+      debt: {
+        outstandingBalance: -1000,
+        amountDue: 500,
+        minimumPayment: 200,
+      },
+      warnings: [],
+      unclearFields: [],
+      requiresReview: true,
+    });
+    expect(result.success).toBe(false);
+
+    const negativeAmountDue = extractedFinancialDocumentSchema.safeParse({
+      documentType: "debt_statement",
+      debt: {
+        outstandingBalance: 1000,
+        amountDue: -500,
+        minimumPayment: 200,
+      },
+      warnings: [],
+      unclearFields: [],
+      requiresReview: true,
+    });
+    expect(negativeAmountDue.success).toBe(false);
+
+    const negativeMinimumPayment = extractedFinancialDocumentSchema.safeParse({
+      documentType: "debt_statement",
+      debt: {
+        outstandingBalance: 1000,
+        amountDue: 500,
+        minimumPayment: -200,
+      },
+      warnings: [],
+      unclearFields: [],
+      requiresReview: true,
+    });
+    expect(negativeMinimumPayment.success).toBe(false);
+  });
+
+  it("accepts a zero receipt total but rejects a negative one", () => {
+    const zero = extractedFinancialDocumentSchema.safeParse({
+      documentType: "receipt",
+      transaction: { type: "expense", amount: 0, currency: "THB", occurredAt: "2026-07-10T12:00:00+07:00" },
+      receipt: { totalPaid: 0 },
+      warnings: [],
+      unclearFields: [],
+      requiresReview: true,
+    });
+    expect(zero.success).toBe(true);
+
+    const negative = extractedFinancialDocumentSchema.safeParse({
+      documentType: "receipt",
+      transaction: { type: "expense", amount: 189, currency: "THB", occurredAt: "2026-07-10T12:00:00+07:00" },
+      receipt: { totalPaid: -189 },
+      warnings: [],
+      unclearFields: [],
+      requiresReview: true,
+    });
+    expect(negative.success).toBe(false);
+  });
 });
 
 describe("Duplicate Candidate Scoring with new fields", () => {

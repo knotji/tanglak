@@ -2,10 +2,11 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus } from "lucide-react";
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { saveDebtAction } from "@/app/actions/finance";
+import { parseOptionalMoney, parseRequiredMoney } from "@/lib/finance/money-guards";
 import type { Debt } from "@/types/domain";
 
 const schema = z.object({
@@ -30,6 +31,7 @@ export function ManualDebtForm({
   onSaved?: () => void;
 }) {
   const [state, action, pending] = useActionState(saveDebtAction, { ok: false });
+  const [clientError, setClientError] = useState<string | null>(null);
   const { register, reset } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -71,6 +73,25 @@ export function ManualDebtForm({
   return (
     <form
       action={action}
+      onSubmit={(event) => {
+        const formData = new FormData(event.currentTarget);
+        const amountResult = parseRequiredMoney(formData.get("amount"), "nonnegative");
+        const outstandingResult = parseOptionalMoney(formData.get("outstanding"), "nonnegative");
+        const minimumResult = parseOptionalMoney(formData.get("minimum"), "nonnegative");
+        const firstError = !amountResult.ok
+          ? amountResult.error
+          : !outstandingResult.ok
+            ? outstandingResult.error
+            : !minimumResult.ok
+              ? minimumResult.error
+              : null;
+        if (firstError) {
+          event.preventDefault();
+          setClientError(firstError);
+          return;
+        }
+        setClientError(null);
+      }}
       onInput={(event) => {
         const formData = new FormData(event.currentTarget);
         window.localStorage.setItem("tanglak.debtDraft", JSON.stringify(Object.fromEntries(formData)));
@@ -127,7 +148,11 @@ export function ManualDebtForm({
           <textarea className="min-h-24 w-full rounded-[16px] border border-border px-3 py-2" {...register("notes")} name="notes" />
         </label>
       </div>
-      {state.message ? <p className="mt-3 text-sm text-overdue">{state.message}</p> : null}
+      {clientError ? (
+        <p role="alert" className="mt-3 text-sm text-overdue">{clientError}</p>
+      ) : state.message ? (
+        <p className="mt-3 text-sm text-overdue">{state.message}</p>
+      ) : null}
       <button
         disabled={pending}
         className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-[16px] bg-primary px-4 font-bold text-white disabled:opacity-60"
