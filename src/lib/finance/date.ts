@@ -76,3 +76,69 @@ export function formatBangkokMonthLabel(month: string): string {
     year: "numeric",
   }).format(new Date(Date.UTC(year, monthNumber - 1, 1)));
 }
+
+const DATETIME_LOCAL_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
+
+interface WallClockParts {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+}
+
+/**
+ * Parses a `datetime-local` input value (`YYYY-MM-DDTHH:mm`) into its raw
+ * numeric components, validating both the shape and the calendar/clock
+ * ranges. Returns `null` for anything malformed or out of range — this never
+ * falls back to a `Date` parse, since `Date` silently accepts and rolls over
+ * out-of-range values (e.g. day 32) instead of rejecting them.
+ */
+export function parseWallClockComponents(value: string): WallClockParts | null {
+  const match = DATETIME_LOCAL_PATTERN.exec(value);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  if (month < 1 || month > 12) return null;
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  if (day < 1 || day > daysInMonth) return null;
+  if (hour > 23 || minute > 59) return null;
+  return { year, month, day, hour, minute };
+}
+
+/**
+ * Formats a `datetime-local` value as an unambiguous Thai date/time label,
+ * e.g. "11 ก.ค. 2026 เวลา 07:26". The value is treated as plain Bangkok
+ * wall-clock text — the same convention `datetime-local` itself uses — so no
+ * timezone conversion happens here; only the calendar date portion is passed
+ * through `Intl` (pinned to `timeZone: "UTC"` on a `Date.UTC` built from the
+ * same Y/M/D so no shift is possible), while the time is formatted directly
+ * from the parsed digits.
+ */
+export function formatThaiDateTimeLabel(value: string): string | null {
+  const parts = parseWallClockComponents(value);
+  if (!parts) return null;
+  const dateLabel = new Intl.DateTimeFormat("th-TH-u-ca-gregory", {
+    timeZone: "UTC",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(Date.UTC(parts.year, parts.month - 1, parts.day)));
+  const timeLabel = `${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")}`;
+  return `${dateLabel} เวลา ${timeLabel}`;
+}
+
+/**
+ * Heuristic for whether an already-normalized ISO `occurredAt` is likely the
+ * noon placeholder `parseDocumentTimestamp` (see `src/lib/ai/timestamp.ts`)
+ * emits when a source document has a date but no time. That parser is
+ * intentionally not re-invoked or modified here — this only recognizes its
+ * documented output shape, purely for review-form display purposes.
+ */
+export function isLikelyInferredNoonTimestamp(occurredAt: string | undefined): boolean {
+  if (!occurredAt) return false;
+  return /T12:00:00(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$/.test(occurredAt);
+}

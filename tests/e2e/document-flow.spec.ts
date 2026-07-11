@@ -96,6 +96,15 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
     await expect(page.locator("input[name='merchant']")).toHaveValue("GrabFood");
     await expect(page.locator("input[name='totalPaid']")).toHaveValue("185");
 
+    // Unambiguous Thai date/time helper next to the datetime-local input,
+    // regardless of the browser's own locale-dependent rendering of the
+    // native input itself.
+    const occurredAtInput = page.locator("input[name='occurredAt']");
+    const helperId = await occurredAtInput.getAttribute("aria-describedby");
+    expect(helperId).toBeTruthy();
+    await expect(page.locator(`#${helperId}`)).toContainText("10 ก.ค. 2026 เวลา 12:30");
+    await expect(page.locator(`#${helperId}`)).toContainText("อ่านจากเอกสาร");
+
     // Edit amount before saving
     await page.locator("input[name='totalPaid']").fill("195");
     await page.getByRole("button", { name: "ยืนยันความถูกต้อง" }).click();
@@ -273,6 +282,33 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
 
     // Verify it doesn't show user A's document details (shows not found or redirect)
     await expect(page.getByText("Acme Corp")).toHaveCount(0);
+  });
+
+  test("review page with the Thai date/time helper has no overflow at mobile widths", async ({ page }) => {
+    await page.goto("/auth");
+    await page.getByLabel("อีเมล").fill(email);
+    await page.getByLabel("รหัสผ่าน", { exact: true }).fill(password);
+    await page.locator("form").getByRole("button", { name: "เข้าสู่ระบบ" }).click();
+    await expect(page).toHaveURL(/\/today/);
+
+    await page.goto("/upload");
+    const fileChooserPromise = page.waitForEvent("filechooser");
+    await page.getByRole("button", { name: "เดลิเวอรี" }).click();
+    const fileChooser = await fileChooserPromise;
+    await fileChooser.setFiles({
+      name: "delivery_grab_mobile.jpg",
+      mimeType: "image/jpeg",
+      buffer: Buffer.from("mock-delivery-data"),
+    });
+    await page.getByRole("button", { name: "วิเคราะห์ด้วย AI" }).click();
+    await expect(page).toHaveURL(/\/upload\/review\//);
+    await expect(page.locator("input[name='occurredAt']")).toBeVisible();
+
+    for (const width of [360, 390, 430]) {
+      await page.setViewportSize({ width, height: 844 });
+      const hasOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+      expect(hasOverflow, `review page overflowed at ${width}px`).toBe(false);
+    }
   });
 
   test("refresh review without losing server-persisted extraction", async ({ page }) => {

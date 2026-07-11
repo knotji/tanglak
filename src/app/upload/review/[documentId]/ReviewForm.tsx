@@ -15,7 +15,13 @@ import type { FinanceDocument, DocumentExtraction, Debt, Transaction } from "@/t
 import type { ExtractedFinancialDocument } from "@/lib/ai/schemas";
 import { DOCUMENT_EXTRACTION_FALLBACK_MESSAGE } from "@/lib/ai/extraction-errors";
 import { formatTHB } from "@/lib/finance/money";
-import { getBangkokTodayString, getBangkokNowDateTimeLocalString } from "@/lib/finance/date";
+import {
+  getBangkokTodayString,
+  getBangkokNowDateTimeLocalString,
+  parseWallClockComponents,
+  formatThaiDateTimeLabel,
+  isLikelyInferredNoonTimestamp,
+} from "@/lib/finance/date";
 import {
   AlertTriangle,
   HelpCircle,
@@ -30,6 +36,72 @@ interface ReviewFormProps {
   debts: Debt[];
   duplicateTransactions: (Transaction & { score: number; reasons: string[] })[];
   previewUrl: string;
+}
+
+type TimestampDisplayState = "extracted" | "inferred" | "missing" | "invalid";
+
+function getTimestampDisplayState(
+  value: string,
+  isFromDocument: boolean,
+  wasInferred: boolean,
+): TimestampDisplayState {
+  if (!value) return "missing";
+  if (!parseWallClockComponents(value)) return "invalid";
+  if (isFromDocument && !wasInferred) return "extracted";
+  return "inferred";
+}
+
+/**
+ * Thai-formatted date/time confirmation shown next to each `datetime-local`
+ * occurredAt input. The native input's own rendering is locale-dependent
+ * (some browsers show MM/DD/YYYY, which reads ambiguously in Thai) — this
+ * text is unambiguous regardless of browser locale, and re-derives on every
+ * render so it stays in sync as the user edits the input.
+ */
+function TimestampHelperText({
+  id,
+  value,
+  isFromDocument,
+  wasInferred,
+}: {
+  id: string;
+  value: string;
+  isFromDocument: boolean;
+  wasInferred: boolean;
+}) {
+  const state = getTimestampDisplayState(value, isFromDocument, wasInferred);
+
+  if (state === "missing") {
+    return (
+      <p id={id} className="mt-1 text-xs font-semibold text-yellow-700">
+        กรุณาระบุวันและเวลาที่ทำรายการ
+      </p>
+    );
+  }
+
+  if (state === "invalid") {
+    return (
+      <p id={id} className="mt-1 text-xs font-semibold text-red-600">
+        กรุณาตรวจสอบวันและเวลาให้ถูกต้อง
+      </p>
+    );
+  }
+
+  const label = formatThaiDateTimeLabel(value);
+
+  if (state === "inferred") {
+    return (
+      <p id={id} className="mt-1 text-xs font-semibold text-yellow-700">
+        {label} · ควรตรวจสอบวันที่และเวลา
+      </p>
+    );
+  }
+
+  return (
+    <p id={id} className="mt-1 text-xs text-text-secondary">
+      {label} · อ่านจากเอกสาร
+    </p>
+  );
 }
 
 export function ReviewForm({
@@ -59,6 +131,8 @@ export function ReviewForm({
   const initialSalary = extData.salary || {};
   const initialReceipt = extData.receipt || {};
   const initialDebt = extData.debt || {};
+  const occurredAtIsFromDocument = Boolean(initialTx.occurredAt);
+  const occurredAtWasInferred = isLikelyInferredNoonTimestamp(initialTx.occurredAt);
 
   // Form Fields State
   // 1. Salary slip fields
@@ -588,7 +662,14 @@ export function ReviewForm({
                           className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
                           value={occurredAt}
                           onChange={(e) => setOccurredAt(e.target.value)}
+                          aria-describedby={reviewFieldId("occurredAtHelp")}
                           required
+                        />
+                        <TimestampHelperText
+                          id={reviewFieldId("occurredAtHelp")}
+                          value={occurredAt}
+                          isFromDocument={occurredAtIsFromDocument}
+                          wasInferred={occurredAtWasInferred}
                         />
                       </div>
                       <div>
@@ -772,7 +853,14 @@ export function ReviewForm({
                           className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
                           value={transferDate}
                           onChange={(e) => setTransferDate(e.target.value)}
+                          aria-describedby={reviewFieldId("occurredAtHelp")}
                           required
+                        />
+                        <TimestampHelperText
+                          id={reviewFieldId("occurredAtHelp")}
+                          value={transferDate}
+                          isFromDocument={occurredAtIsFromDocument}
+                          wasInferred={occurredAtWasInferred}
                         />
                       </div>
                     </div>
@@ -1199,7 +1287,14 @@ export function ReviewForm({
                           className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
                           value={occurredAt}
                           onChange={(e) => setOccurredAt(e.target.value)}
+                          aria-describedby={reviewFieldId("occurredAtHelp")}
                           required
+                        />
+                        <TimestampHelperText
+                          id={reviewFieldId("occurredAtHelp")}
+                          value={occurredAt}
+                          isFromDocument={occurredAtIsFromDocument}
+                          wasInferred={occurredAtWasInferred}
                         />
                       </div>
                     </div>
