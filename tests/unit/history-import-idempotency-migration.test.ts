@@ -67,6 +67,36 @@ describe("history import idempotency migration", () => {
     expect(migration).toMatch(/to authenticated;/i);
   });
 
+  it("revokes the default PUBLIC execute grant before granting to authenticated (Postgres grants EXECUTE to PUBLIC by default for new functions)", () => {
+    const revokeCommitIndex = migration.search(/revoke all on function public\.import_commit_row[\s\S]*?from public;/i);
+    const grantCommitIndex = migration.search(/grant execute on function public\.import_commit_row[\s\S]*?to authenticated;/i);
+    expect(revokeCommitIndex).toBeGreaterThan(-1);
+    expect(grantCommitIndex).toBeGreaterThan(-1);
+    expect(revokeCommitIndex).toBeLessThan(grantCommitIndex);
+
+    const revokeRollbackIndex = migration.search(/revoke all on function public\.import_rollback_batch\(uuid, uuid\) from public;/i);
+    const grantRollbackIndex = migration.search(/grant execute on function public\.import_rollback_batch\(uuid, uuid\) to authenticated;/i);
+    expect(revokeRollbackIndex).toBeGreaterThan(-1);
+    expect(grantRollbackIndex).toBeGreaterThan(-1);
+    expect(revokeRollbackIndex).toBeLessThan(grantRollbackIndex);
+  });
+
+  it("never grants execute to anon or public", () => {
+    expect(migration).not.toMatch(/to anon/i);
+    expect(migration).not.toMatch(/grant execute[\s\S]*?to public/i);
+  });
+
+  it("sets an explicit, safe search_path on both functions", () => {
+    const commitFnMatch = migration.match(
+      /create or replace function public\.import_commit_row[\s\S]*?\$\$;/i,
+    )?.[0];
+    const rollbackFnMatch = migration.match(
+      /create or replace function public\.import_rollback_batch[\s\S]*?\$\$;/i,
+    )?.[0];
+    expect(commitFnMatch).toMatch(/set search_path = public/i);
+    expect(rollbackFnMatch).toMatch(/set search_path = public/i);
+  });
+
   it("every row/batch lookup inside the functions is scoped by user_id, not id alone", () => {
     expect(migration).toContain("where id = p_row_id and user_id = p_user_id and import_batch_id = p_batch_id");
     expect(migration).toContain("where id = p_batch_id and user_id = p_user_id");

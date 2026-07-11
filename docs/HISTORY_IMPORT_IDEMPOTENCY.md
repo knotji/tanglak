@@ -285,8 +285,314 @@ not with an in-memory mutex:
   ASCII-only.
 - `tests/e2e/history-import-idempotency.spec.ts` — refresh-and-resubmit via
   the real review page produces no duplicate rows in the transactions list;
-  a rapid double-click on the confirm button produces no duplicate; another
-  authenticated user gets a 404 opening someone else's batch review page.
+  two concurrent browser tabs (same session) submitting the same batch
+  produce no duplicate; another authenticated user gets a 404 opening
+  someone else's batch review page.
+
+## SQL-level atomicity
+
+No live Postgres instance was available to literally execute these SQL
+scenarios (see "Database verification performed for this review" below).
+What follows is a rigorous *static* trace of each required scenario against
+documented, unambiguous PostgreSQL language semantics — clearly
+distinguished from the mock-path scenarios that the automated test suite
+actually executes.
+
+- **Same row committed twice** / **retry does not recreate committed
+  transactions**: on the second call, `select ... for update` returns the
+  row with `review_status = 'imported'` (set by the first call), so
+  execution hits `if v_row.review_status in ('imported', 'skipped') then
+  return query select v_row.created_transaction_id, true; return; end if;`
+  before reaching the `insert into transactions` statement at all — no
+  second insert is even attempted. **Executed**, via the mock path, in
+  `history-import-idempotency.test.ts` ("does not create a duplicate
+  transaction when the identical commit request is sent twice",
+  "refresh-and-resubmit ... does not recreate").
+- **Concurrent calls for the same row**: `select ... for update` takes a
+  row-level lock; this is standard, documented PostgreSQL MVCC behavior —
+  a second concurrent transaction's `select ... for update` on the same
+  row blocks until the first transaction commits or rolls back, then
+  proceeds against the now-committed state (sees `review_status =
+  'imported'` and takes the idempotent-return branch above). This is not
+  something that needs live execution to establish; it is PostgreSQL's
+  documented row-locking contract for `SELECT ... FOR UPDATE`. **Executed**
+  via the mock path's equivalent guarantee (no `await` between check and
+  write) in "does not create duplicates under concurrent commit requests"
+  and "two concurrent tabs" (e2e).
+- **Transaction insert succeeds but the row-state update is forced to
+  fail**: cannot happen as a *partial* commit. `import_commit_row` is
+  declared `language plpgsql` as a **function**, not a **procedure** —
+  PL/pgSQL functions cannot contain `COMMIT`/`ROLLBACK` at all (only
+  procedures, called via `CALL`, can). This means the entire function body
+  executes as a single, indivisible unit of the caller's transaction (or
+  its own top-level implicit transaction when invoked via `.rpc()`): if
+  *any* statement after the `insert into transactions` — including the
+  final `update import_rows` — were to fail for any reason, PostgreSQL
+  rolls back everything the function did, including the earlier insert.
+  There is no PL/pgSQL construct available here that could commit the
+  insert and then fail the row update as two separate, independently
+  durable operations; that would require explicit transaction control,
+  which the function's language forbids. This is a language-level
+  guarantee, not a runtime behavior that needs to be observed to be
+  trusted.
+- **Debt-payment side effects roll back atomically**: same reasoning — the
+  `debt_payments` insert and the `debts` recalculation `update` are
+  ordinary statements inside the same function body as the `transactions`
+  insert and the `import_rows` update; a failure in any of them (e.g. a
+  constraint violation) rolls back all of them together, including the
+  transaction that was "already" inserted earlier in the same call. There
+  is no scenario where a transaction row exists without its corresponding
+  debt_payment row (when one was supposed to be created), or vice versa.
+- **Rollback called twice**: `import_rollback_batch` locks the batch row
+  (`select status ... for update`) and returns immediately, as a no-op,
+  when `v_status = 'rolled_back'`. A second call — sequential or
+  concurrent — either observes `rolled_back` directly (sequential) or
+  blocks on the row lock until the first call's transaction commits, then
+  observes it (concurrent). **Executed** via the mock path in
+  `history-import-idempotency.test.ts` ("rollback is idempotent on
+  repeated calls").
+- **Foreign user invocation rejected**: both functions filter every
+  `select`/`insert`/`update`/`delete` by `user_id = p_user_id`, and (per
+  the security review above) RLS independently re-checks `auth.uid() =
+  user_id` regardless of what `p_user_id` claims — a foreign user's call
+  either matches zero rows (`if not found then raise exception ...`) or is
+  rejected outright by RLS before the application-level check even runs.
+  **Executed** via the mock path (which replicates the same ownership
+  filtering) in both test files ("another user cannot commit rows
+  belonging to someone else's batch", "rollback stays ownership-scoped",
+  "another authenticated user cannot commit/roll back someone else's
+  batch").
+- **Unresolved counters recompute correctly after one row fails**: this is
+  an *application-layer* (TypeScript) behavior, not a property of either
+  SQL function individually — `importReviewedRows` always re-reads
+  `listImportRows` after the per-row loop and recomputes
+  `importedTotal`/`skippedTotal`/`unresolvedCount` from that fresh read,
+  regardless of how many rows failed. This **is** directly executed by the
+  test suite: `history-import-idempotency.test.ts`'s "a failed row does
+  not abort the rest of the batch ... does not mark the batch as fully
+  completed" and "retrying after a partial failure completes only the
+  remaining row" assert on `result.failedCount`, `result.remainingCount`,
+  and the batch's recomputed `status` directly.
+
+## Database verification performed for this review
+
+**SQL execution environment**: none was available. This worktree has no
+`supabase/config.toml`, and the sandbox has no `supabase` CLI, no `docker`,
+and no `psql` installed (all verified absent before writing this section).
+`supabase db reset` and any live migration run were therefore **not
+possible** here, and nothing below claims otherwise. What was done instead:
+
+1. **Full manual schema cross-check.** Every table, column, type, enum, and
+   constraint referenced by `202607110002_history_import_idempotency.sql`
+   was traced back to the exact migration that defines it and read in full:
+   - `transactions`: `202607100001_initial_tanglak_schema.sql` (base
+     columns, `amount_satang bigint not null check (amount_satang >= 0)`),
+     `202607100002_auth_crud_support.sql` (`category_label text` — the
+     function's INSERT column list uses `category_label`, not
+     `category_id`; verified this column exists and matches what
+     `finance-repository.ts` already writes), `202607100004_...` (last-four/
+     bank columns, unused here), `202607100005_history_import_support.sql`
+     (`import_batch_id`, `import_row_id`, `is_historical` — all present and
+     used), `202607110001_financial_value_guards.sql`
+     (`transactions_debt_payment_amount_satang_positive`, `not valid`,
+     applies to new inserts — the function's debt_payment insert path
+     already only receives pre-validated positive amounts).
+   - `import_batches`: `202607100005_...` — `status public.import_batch_status`,
+     `imported_rows`, `skipped_rows`, `rolled_back_at` all confirmed present
+     and correctly typed against `import_rollback_batch`'s usage.
+   - `import_rows`: `202607100005_...` — `review_status
+     public.import_row_status`, `import_decision public.import_row_decision`,
+     `created_transaction_id uuid references public.transactions(id)`,
+     `user_id`, `import_batch_id` all confirmed against
+     `import_commit_row`'s `v_row public.import_rows%rowtype` usage and
+     field access.
+   - `debt_payments`: `202607100001_...` (`user_id`, `debt_id`,
+     `transaction_id`, `amount_satang`, `paid_at`), plus
+     `debt_payments_amount_satang_positive` (`not valid`,
+     `202607110001_...`) confirmed compatible with the pre-validated amount
+     the function inserts.
+   - `debts.amount_paid_this_cycle_satang`: `202607100001_...`, plus
+     `debts_amount_paid_this_cycle_satang_nonnegative` (`not valid`,
+     `202607110001_...`) — the recalculation always computes
+     `coalesce(sum(...), 0)`, which is always `>= 0`, so it can never
+     violate that constraint.
+   - `transaction_status`, `transaction_type`, `import_batch_status`,
+     `import_row_status`, `import_row_decision` enum definitions (all in
+     `202607100001_...`/`202607100005_...`) confirmed to include every
+     literal used in the function bodies (`'confirmed'`, `'debt_payment'`,
+     `'imported'`, `'skipped'`, `'import'`, `'rolled_back'`, `'completed'`,
+     `'partially_imported'`).
+   - RLS: confirmed `transactions`, `debts`, `debt_payments` all get
+     `enable row level security` plus `for select/insert/update/delete
+     using/with check (auth.uid() = user_id)` policies from the loop in
+     `202607100001_initial_tanglak_schema.sql` (lines 250–264); confirmed
+     `import_batches`/`import_rows` get equivalent `for all using (auth.uid()
+     = user_id) with check (auth.uid() = user_id)` policies in
+     `202607100005_history_import_support.sql`.
+
+   This is a rigorous read-through, not a compiler — it cannot catch every
+   possible issue (e.g. a subtle plpgsql syntax error) the way actually
+   running `CREATE FUNCTION` against a real server would. No such syntax
+   error was found on inspection, and the SQL uses only well-established
+   plpgsql constructs already present elsewhere in this migration set
+   (`select ... for update`, `%rowtype`, `return query select ...`,
+   `array_agg`/`= any(...)`), but this is a static review, not a compile
+   confirmation.
+
+2. **Static assertions** in `tests/unit/history-import-idempotency-migration.test.ts`
+   (extended by this change) — executed and passing; verifies the exact SQL
+   text for the security/locking/idempotency properties described below.
+
+3. **Executable, if indirect, atomicity/concurrency coverage** via the mock
+   auth path, which the whole existing test suite (unit, action, and e2e)
+   runs against — see "SQL-level atomicity" below for exactly what this
+   does and does not prove about the real Postgres functions.
+
+## Security review
+
+- **`security invoker` retained** on both functions (verified: no
+  `security definer` appears anywhere in the migration; grep-checked in the
+  static test).
+- **`set search_path = public`** is set explicitly on both functions,
+  closing the classic "mutable search_path" function-hijacking vector
+  (Supabase's own security linter flags functions without this). Every
+  table reference inside both functions is additionally fully qualified
+  with `public.`, so even this setting is largely redundant defense in
+  depth rather than the only protection.
+- **PUBLIC execute revoked.** This review caught a real gap: PostgreSQL
+  grants `EXECUTE` on a newly created function to the `PUBLIC` pseudo-role
+  by default — unlike tables, which grant nothing until explicitly
+  granted. The original migration only added `grant execute ... to
+  authenticated` without first revoking the default PUBLIC grant, which is
+  inconsistent with this repository's existing least-privilege convention
+  for table grants (`202607100007_data_api_grants.sql` grants only to
+  `authenticated`, never `anon`/`public`). Fixed by adding
+  `revoke all on function ... from public;` before each `grant ... to
+  authenticated;`.
+- **Execute granted only to `authenticated`** — confirmed, `anon` is never
+  granted execute on either function.
+- **RLS remains effective inside the functions.** Because both functions
+  are `security invoker` (not `security definer`), they execute under the
+  Postgres role of the actual calling session — which, for this app, is
+  always the authenticated user's own session (the server-side Supabase
+  client authenticates with the anon key plus the user's session cookies,
+  never a service-role key; see `src/lib/supabase/server.ts`). RLS
+  policies read `auth.uid()`, a function of the *session's* JWT claims, not
+  of any argument passed to `import_commit_row`/`import_rollback_batch`.
+- **Caller-supplied `p_user_id` cannot broaden access, even bypassing the
+  Next.js server action entirely.** Consider the worst case: an
+  authenticated attacker calls `import_commit_row` directly via
+  PostgREST's `/rest/v1/rpc/import_commit_row` endpoint (bypassing
+  `confirmBatchAction`'s own ownership check) with `p_user_id` set to a
+  victim's UUID. The function would attempt
+  `insert into transactions (user_id, ...) values (p_user_id, ...)` — i.e.
+  a row with `user_id = victim`. The table's RLS `insert` policy is `with
+  check (auth.uid() = user_id)`; `auth.uid()` resolves to the *attacker's*
+  own id (their real authenticated session), which does not equal
+  `victim`, so the insert is rejected by RLS regardless of the `p_user_id`
+  argument. The same reasoning applies to every `select ... for update`,
+  `update`, and `delete` in both functions — each targets rows filtered by
+  `user_id = p_user_id`, and RLS independently re-checks `auth.uid() =
+  user_id` on top of that filter. The explicit `user_id` checks inside the
+  function bodies and RLS are two independent layers; either alone would
+  already block this attack.
+
+## Unique-index deployment review
+
+**Preflight query** — run this against production *before* applying
+`202607110002_history_import_idempotency.sql`:
+
+```sql
+select import_row_id, count(*) as duplicate_count, array_agg(id) as transaction_ids
+from public.transactions
+where import_row_id is not null
+group by import_row_id
+having count(*) > 1;
+```
+
+- **Can existing duplicates make the migration fail?** Yes. If this query
+  returns any rows, `create unique index uq_transactions_import_row_id`
+  will fail outright with a Postgres unique-violation error (a loud,
+  atomic failure — the whole migration transaction aborts, nothing is
+  partially applied). This is only possible if two transactions were
+  already created from the same staging row under the exact pre-fix bug
+  this migration closes (the mock-only idempotency guard described in
+  "Problem" above) — i.e. it can only have happened in a production
+  environment that ran the buggy commit path before this fix was deployed.
+- **Is a preflight query required before this release?** Yes for any
+  environment where the buggy code may already have run against real
+  data — run the query above and confirm it returns zero rows before
+  applying the migration. If it returns rows, do **not** silently
+  delete/merge the extras as part of the migration (that would rewrite
+  financial history without human review, the same principle already
+  applied in `financial-value-guards-migration.test.ts`'s remediation
+  guidance) — instead, for each duplicate group, manually decide (based on
+  which transaction is the "real" one, e.g. by `created_at` or by checking
+  which one is still linked from `import_rows.created_transaction_id`)
+  which duplicate transaction(s) to delete or re-point, then re-run the
+  preflight query until it returns zero rows, then apply the migration.
+- **Expected table size and locking impact.** This repository has no
+  production data available to inspect from this environment, so table
+  size cannot be measured here. What's known in general: a plain (non-
+  `concurrently`) `create unique index` takes an `ACCESS EXCLUSIVE` lock on
+  `transactions` for the duration of the index build — this blocks *all*
+  reads and writes to that table (not just other writers; even `SELECT`s
+  queue behind it) until the build completes. Build time scales
+  approximately linearly with the number of non-null `import_row_id` rows
+  to index (in practice, the number of historical-import-created
+  transactions specifically, since the index is partial) — for a table
+  with at most thousands to low tens-of-thousands of such rows this is
+  typically sub-second to a few seconds; it becomes a real concern only at
+  large scale (hundreds of thousands+ rows) or on a table under constant
+  write load where even a few seconds of full unavailability is
+  unacceptable.
+- **Is plain `CREATE UNIQUE INDEX` acceptable for the current release?**
+  Yes, for this project at its current stage (a pre-launch/early-stage app
+  per the `release/production-readiness` branch naming and the fact this
+  entire history-import feature and its idempotency fix were developed
+  together, never having been live with the buggy commit path) — the
+  `transactions` table is not expected to be large enough for the brief
+  `ACCESS EXCLUSIVE` lock during `CREATE UNIQUE INDEX` to be a practical
+  concern. This migration keeps the plain (non-concurrent) form.
+- **Does production ever need a staged/concurrent deployment instead?**
+  Yes, once the `transactions` table is large and/or under continuous
+  write traffic in a live production environment — but **not** by editing
+  this migration to use `create unique index concurrently` in place. Two
+  hard constraints make that unsafe to do carelessly:
+  1. `CREATE INDEX CONCURRENTLY` **cannot run inside a transaction
+     block** — this is a hard PostgreSQL restriction (it internally uses
+     multiple transactions with a wait for old snapshots to finish, which
+     is incompatible with being nested in an outer transaction). Standard
+     Supabase/most migration tooling applies each migration file as a
+     single transaction; embedding `concurrently` directly in a normal
+     migration file risks the whole apply failing outright, or (with
+     tooling that doesn't wrap files in a transaction) leaving an invalid,
+     unfinished index behind if the connection drops mid-build.
+  2. It must be verified, not assumed, whether the specific deployment
+     pipeline in use wraps `.sql` migration files in an implicit
+     transaction — this was not verifiable in this environment (no
+     `supabase` CLI available to inspect its actual apply behavior).
+  
+  **Correct procedure when the table is large enough to matter**: do *not*
+  modify this migration. Instead, as a separate, manually-run,
+  non-migration step against the target database (e.g. via the Supabase
+  SQL Editor, or a `psql` session with autocommit on, outside any
+  transaction block):
+
+  ```sql
+  create unique index concurrently if not exists uq_transactions_import_row_id
+    on public.transactions(import_row_id)
+    where import_row_id is not null;
+  ```
+
+  then confirm the index is valid (`select indisvalid from pg_index where
+  indexrelid = 'public.uq_transactions_import_row_id'::regclass;` should
+  return `true`; a `CONCURRENTLY` build that failed partway leaves an
+  `INVALID` index that must be dropped and retried, never silently used).
+  Once that concurrently-built index exists, applying
+  `202607110002_history_import_idempotency.sql` normally is safe — its
+  `create unique index if not exists` will see the index already exists
+  (by name) and skip creating it again.
 
 ## Deployment order
 
@@ -296,23 +602,20 @@ not with an in-memory mutex:
    until the migration runs** (it needs `import_commit_row`/
    `import_rollback_batch` to exist) — do not leave a long gap between
    deploying the code and running the migration in a real environment.
-2. Run `supabase/migrations/202607110002_history_import_idempotency.sql`.
-   Creating the partial unique index and the two functions does not lock
-   out reads/writes on `transactions`/`import_rows`/`import_batches`
-   beyond the brief `ACCESS EXCLUSIVE` a `CREATE INDEX` (non-concurrent)
-   normally takes — on a very large `transactions` table in production,
-   consider `create unique index concurrently` instead (not used here to
-   keep the migration a single plain statement; switch to the
-   `concurrently` form, which cannot run inside a transaction block, as a
-   follow-up if the table is large enough for this to matter).
-3. No preflight/backfill step is required for this migration (unlike the
-   financial-value-guards migration) — the unique index is only violated if
-   two transactions already reference the same `import_row_id`, which was
-   only possible under the exact bug this migration fixes, and creating the
-   index will fail loudly (not silently) if any such duplicate already
-   exists in production, at which point the duplicate must be resolved
-   manually (identify and delete/merge the extra transaction) before
-   retrying the migration.
+2. Run the preflight query above against production. If it returns any
+   rows, resolve them manually (see "Unique-index deployment review")
+   before proceeding — do not run the migration against unresolved
+   duplicates.
+3. If `transactions` is large/high-traffic in production, build the unique
+   index `concurrently` as a separate manual step first (see above); this
+   release's assessment is that a plain synchronous build is acceptable,
+   but re-evaluate this once real production data volume exists.
+4. Run `supabase/migrations/202607110002_history_import_idempotency.sql`.
+   With the index already present (from step 3) or acceptably small (step
+   not needed), this applies the two functions and their grants; the
+   `create unique index if not exists` is then a fast no-op if the index
+   was already built concurrently, or a brief `ACCESS EXCLUSIVE`-locked
+   build otherwise.
 
 ## Rollback procedure (undoing this migration)
 
@@ -343,10 +646,16 @@ history import commits entirely.
   two decisions (a single `UPDATE` is already atomic on its own), so a
   narrow RPC would have added complexity without closing any real gap.
 - The non-concurrent `create unique index` in the deployment step briefly
-  locks the `transactions` table; see the deployment-order note above for
-  when to switch to `create index concurrently` instead.
+  locks the `transactions` table; see "Unique-index deployment review"
+  above for the preflight query, size/locking assessment, and the correct
+  manual `concurrently` procedure for when this project's data volume
+  outgrows a plain build.
 - This code has been exercised against the mock-auth path (used throughout
-  the existing test suite) and reviewed carefully for correctness against
-  real Postgres semantics, but has not been executed against a live
-  Supabase/Postgres instance in this environment — consistent with the same
-  limitation noted for the prior `fix/financial-value-guards` migration.
+  the existing test suite), cross-checked field-by-field against every
+  migration that defines the schema it touches, and reasoned through
+  against documented PostgreSQL language semantics (see "SQL-level
+  atomicity" above) — but has not been executed against a live
+  Supabase/Postgres instance in this environment, because none was
+  available (no `supabase` CLI, `docker`, or `psql` present). This is the
+  same limitation noted for the prior `fix/financial-value-guards`
+  migration, and applies equally here.
