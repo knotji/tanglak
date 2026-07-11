@@ -49,7 +49,29 @@ describe("repository-level financial value guards (last line of defense)", () =>
     ).rejects.toThrow(MONEY_ERROR_POSITIVE_TH);
   });
 
-  it("createTransaction accepts a zero-amount refund/expense (Category B: nonnegative)", async () => {
+  it("createTransaction rejects a negative amount for a debt_payment", async () => {
+    await expect(
+      createTransaction("user-a", {
+        type: "debt_payment",
+        amountSatang: -500,
+        occurredAt: "2026-07-10T12:00:00+07:00",
+        merchant: "A",
+      }),
+    ).rejects.toThrow(MONEY_ERROR_POSITIVE_TH);
+    expect(getMockState().transactions).toHaveLength(0);
+  });
+
+  it("createTransaction accepts a positive amount for a debt_payment", async () => {
+    const transaction = await createTransaction("user-a", {
+      type: "debt_payment",
+      amountSatang: 500,
+      occurredAt: "2026-07-10T12:00:00+07:00",
+      merchant: "A",
+    });
+    expect(transaction.amountSatang).toBe(500);
+  });
+
+  it("createTransaction accepts a zero-amount expense (Category B: nonnegative) — matches the existing transactions.amount_satang >= 0 DB rule", async () => {
     const transaction = await createTransaction("user-a", {
       type: "expense",
       amountSatang: 0,
@@ -57,6 +79,28 @@ describe("repository-level financial value guards (last line of defense)", () =>
       merchant: "A",
     });
     expect(transaction.amountSatang).toBe(0);
+  });
+
+  it("createTransaction accepts a zero-amount income — the new debt_payment-only constraint does not affect other types", async () => {
+    const transaction = await createTransaction("user-a", {
+      type: "income",
+      amountSatang: 0,
+      occurredAt: "2026-07-10T12:00:00+07:00",
+      merchant: "A",
+    });
+    expect(transaction.amountSatang).toBe(0);
+  });
+
+  it("treats a missing type as the general nonnegative rule rather than crashing (TransactionInput.type is required/non-null in practice, matching transactions.type not null in the DB)", async () => {
+    await expect(
+      createTransaction("user-a", {
+        // @ts-expect-error -- intentionally bypassing the required `type` field to prove this doesn't crash
+        type: undefined,
+        amountSatang: -100,
+        occurredAt: "2026-07-10T12:00:00+07:00",
+        merchant: "A",
+      }),
+    ).rejects.toThrow(MONEY_ERROR_NEGATIVE_TH); // not MONEY_ERROR_POSITIVE_TH — only an explicit 'debt_payment' type triggers the strict rule
   });
 
   it("updateTransaction validates the final merged state when only the amount changes", async () => {

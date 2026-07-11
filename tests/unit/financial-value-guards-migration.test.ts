@@ -43,6 +43,7 @@ describe("financial value guards migration", () => {
       "recurring_expenses_amount_satang_nonnegative",
       "transaction_items_amount_satang_nonnegative",
       "import_rows_amount_satang_nonnegative",
+      "transactions_debt_payment_amount_satang_positive",
     ];
     for (const name of expectedConstraints) {
       expect(migration).toContain(name);
@@ -58,12 +59,57 @@ describe("financial value guards migration", () => {
     expect(migration).toContain("amount_satang is null or amount_satang >= 0"); // transaction_items
   });
 
-  it("enforces the debt payment amount as strictly positive, not merely nonnegative", () => {
+  it("enforces the debt_payments amount as strictly positive, not merely nonnegative", () => {
     expect(migration).toContain("check (amount_satang > 0)");
   });
 
-  it("does not touch the existing transactions.amount_satang constraint", () => {
-    expect(migration).not.toMatch(/alter table public\.transactions/);
+  it("adds a conditional CHECK requiring transactions.amount_satang > 0 only for type = 'debt_payment'", () => {
+    expect(migration).toContain("check (type <> 'debt_payment' or amount_satang > 0)");
+  });
+
+  it("preserves the existing transactions.amount_satang >= 0 rule for every other transaction type", () => {
+    // The new transactions constraint is additive: for any type other than
+    // 'debt_payment' the condition `type <> 'debt_payment'` is true, so the
+    // whole CHECK passes regardless of amount, leaving the original
+    // `amount_satang >= 0` constraint (202607100001) as the only rule for
+    // income/expense/transfer/refund. This migration must not touch or
+    // duplicate that original constraint.
+    expect(migration).not.toContain("amount_satang_nonnegative' and conrelid = 'public.transactions'");
+    const initialSchema = readFileSync(
+      join(process.cwd(), "supabase/migrations/202607100001_initial_tanglak_schema.sql"),
+      "utf8",
+    );
+    expect(initialSchema).toContain("amount_satang bigint not null check (amount_satang >= 0)");
+  });
+
+  it("touches public.transactions only to add the new debt_payment-positivity constraint", () => {
+    const transactionsAlterCount = (migration.match(/alter table public\.transactions\b/g) ?? []).length;
+    expect(transactionsAlterCount).toBe(1);
+  });
+
+  it("documents transactions.type as not null so the new CHECK never needs to special-case a null type", () => {
+    expect(migration).toMatch(/transactions\.type.*is.*`?not null`?/i);
+    const initialSchema = readFileSync(
+      join(process.cwd(), "supabase/migrations/202607100001_initial_tanglak_schema.sql"),
+      "utf8",
+    );
+    expect(initialSchema).toContain("type transaction_type not null");
+  });
+
+  it("accurately describes `validate constraint` as a real per-row scan, not a metadata-only operation", () => {
+    const singleLine = migration.replace(/\s+/g, " ");
+    expect(singleLine).toMatch(/validate constraint.*scans? every.*row/i);
+    // The old (incorrect) claim asserted it WAS a cheap metadata-only scan;
+    // the corrected comment must not make that affirmative claim, even
+    // though it's allowed to mention "metadata-only" while explicitly
+    // negating it (e.g. "is NOT a metadata-only operation").
+    expect(migration).not.toMatch(/is a cheap[,]?\s*non-blocking metadata-only scan/i);
+    expect(migration).toMatch(/schedule the validation deliberately/i);
+  });
+
+  it("contains only ASCII characters (no mojibake from a UTF-8/Latin-1 mis-decode)", () => {
+    const nonAscii = migration.match(/[^\x00-\x7F]/g);
+    expect(nonAscii).toBeNull();
   });
 
   it("does not modify any historical migration file", () => {

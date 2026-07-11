@@ -4,8 +4,8 @@
 -- the required deployment/preflight procedure.
 --
 -- Safety strategy: every constraint below is added `not valid`. This means
--- Postgres does NOT scan or rewrite any existing row when this migration
--- runs — it only enforces the rule against new inserts/updates from this
+-- Postgres does NOT scan or rewrite any existing row when THIS migration
+-- runs -- it only enforces the rule against new inserts/updates from this
 -- point forward. This migration never assumes production data is already
 -- clean, and it never rewrites or deletes an existing row.
 --
@@ -14,8 +14,16 @@
 -- migration), an operator must run the preflight query for each table
 -- documented in docs/FINANCIAL_VALUE_GUARDS.md and remediate any existing
 -- violating rows by hand (never with an automatic Math.abs/clamp rewrite).
--- If a table has no violating rows, `validate constraint` is a cheap,
--- non-blocking metadata-only scan.
+--
+-- `validate constraint` is NOT a metadata-only operation: it scans every
+-- existing row in the table to confirm the constraint holds. It does not
+-- rewrite or lock out concurrent reads/writes for that scan (it takes a
+-- ShareUpdateExclusiveLock, not an exclusive one), but the scan itself has
+-- real I/O and CPU cost proportional to table size. On a large production
+-- table (e.g. `transactions`), schedule the validation deliberately --
+-- during low-traffic hours and/or per-table rather than all at once --
+-- rather than assuming it is free just because the preflight query found
+-- zero violating rows.
 
 do $$
 begin
@@ -115,7 +123,7 @@ $$;
 
 do $$
 begin
-  -- A recorded debt payment must be a real, positive payment (Category A) —
+  -- A recorded debt payment must be a real, positive payment (Category A) --
   -- unlike the nonnegative-only columns above, zero is not a valid payment.
   if not exists (
     select 1 from pg_constraint
@@ -210,3 +218,25 @@ $$;
 -- here. Its signed/unsigned representation (the `type` enum determines
 -- debit/credit direction, not the sign of amount_satang) is existing,
 -- correct design and out of scope for this migration.
+--
+-- What was missing: a debt payment (type = 'debt_payment') recorded with
+-- amount_satang = 0 satisfied the existing `>= 0` check but is not a real
+-- payment (Category A: strictly positive, matching debt_payments.amount_satang
+-- above). `transactions.type` is `not null` (202607100001, line 100 --
+-- `type transaction_type not null`), so this constraint never needs to
+-- special-case a null type: every row has a concrete type, and the `<>`
+-- comparison below is well-defined for all of them.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'transactions_debt_payment_amount_satang_positive'
+      and conrelid = 'public.transactions'::regclass
+  ) then
+    alter table public.transactions
+      add constraint transactions_debt_payment_amount_satang_positive
+      check (type <> 'debt_payment' or amount_satang > 0)
+      not valid;
+  end if;
+end
+$$;

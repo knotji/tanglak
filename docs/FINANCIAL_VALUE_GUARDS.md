@@ -45,9 +45,15 @@ invalid input is always rejected with a Thai message, never rewritten
 - **Debt payment amount** — `debt_payments.amount_satang`, and any
   `transactions` row with `type = 'debt_payment'` (`transactions.amount_satang`
   when that type is set or being set). A recorded payment of ฿0 is not a
-  real payment. Enforced in `addDebtPayment`, `createTransaction`,
-  `updateTransaction` (type-aware), and client-side in `DebtPaymentForm` and
-  the debt payment edit form.
+  real payment. Enforced at every layer:
+  - Client: `DebtPaymentForm` and the debt payment edit form.
+  - Action/repository: `addDebtPayment`, `createTransaction`,
+    `updateTransaction` (type-aware — validates the *final merged*
+    type+amount, see root cause 4 below).
+  - Database: `debt_payments_amount_satang_positive` (`check (amount_satang > 0)`)
+    on `debt_payments`, and `transactions_debt_payment_amount_satang_positive`
+    (`check (type <> 'debt_payment' or amount_satang > 0)`) on `transactions`
+    — both added in `202607110001_financial_value_guards.sql`.
 
 ### B. May be zero, never negative (`"nonnegative"`)
 
@@ -56,7 +62,12 @@ invalid input is always rejected with a Thai message, never rewritten
   `amount_paid_this_cycle_satang`
 - `debt_schedules.amount_due_satang`, `amount_paid_satang`
 - `transactions.amount_satang` for every type other than `debt_payment`
-  (matches the existing DB check — unchanged)
+  (matches the existing `>= 0` DB check from the initial schema, unchanged —
+  the new `transactions_debt_payment_amount_satang_positive` constraint only
+  tightens the rule for `debt_payment` rows specifically, via
+  `type <> 'debt_payment' or amount_satang > 0`; for every other type the
+  left side of that `or` is true so the new constraint imposes nothing
+  beyond the original `>= 0` check)
 - `transaction_items.amount_satang` (nullable — null stays null)
 - `budget_categories.amount_satang`, `monthly_budgets.income_satang`,
   `recurring_expenses.amount_satang`
@@ -123,6 +134,18 @@ is added in the future, it must be explicitly exempted from these guards.
    `assertDebtBelongsToUser` first; the debts table itself was already safe
    (every debt query/update was already scoped by `user_id`), so this closes
    a foreign-key consistency gap, not a data leak.
+6. **`transactions.amount_satang` had no DB-level floor for `debt_payment`
+   rows.** The original schema's `check (amount_satang >= 0)` allowed a
+   `type = 'debt_payment'` transaction with `amount_satang = 0` to pass at
+   the database layer even though it is application-invalid (Category A).
+   The application-layer guards above (root cause 3/4) already reject this,
+   but the database itself had no matching constraint — so a bug in a future
+   caller that bypassed the repository layer (e.g. a raw SQL script, a
+   different service writing to the same table) would not have been caught.
+   Added `transactions_debt_payment_amount_satang_positive` in
+   `202607110001_financial_value_guards.sql` to close that gap at the
+   database layer without touching the existing `>= 0` check or any other
+   transaction type's behavior.
 
 ## Client-side validation
 
@@ -183,9 +206,19 @@ New migration: `supabase/migrations/202607110001_financial_value_guards.sql`
 constraints, matching the classification above, to: `debts` (five nullable
 + one not-null column), `debt_schedules`, `debt_payments` (`> 0`),
 `budget_categories`, `monthly_budgets`, `recurring_expenses`,
-`transaction_items` (nullable-aware), and `import_rows`.
-`transactions.amount_satang` already had its constraint from the initial
-schema and was left alone.
+`transaction_items` (nullable-aware), `import_rows`, and — as of this
+revision — `transactions` (`transactions_debt_payment_amount_satang_positive`,
+conditional on `type = 'debt_payment'`).
+`transactions.amount_satang`'s original `>= 0` constraint (from the initial
+schema) is untouched; the new constraint is additive on top of it and only
+tightens the rule for `debt_payment` rows.
+
+**`transactions.type` is `not null`**: verified directly in
+`202607100001_initial_tanglak_schema.sql` (`type transaction_type not null`,
+an enum of `'income' | 'expense' | 'debt_payment' | 'transfer' | 'refund'`).
+Every row has a concrete type, so `check (type <> 'debt_payment' or
+amount_satang > 0)` never needs a `type is null` branch — the `<>`
+comparison is well-defined for all existing and future rows.
 
 **Why `not valid`, not a direct constraint**: the task states production
 data cannot be assumed clean. `alter table ... add constraint ... check (...)`
@@ -228,6 +261,11 @@ select id, user_id, income_satang from public.monthly_budgets where income_satan
 select id, user_id, amount_satang from public.recurring_expenses where amount_satang < 0;
 select id, user_id, amount_satang from public.transaction_items where amount_satang < 0;
 select id, user_id, amount_satang from public.import_rows where amount_satang < 0;
+
+-- Transactions: only debt_payment rows are constrained by the new rule.
+select id, user_id, type, amount_satang
+from public.transactions
+where type = 'debt_payment' and amount_satang <= 0;
 ```
 
 ### If invalid rows are found
@@ -246,14 +284,24 @@ explicitly forbids. Instead:
    fixed), run the follow-up migration:
    ```sql
    alter table public.debts validate constraint debts_outstanding_balance_satang_nonnegative;
+   alter table public.transactions validate constraint transactions_debt_payment_amount_satang_positive;
    -- ... repeat per constraint name added in 202607110001 ...
    ```
-   `validate constraint` only scans, it does not lock writers for long (uses
-   a lighter lock than the initial `add constraint`), and fails loudly
-   (clear Postgres error) if any row still violates it — it will not skip
-   or ignore bad rows.
+   **`validate constraint` is not a metadata-only operation.** It scans
+   every existing row in the table to confirm the constraint holds, and does
+   not rewrite any row. The scan takes a `ShareUpdateExclusiveLock` (not a
+   full exclusive lock), so it does not block ordinary reads/writes — but
+   the scan itself still has real I/O and CPU cost proportional to table
+   size. For a small table this is negligible; for a large production table
+   (`transactions` in particular, likely the largest table here), schedule
+   each `validate constraint` deliberately — during low-traffic hours,
+   one table/constraint at a time rather than all at once — rather than
+   assuming it is free. It fails loudly (a clear Postgres error) if any row
+   still violates the constraint; it will not skip or silently ignore bad
+   rows.
 3. If the preflight query returns zero rows for a table, `validate
-   constraint` is safe to run immediately with no further action.
+   constraint` is still a full scan (see above) but has nothing to reject —
+   schedule it with the same care regardless of table size.
 
 ### Rollback approach
 
@@ -261,6 +309,7 @@ explicitly forbids. Instead:
 
 ```sql
 alter table public.debts drop constraint if exists debts_outstanding_balance_satang_nonnegative;
+alter table public.transactions drop constraint if exists transactions_debt_payment_amount_satang_positive;
 -- ... one per constraint name ...
 ```
 
@@ -298,12 +347,26 @@ Verified while auditing these write paths (not a general RLS redesign):
   of throwing.
 - `tests/unit/repository-financial-guards.test.ts` — repository-level:
   create/update reject negative values, `updateTransaction` validates the
-  final merged type+amount state, cross-user `debtId` is rejected.
+  final merged type+amount state, cross-user `debtId` is rejected. Includes
+  the full `debt_payment` matrix: amount `0` fails, a negative amount fails,
+  a positive amount passes; a normal `expense`/`income` transaction still
+  accepts `0` (existing behavior preserved); and a defensive case proving a
+  missing/undefined `type` falls through to the general nonnegative rule
+  rather than crashing (mirrors `transactions.type not null` — in practice
+  every real caller always supplies a type).
 - `tests/unit/financial-value-guards-migration.test.ts` — static assertion
   (same pattern as the existing `tests/unit/rls.test.ts`) that the new
   migration file exists, is additive/idempotent (`if not exists` guards),
-  uses `not valid`, names every constraint, and that no historical
-  migration file was modified.
+  uses `not valid`, names every constraint (including
+  `transactions_debt_payment_amount_satang_positive`), that no historical
+  migration file was modified, that the conditional
+  `check (type <> 'debt_payment' or amount_satang > 0)` expression is
+  present, that the original `transactions.amount_satang >= 0` constraint is
+  untouched, that the migration only issues one `alter table
+  public.transactions`, that the `validate constraint` comment accurately
+  states it scans every row (and does **not** claim it is a metadata-only
+  operation), and that the file contains no non-ASCII bytes (regression test
+  against the mojibake found in an earlier revision).
 - `tests/e2e/financial-value-guards.spec.ts` — manual debt creation with a
   negative value is rejected with the Thai message and the entered value is
   preserved; editing an existing debt to a negative value is rejected;
@@ -322,7 +385,11 @@ Verified while auditing these write paths (not a general RLS redesign):
    application (not SQL rewrites) before proceeding.
 5. Once every table's preflight query returns zero rows, run the follow-up
    `validate constraint` migration (not included in this branch — a
-   deliberate separate change once preflight is clean).
+   deliberate separate change once preflight is clean). Schedule it
+   carefully per table, especially for `transactions` if it is large in
+   production — `validate constraint` is a real full-table scan (see above),
+   not a free metadata check, even though it does not block concurrent
+   reads/writes.
 
 ## Remaining risks / out of scope
 
