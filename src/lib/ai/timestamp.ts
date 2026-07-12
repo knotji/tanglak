@@ -252,6 +252,12 @@ export function parseDocumentTimestamp(raw: unknown): TimestampParseResult {
     const [, aStr, bStr, yearStr, hourStr, minuteStr, offsetStr] = numeric;
     const a = Number(aStr);
     const b = Number(bStr);
+    const rawYear = Number(yearStr);
+
+    if (yearStr.length === 4 && rawYear > 2400) {
+      return buildResult(resolveYear(yearStr), b, a, hourStr, minuteStr, offsetStr);
+    }
+
     let day: number;
     let month: number;
     if (a > 12 && b <= 12) {

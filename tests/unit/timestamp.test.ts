@@ -180,6 +180,32 @@ describe("parseDocumentTimestamp", () => {
       expect(result.iso).toBe("2026-07-15T13:44:00+07:00");
     });
 
+    it("parses ambiguous-looking numeric BE date as DD/MM/BE before generic ambiguity rejection", () => {
+      const result = parseDocumentTimestamp("05/07/2569 13:44");
+      expect(result.state).toBe("extracted");
+      expect(result.iso).toBe("2026-07-05T13:44:00+07:00");
+    });
+
+    it("parses another numeric BE date with day and month both <= 12", () => {
+      const result = parseDocumentTimestamp("11/12/2569 08:05");
+      expect(result.state).toBe("extracted");
+      expect(result.iso).toBe("2026-12-11T08:05:00+07:00");
+    });
+
+    it("keeps ambiguous numeric Gregorian dates invalid", () => {
+      const result = parseDocumentTimestamp("05/07/2026 13:44");
+      expect(result.state).toBe("invalid");
+      expect(result.warning).toBe(TIMESTAMP_AMBIGUOUS_WARNING_TH);
+      expect(result.iso).toBeUndefined();
+    });
+
+    it("rejects invalid numeric BE dates instead of inventing a fallback timestamp", () => {
+      const result = parseDocumentTimestamp("31/02/2569 13:44");
+      expect(result.state).toBe("invalid");
+      expect(result.warning).toBe(TIMESTAMP_INVALID_WARNING_TH);
+      expect(result.iso).toBeUndefined();
+    });
+
     it("parses Thai date with 'เวลา' separator", () => {
       const result = parseDocumentTimestamp("05 ก.ค. 2569 เวลา 13:44");
       expect(result.state).toBe("extracted");
