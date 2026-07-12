@@ -23,11 +23,16 @@ export type DocumentExtractionErrorCode =
   | "unsupported_document"
   | "processing_claim_failed";
 
+// `transaction.occurredAt` is intentionally absent from this set. A missing
+// or unparseable transaction timestamp is a draft-review issue, not a
+// reason to discard the whole extraction -- see the comment on
+// extractedFinancialDocumentSchema's superRefine in schemas.ts. Every path
+// still listed here can genuinely make a draft unusable and must continue
+// to raise `incomplete_financial_extraction`.
 const FINANCIAL_FIELD_PATHS = new Set([
   "documentType",
   "transaction.type",
   "transaction.amount",
-  "transaction.occurredAt",
   "salary.netIncome",
   "receipt.totalPaid",
   "debt.amountDue",

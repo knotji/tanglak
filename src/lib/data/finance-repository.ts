@@ -798,6 +798,13 @@ const PROCESSABLE_DOCUMENT_STATUSES: FinanceDocument["status"][] = [
   "uploaded",
   "failed_retryable",
   "failed",
+  // A successfully-extracted document that still has a review-required
+  // field (e.g. missing/invalid transaction.occurredAt) must remain
+  // reprocessable -- retry stays available, reusing the same document row
+  // and storage object, rather than requiring a fresh upload. This does not
+  // extend to the fully-clean "review_ready" state, which is unaffected by
+  // this fix and keeps its existing (no-retry-needed) behavior.
+  "needs_review",
 ];
 
 export async function claimDocumentForProcessing(
@@ -857,6 +864,12 @@ export async function completeDocumentProcessing(
   claimStartedAt: string,
   input: {
     documentType: string;
+    // Defaults to "review_ready" (a fully-clean extraction). Callers pass
+    // "needs_review" when the draft extraction is usable but still has a
+    // review-required field (see processAndExtractDocument in
+    // extract-document.ts) -- never "failed_permanent"/"failed_retryable"
+    // for that case.
+    status?: "review_ready" | "needs_review";
     now?: Date;
     leaseMs?: number;
   },
@@ -864,6 +877,7 @@ export async function completeDocumentProcessing(
   const now = input.now ?? new Date();
   const leaseMs = input.leaseMs ?? DOCUMENT_PROCESSING_LEASE_MS;
   const activeSince = new Date(now.getTime() - leaseMs).toISOString();
+  const targetStatus = input.status ?? "review_ready";
 
   if (isMockAuthEnabled()) {
     const state = getMockState();
@@ -879,7 +893,7 @@ export async function completeDocumentProcessing(
     }
     state.documents[index] = {
       ...current,
-      status: "review_ready",
+      status: targetStatus,
       documentType: input.documentType,
       errorMessage: undefined,
       processingStartedAt: undefined,
@@ -892,7 +906,7 @@ export async function completeDocumentProcessing(
   const { data, error } = await supabase
     .from("documents")
     .update({
-      status: "review_ready",
+      status: targetStatus,
       document_type: input.documentType,
       error_message: null,
       processing_started_at: null,

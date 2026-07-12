@@ -23,9 +23,12 @@ import { ZodError } from "zod";
  * the model as a wrong, hallucinated time).
  *
  * A value that can't be confidently parsed is stripped (never replaced with
- * the current date/time) so the existing required-field pipeline
- * (classifySchemaValidationError) surfaces it as needing review, exactly as
- * it already does for any other missing required financial field.
+ * the current date/time, upload time, or any other guessed date). Whenever
+ * the final `occurredAt` ends up absent -- whether Gemini never reported one
+ * at all, or reported one that couldn't be parsed -- this pushes
+ * "transaction.occurredAt" onto the draft's `unclearFields` so the review
+ * screen can flag it as needing the user's attention, without failing the
+ * rest of the extraction (see the superRefine comment in schemas.ts).
  */
 function normalizeParsedTimestamp(parsedJson: unknown): unknown {
   if (typeof parsedJson !== "object" || parsedJson === null) return parsedJson;
@@ -33,15 +36,31 @@ function normalizeParsedTimestamp(parsedJson: unknown): unknown {
   if (typeof root.transaction !== "object" || root.transaction === null) return parsedJson;
 
   const transaction = root.transaction as { occurredAt?: unknown };
-  if (!("occurredAt" in transaction)) return parsedJson;
+  if (!("occurredAt" in transaction)) {
+    markOccurredAtNeedsReview(root as { unclearFields?: unknown });
+    return parsedJson;
+  }
 
   const result = parseDocumentTimestamp(transaction.occurredAt);
   if (result.state === "extracted" || result.state === "inferred") {
     transaction.occurredAt = result.iso;
   } else {
     delete transaction.occurredAt;
+    markOccurredAtNeedsReview(root as { unclearFields?: unknown });
   }
   return parsedJson;
+}
+
+const OCCURRED_AT_UNCLEAR_FIELD = "transaction.occurredAt";
+
+function markOccurredAtNeedsReview(root: { unclearFields?: unknown }): void {
+  if (Array.isArray(root.unclearFields)) {
+    if (!root.unclearFields.includes(OCCURRED_AT_UNCLEAR_FIELD)) {
+      root.unclearFields.push(OCCURRED_AT_UNCLEAR_FIELD);
+    }
+  } else {
+    root.unclearFields = [OCCURRED_AT_UNCLEAR_FIELD];
+  }
 }
 
 export async function extractFinancialDocument(input: {

@@ -88,8 +88,18 @@ export async function processAndExtractDocument(
       options?.timeoutMs ?? DOCUMENT_PROCESSING_TIMEOUT_MS,
     );
 
+    // A missing/invalid transaction.occurredAt is a draft review issue, not
+    // extraction failure (see the superRefine comment in schemas.ts) -- it
+    // routes to "needs_review" instead of the default "review_ready" so the
+    // review screen can flag it, while every other extracted field is still
+    // persisted and usable. Broader-than-occurredAt problems already fail
+    // extraction before reaching this point (classifySchemaValidationError
+    // still throws incomplete_financial_extraction for any other missing
+    // required field), so this never masks a genuinely unusable extraction.
+    const occurredAtNeedsReview = result.unclearFields.includes("transaction.occurredAt");
     const completedDoc = await completeDocumentProcessing(userId, documentId, claimStartedAt, {
       documentType: result.documentType,
+      status: occurredAtNeedsReview ? "needs_review" : "review_ready",
       leaseMs: options?.processingLeaseMs,
     });
     if (!completedDoc) {
@@ -257,7 +267,32 @@ function getMockExtraction(
     });
   }
 
-  // 5. Unclear fields mock (filename contains "unclear")
+  // 5. Missing occurredAt mock (filename contains "missing_date" or
+  // "no_occurredat") -- simulates the post-normalization state gemini.ts
+  // would produce for a document whose date/time couldn't be confidently
+  // read: transaction.occurredAt is absent and "transaction.occurredAt" is
+  // recorded in unclearFields, but every other field is still usable.
+  if (nameLower.includes("missing_date") || nameLower.includes("no_occurredat")) {
+    return extractedFinancialDocumentSchema.parse({
+      documentType: "receipt",
+      confidence: 0.9,
+      transaction: {
+        type: "expense",
+        amount: 250,
+        currency: "THB",
+        merchant: "ร้านค้าทดสอบไม่มีวันที่",
+        category: "อาหาร",
+      },
+      receipt: {
+        totalPaid: 250,
+      },
+      warnings: [],
+      unclearFields: ["transaction.occurredAt"],
+      requiresReview: true,
+    });
+  }
+
+  // 6. Unclear fields mock (filename contains "unclear")
   if (nameLower.includes("unclear")) {
     return extractedFinancialDocumentSchema.parse({
       documentType: "receipt",
@@ -273,7 +308,7 @@ function getMockExtraction(
     });
   }
 
-  // 6. Generic Receipt Mock
+  // 7. Generic Receipt Mock
   return extractedFinancialDocumentSchema.parse({
     documentType: "receipt",
     confidence: 0.85,

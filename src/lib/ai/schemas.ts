@@ -101,6 +101,18 @@ export const extractedFinancialDocumentSchema = z
   requiresReview: z.literal(true).default(true),
 })
   .superRefine((data, ctx) => {
+    // `transaction.occurredAt` is deliberately NOT enforced as a required
+    // field here. This is draft-extraction validation only: a document that
+    // Gemini could not confidently timestamp is still a usable draft if its
+    // other fields (amount, type, merchant, category, ...) parsed
+    // successfully. Missing/invalid occurredAt is instead recorded as a
+    // draft review issue (see `normalizeParsedTimestamp` in gemini.ts, which
+    // pushes "transaction.occurredAt" onto `unclearFields`), and the document
+    // routes to `needs_review` rather than failing extraction outright. The
+    // separate, stricter "occurredAt is required" rule is enforced only at
+    // final transaction confirmation (see TRANSACTION_OCCURRED_AT_REQUIRED_TH
+    // in src/app/actions/documents.ts and validateReviewOccurredAt in
+    // ReviewForm.tsx) -- never here, and never by fabricating a value.
     if (data.documentType === "salary_slip") {
       if (data.salary?.netIncome === undefined && data.transaction?.amount === undefined) {
         ctx.addIssue({
@@ -108,15 +120,6 @@ export const extractedFinancialDocumentSchema = z
           expected: "number",
           received: "undefined",
           path: ["salary", "netIncome"],
-          message: "Required",
-        });
-      }
-      if (data.transaction?.occurredAt === undefined) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.invalid_type,
-          expected: "string",
-          received: "undefined",
-          path: ["transaction", "occurredAt"],
           message: "Required",
         });
       }
@@ -141,15 +144,6 @@ export const extractedFinancialDocumentSchema = z
           message: "Required",
         });
       }
-      if (data.transaction?.occurredAt === undefined) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.invalid_type,
-          expected: "string",
-          received: "undefined",
-          path: ["transaction", "occurredAt"],
-          message: "Required",
-        });
-      }
     }
 
     if (["transfer_slip"].includes(data.documentType)) {
@@ -168,15 +162,6 @@ export const extractedFinancialDocumentSchema = z
           expected: "number",
           received: "undefined",
           path: ["transaction", "amount"],
-          message: "Required",
-        });
-      }
-      if (data.transaction?.occurredAt === undefined) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.invalid_type,
-          expected: "string",
-          received: "undefined",
-          path: ["transaction", "occurredAt"],
           message: "Required",
         });
       }
