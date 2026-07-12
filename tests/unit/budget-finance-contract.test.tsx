@@ -128,35 +128,39 @@ describe("budget engine -> finance primitives contract", () => {
     const { container, root } = render(
       <BudgetProgress label={summary.label} spentSatang={summary.spentSatang} budgetSatang={summary.budgetedSatang} />,
     );
-    expect(container.textContent).toContain("ยังไม่ตั้งงบ");
+    expect(container.textContent).toContain("ยังไม่ได้ตั้งงบ");
     cleanup(root, container);
   });
 
-  it("agrees with the engine on zero-budget-with-spending: BudgetStatusBadge, BudgetProgress, and CategoryBudgetRow all show overspent", () => {
+  it("agrees with the engine on zero-budget-with-spending: BudgetStatusBadge, BudgetProgress, and CategoryBudgetRow all show unbudgeted (no_budget), never overspent", () => {
     // The engine classifies a zero-budget category with actual spending as
-    // "overspent", never "no_budget" or "healthy" -- see statusForCategory
-    // in budget-calculations.ts. The finance UI primitives now derive their
-    // status from the same canonical helper (statusForBudget in status.ts
-    // delegates to statusForCategory), so all three components must agree.
+    // "no_budget" (unbudgeted spending), never "overspent" or "healthy" --
+    // see statusForCategory in budget-calculations.ts. The finance UI
+    // primitives derive their status from the same canonical helper
+    // (statusForBudget in status.ts delegates to statusForCategory), so all
+    // three components must agree.
     const summary = summarizeCategory("เดินทาง", 0, 500);
-    expect(summary.status).toBe("overspent");
+    expect(summary.status).toBe("no_budget");
+    expect(summary.unbudgetedSpentSatang).toBe(500);
+    expect(summary.overspentSatang).toBe(0);
 
     const badge = render(<BudgetStatusBadge status={summary.status} />);
-    expect(badge.container.textContent).toContain("เกินงบ");
+    expect(badge.container.textContent).toContain("ยังไม่ได้ตั้งงบ");
+    expect(badge.container.textContent).not.toContain("เกินงบ");
     cleanup(badge.root, badge.container);
 
     const progress = render(
       <BudgetProgress label={summary.label} spentSatang={summary.spentSatang} budgetSatang={summary.budgetedSatang} />,
     );
-    expect(progress.container.textContent).toContain("เกินงบ");
-    expect(progress.container.textContent).not.toContain("ยังไม่ตั้งงบ");
-    expect(progress.container.querySelector('[role="progressbar"]')?.getAttribute("aria-valuenow")).toBe("100");
+    expect(progress.container.textContent).toContain("ยังไม่ได้ตั้งงบ");
+    expect(progress.container.textContent).not.toContain("เกินงบ");
     cleanup(progress.root, progress.container);
 
     const row = render(
       <CategoryBudgetRow category={summary.label} spentSatang={summary.spentSatang} budgetSatang={summary.budgetedSatang} />,
     );
-    expect(row.container.textContent).toContain("เกินงบ");
+    expect(row.container.textContent).toContain("ยังไม่ได้ตั้งงบ");
+    expect(row.container.textContent).not.toContain("เกินงบ");
     cleanup(row.root, row.container);
   });
 
@@ -165,20 +169,20 @@ describe("budget engine -> finance primitives contract", () => {
     expect(summary.status).toBe("no_budget");
 
     const badge = render(<BudgetStatusBadge status={summary.status} />);
-    expect(badge.container.textContent).toContain("ยังไม่ตั้งงบ");
+    expect(badge.container.textContent).toContain("ยังไม่ได้ตั้งงบ");
     cleanup(badge.root, badge.container);
 
     const progress = render(
       <BudgetProgress label={summary.label} spentSatang={summary.spentSatang} budgetSatang={summary.budgetedSatang} />,
     );
-    expect(progress.container.textContent).toContain("ยังไม่ตั้งงบ");
+    expect(progress.container.textContent).toContain("ยังไม่ได้ตั้งงบ");
     expect(progress.container.textContent).not.toContain("เกินงบ");
     cleanup(progress.root, progress.container);
 
     const row = render(
       <CategoryBudgetRow category={summary.label} spentSatang={summary.spentSatang} budgetSatang={summary.budgetedSatang} />,
     );
-    expect(row.container.textContent).toContain("ยังไม่ตั้งงบ");
+    expect(row.container.textContent).toContain("ยังไม่ได้ตั้งงบ");
     cleanup(row.root, row.container);
   });
 

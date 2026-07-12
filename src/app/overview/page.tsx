@@ -15,7 +15,12 @@ import {
   listDebts,
 } from "@/lib/data/finance-repository";
 import { buildBudgetSummary } from "@/lib/finance/budget-calculations";
-import { calculateMonthlyTotals, calculateHistoricalInsights, remainingToMinimum } from "@/lib/finance/calculations";
+import {
+  calculateMonthlyTotals,
+  calculateCashRemaining,
+  calculateHistoricalInsights,
+  remainingToMinimum,
+} from "@/lib/finance/calculations";
 import { formatTHB } from "@/lib/finance/money";
 import { timePage } from "@/lib/observability/timing";
 import { getBangkokMonthString } from "@/lib/finance/date";
@@ -49,6 +54,11 @@ export default async function OverviewPage() {
 
     const budgetCategories = monthlyBudget ? await listBudgetCategories(user.id, monthlyBudget.id) : [];
     const budgetSummary = buildBudgetSummary(month, monthlyBudget, budgetCategories, transactions);
+    // Canonical saved monthly income (same source as the Budget page) --
+    // never the sum of actual income-type transactions, which is a
+    // different concept. See calculateCashRemaining in calculations.ts.
+    const plannedIncomeSatang = budgetSummary.expectedIncomeSatang;
+    const cashRemainingSatang = calculateCashRemaining(plannedIncomeSatang, totals);
 
     const totalOutstanding = debts.reduce((sum, debt) => sum + (debt.outstandingBalanceSatang ?? 0), 0);
     const totalMinimumDue = debts.reduce((sum, debt) => sum + remainingToMinimum(debt), 0);
@@ -58,12 +68,12 @@ export default async function OverviewPage() {
         <PageHeader title="ภาพรวม" subtitle="เดือนนี้" />
         <FinancialHero
           label="เหลือใช้จริงเดือนนี้"
-          amountSatang={totals.cashRemainingSatang}
-          budgetLabel={`จากรายรับ ${formatTHB(totals.incomeSatang)}`}
+          amountSatang={cashRemainingSatang}
+          budgetLabel={`จากรายรับ ${formatTHB(plannedIncomeSatang)}`}
         />
 
         <section className="rounded-[16px] border border-border bg-surface px-5 py-2" aria-label="รายรับและรายจ่าย">
-          <MoneyFlowRow label="รายรับ" amountSatang={totals.incomeSatang} direction="in" />
+          <MoneyFlowRow label="รายรับ" amountSatang={plannedIncomeSatang} direction="in" />
           <MoneyFlowRow label="ค่าใช้ชีวิต" amountSatang={totals.livingExpenseSatang} direction="out" />
           <MoneyFlowRow label="จ่ายหนี้" amountSatang={totals.debtPaymentSatang} direction="out" />
           {totals.refundSatang > 0 ? <MoneyFlowRow label="เงินคืน" amountSatang={totals.refundSatang} direction="in" /> : null}
@@ -77,17 +87,27 @@ export default async function OverviewPage() {
             </Link>
           </div>
           {budgetSummary.hasBudget ? (
-            <div className="mt-3 flex items-center justify-between">
-              <div>
-                <p className="text-xs text-text-secondary">ใช้ไป {formatTHB(budgetSummary.spentTotalSatang)} จาก {formatTHB(budgetSummary.plannedTotalSatang)}</p>
-                <p
-                  className={`tabular mt-1 text-lg font-bold ${budgetSummary.remainingTotalSatang < 0 ? "text-overdue" : "text-foreground"}`}
-                >
-                  เหลืองบ {formatTHB(budgetSummary.remainingTotalSatang)}
-                </p>
+            <>
+              <div className="mt-3 flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-text-secondary">ใช้ไป {formatTHB(budgetSummary.spentTotalSatang)} จาก {formatTHB(budgetSummary.plannedTotalSatang)}</p>
+                  <p
+                    className={`tabular mt-1 text-lg font-bold ${budgetSummary.remainingTotalSatang < 0 ? "text-overdue" : "text-foreground"}`}
+                  >
+                    เหลืองบ {formatTHB(budgetSummary.remainingTotalSatang)}
+                  </p>
+                </div>
+                <BudgetStatusBadge status={budgetSummary.status} />
               </div>
-              <BudgetStatusBadge status={budgetSummary.status} />
-            </div>
+              {budgetSummary.overspentTotalSatang > 0 ? (
+                <p className="mt-2 text-xs font-bold text-overdue">เกินงบรวม {formatTHB(budgetSummary.overspentTotalSatang)}</p>
+              ) : null}
+              {budgetSummary.unbudgetedSpentTotalSatang > 0 ? (
+                <p className="mt-1 text-xs text-text-secondary">
+                  ค่าใช้จ่ายในหมวดที่ยังไม่ได้ตั้งงบ {formatTHB(budgetSummary.unbudgetedSpentTotalSatang)}
+                </p>
+              ) : null}
+            </>
           ) : (
             <p className="mt-2 text-sm text-text-secondary">ยังไม่ได้ตั้งงบเดือนนี้</p>
           )}

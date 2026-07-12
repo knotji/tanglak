@@ -15,6 +15,8 @@ export type NextActionInput = {
   hasBudget: boolean;
   nearLimitCategoryLabel?: string;
   overspentCategoryLabel?: string;
+  /** Label of a category with spending but no positive budget configured -- distinct from overspentCategoryLabel (see docs/MONTHLY_BUDGET_ENGINE.md). */
+  unbudgetedCategoryLabel?: string;
   hasAnyTransaction: boolean;
 };
 
@@ -22,11 +24,14 @@ export type NextActionInput = {
  * Picks a single highest-priority action for the Today dashboard, per the
  * priority order: overdue minimum > due today > due within 3 days > minimum
  * not met (any other due date, including none) > no monthly budget >
- * overspent category > near-limit category > no transactions yet > "on
- * track" fallback. Only ever one action is returned -- callers must not
- * render more than one of these at a time. Due-today is a distinct tier
- * from due-soon (see F-005 in docs/SLIP_DEBT_IMPLEMENTATION_FINDINGS.md) --
- * it must never render as "due in 0 days" merged into the due-soon bucket.
+ * overspent category > unbudgeted-spending category > near-limit category >
+ * no transactions yet > "on track" fallback. Only ever one action is
+ * returned -- callers must not render more than one of these at a time.
+ * Due-today is a distinct tier from due-soon (see F-005 in
+ * docs/SLIP_DEBT_IMPLEMENTATION_FINDINGS.md) -- it must never render as
+ * "due in 0 days" merged into the due-soon bucket. Overspent (a positive
+ * budget actually exceeded) outranks unbudgeted spending (no positive
+ * budget configured at all) since the former is an active plan violation.
  */
 export function determineNextAction(input: NextActionInput, today: Date = new Date()): NextAction {
   const overdueDebt = input.debts.find((debt) => isOverdue(debt, today));
@@ -117,6 +122,16 @@ export function determineNextAction(input: NextActionInput, today: Date = new Da
       action: "ดูงบประมาณ",
       actionHref: "/budget",
       tone: "overdue",
+    };
+  }
+
+  if (input.unbudgetedCategoryLabel) {
+    return {
+      title: `หมวด "${input.unbudgetedCategoryLabel}" ยังไม่ได้ตั้งงบ`,
+      body: "ตั้งงบหมวดนี้เพื่อติดตามการใช้จ่ายให้ชัดเจนขึ้น",
+      action: "ตั้งงบหมวดนี้",
+      actionHref: "/budget",
+      tone: "primary",
     };
   }
 

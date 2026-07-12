@@ -4,9 +4,12 @@ import type { BudgetCategory, MonthlyBudget, Transaction } from "@/types/domain"
  * Status thresholds for a budget category's usage ratio (spent / budgeted).
  * - healthy: usage below 80%
  * - near_limit: usage from 80% up to and including 100%
- * - overspent: usage strictly above 100%
- * A category with a zero budget is never "healthy" just because nothing was
- * spent against it -- see `statusForCategory` below.
+ * - overspent: usage strictly above 100%, and only possible against a
+ *   positive budget
+ * - no_budget: no positive budget configured for the category, regardless
+ *   of whether anything was spent against it -- see `statusForCategory`
+ *   below. Spending in a "no_budget" category is "unbudgeted spending", not
+ *   overspending: there is no allocation to exceed.
  */
 export const BUDGET_NEAR_LIMIT_THRESHOLD = 0.8;
 export const BUDGET_OVERSPENT_THRESHOLD = 1;
@@ -96,21 +99,27 @@ export type CategorySummary = {
   /** spent / budgeted, or null when budgeted is 0 (percentage is not meaningful) */
   usagePercent: number | null;
   status: BudgetStatus;
+  /** spent - budgeted, only when status is "overspent". Always >= 0, otherwise 0. */
+  overspentSatang: number;
+  /** spent, only when this category has no positive budget configured. Always >= 0, otherwise 0. */
+  unbudgetedSpentSatang: number;
 };
 
 /**
  * Determines a category's status from its budgeted and spent amounts.
  *
- * A zero-budget category is never labeled "healthy": if nothing was spent
- * against it, it is "no_budget" (nothing allocated, nothing used); if
- * anything was spent against it, it is "overspent" (100% of a zero
- * allocation was exceeded by definition). A positive-budget category with
- * zero spend is "healthy" at 0% usage -- this is how an "unused" category
- * (budgeted but not yet touched this month) is represented.
+ * A category with no positive budget configured is always "no_budget" --
+ * never "healthy" (nothing was allocated, so "healthy" would be
+ * misleading) and never "overspent" (there is no positive allocation to
+ * exceed; spending here is "unbudgeted spending", a distinct concept from
+ * overspending -- see `unbudgetedSpentSatang` on `CategorySummary`). A
+ * positive-budget category with zero spend is "healthy" at 0% usage --
+ * this is how an "unused" category (budgeted but not yet touched this
+ * month) is represented.
  */
 export function statusForCategory(budgetedSatang: number, spentSatang: number): BudgetStatus {
   if (budgetedSatang <= 0) {
-    return spentSatang > 0 ? "overspent" : "no_budget";
+    return "no_budget";
   }
   const ratio = spentSatang / budgetedSatang;
   if (ratio > BUDGET_OVERSPENT_THRESHOLD) return "overspent";
@@ -126,6 +135,12 @@ export function summarizeCategory(
 ): CategorySummary {
   const remainingSatang = budgetedSatang - spentSatang;
   const usagePercent = budgetedSatang > 0 ? spentSatang / budgetedSatang : null;
+  const status = statusForCategory(budgetedSatang, spentSatang);
+  // overspentSatang: only meaningful above a positive budget that was
+  // exceeded. unbudgetedSpentSatang: spend in a category with no positive
+  // budget configured. Exactly one of these is ever positive at a time.
+  const overspentSatang = status === "overspent" ? spentSatang - budgetedSatang : 0;
+  const unbudgetedSpentSatang = budgetedSatang <= 0 ? spentSatang : 0;
   return {
     label,
     budgetCategoryId,
@@ -133,7 +148,9 @@ export function summarizeCategory(
     spentSatang,
     remainingSatang,
     usagePercent,
-    status: statusForCategory(budgetedSatang, spentSatang),
+    status,
+    overspentSatang,
+    unbudgetedSpentSatang,
   };
 }
 
@@ -146,8 +163,10 @@ export type BudgetSummary = {
   remainingTotalSatang: number;
   /** expectedIncome - plannedTotal. Negative means categories are over-allocated relative to income. */
   unallocatedIncomeSatang: number;
-  /** sum of (spent - budgeted) across categories currently overspent, always >= 0 */
+  /** sum of (spent - budgeted) across categories with a positive budget that was exceeded, always >= 0. Never includes no-budget categories. */
   overspentTotalSatang: number;
+  /** sum of spend in categories with no positive budget configured, always >= 0. Distinct from overspentTotalSatang. */
+  unbudgetedSpentTotalSatang: number;
   uncategorizedSpentSatang: number;
   categories: CategorySummary[];
   usagePercent: number | null;
@@ -185,8 +204,13 @@ export function buildBudgetSummary(
   const plannedTotalSatang = categories.reduce((sum, category) => sum + category.amountSatang, 0);
   const categorySpentTotal = categorySummaries.reduce((sum, category) => sum + category.spentSatang, 0);
   const spentTotalSatang = categorySpentTotal + spend.uncategorizedSatang;
-  const overspentTotalSatang = categorySummaries.reduce(
-    (sum, category) => sum + Math.max(0, category.spentSatang - category.budgetedSatang),
+  // Only categories with a positive budget that was actually exceeded
+  // contribute to overspentTotalSatang -- a category with no positive
+  // budget can never be "overspent" (see statusForCategory), so its spend
+  // is unbudgeted spending instead, tracked separately below.
+  const overspentTotalSatang = categorySummaries.reduce((sum, category) => sum + category.overspentSatang, 0);
+  const unbudgetedSpentTotalSatang = categorySummaries.reduce(
+    (sum, category) => sum + category.unbudgetedSpentSatang,
     0,
   );
   const expectedIncomeSatang = budget?.incomeSatang ?? 0;
@@ -200,6 +224,7 @@ export function buildBudgetSummary(
     remainingTotalSatang: plannedTotalSatang - spentTotalSatang,
     unallocatedIncomeSatang: expectedIncomeSatang - plannedTotalSatang,
     overspentTotalSatang,
+    unbudgetedSpentTotalSatang,
     uncategorizedSpentSatang: spend.uncategorizedSatang,
     categories: categorySummaries,
     usagePercent: plannedTotalSatang > 0 ? spentTotalSatang / plannedTotalSatang : null,

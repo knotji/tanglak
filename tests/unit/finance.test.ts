@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { extractedFinancialDocumentSchema } from "@/lib/ai/schemas";
 import {
   applyDebtPayment,
+  calculateCashRemaining,
   calculateMonthlyTotals,
   daysUntilDue,
   debtCycleStatus,
@@ -76,6 +77,44 @@ describe("monthly totals", () => {
     expect(totals.transferSatang).toBe(500_000);
     expect(totals.cashRemainingSatang).toBe(50_000);
     expect(totals.unreviewedCount).toBe(1);
+  });
+});
+
+describe("calculateCashRemaining — the shared income-consistency selector", () => {
+  it("uses the passed-in planned (saved) income, not any income figure derived from transactions", () => {
+    // Regression for Issue 1: Overview must never fall back to actual
+    // income-type transactions when the canonical saved monthly income
+    // (Budget page) is what every page is supposed to agree on. Here the
+    // month has zero actual income transactions, matching the reported
+    // bug (Budget saved ฿5,000, Overview showed ฿0).
+    const totals = calculateMonthlyTotals(
+      [tx({ type: "expense", amountSatang: 1_000_00 })],
+      "2026-07",
+    );
+    expect(totals.incomeSatang).toBe(0); // no income transaction recorded this month
+
+    const cashRemaining = calculateCashRemaining(5_000_00, totals);
+    expect(cashRemaining).toBe(5_000_00 - 1_000_00);
+  });
+
+  it("still includes refunds and excludes nothing else from the formula", () => {
+    const totals = calculateMonthlyTotals(
+      [
+        tx({ id: "expense", type: "expense", amountSatang: 1_000_00 }),
+        tx({ id: "debt", type: "debt_payment", amountSatang: 500_00 }),
+        tx({ id: "refund", type: "refund", amountSatang: 200_00 }),
+      ],
+      "2026-07",
+    );
+    const cashRemaining = calculateCashRemaining(10_000_00, totals);
+    expect(cashRemaining).toBe(10_000_00 + 200_00 - 1_000_00 - 500_00);
+  });
+
+  it("does not produce a negative zero when planned income exactly covers spending", () => {
+    const totals = calculateMonthlyTotals([tx({ type: "expense", amountSatang: 5_000_00 })], "2026-07");
+    const cashRemaining = calculateCashRemaining(5_000_00, totals);
+    expect(Object.is(cashRemaining, -0)).toBe(false);
+    expect(formatTHB(cashRemaining)).toBe("฿0");
   });
 });
 

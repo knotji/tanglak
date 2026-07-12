@@ -55,6 +55,22 @@ export function calculateMonthlyTotals(
   return totals;
 }
 
+/**
+ * Cash remaining this month, computed from the canonical saved monthly
+ * income (`MonthlyBudget.incomeSatang`, via `BudgetSummary.expectedIncomeSatang`)
+ * rather than actual recorded income-type transactions. This is the shared
+ * selector every page must use for "remaining money" so it agrees with the
+ * saved income shown on the Budget page -- see docs/MONTHLY_BUDGET_ENGINE.md.
+ * `totals.incomeSatang` (actual income transactions) is intentionally not
+ * used here; it is a different concept from the user's planned income.
+ */
+export function calculateCashRemaining(
+  plannedIncomeSatang: number,
+  totals: Pick<MonthlyTotals, "livingExpenseSatang" | "debtPaymentSatang" | "refundSatang">,
+): number {
+  return plannedIncomeSatang + totals.refundSatang - totals.livingExpenseSatang - totals.debtPaymentSatang;
+}
+
 export function remainingToMinimum(debt: Debt): number {
   return Math.max(
     0,

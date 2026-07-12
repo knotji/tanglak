@@ -20,6 +20,12 @@ export type BudgetActionState = {
 function revalidateBudget(month: string) {
   revalidatePath("/budget");
   revalidatePath(`/budget?month=${month}`);
+  // Overview and Today both read the saved monthly income and budget
+  // categories via the same canonical source (buildBudgetSummary) -- they
+  // must be revalidated too so they stay consistent with Budget after a
+  // save, not just the Budget page itself.
+  revalidatePath("/overview");
+  revalidatePath("/today");
 }
 
 export async function saveMonthlyIncomeAction(

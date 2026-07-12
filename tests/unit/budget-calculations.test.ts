@@ -5,6 +5,7 @@ import {
   statusForCategory,
   summarizeCategory,
 } from "@/lib/finance/budget-calculations";
+import { formatTHB } from "@/lib/finance/money";
 import type { BudgetCategory, MonthlyBudget, Transaction } from "@/types/domain";
 
 function tx(overrides: Partial<Transaction>): Transaction {
@@ -162,14 +163,19 @@ describe("statusForCategory — status thresholds", () => {
     expect(statusForCategory(0, 0)).toBe("no_budget");
   });
 
-  it("does not mislabel a zero-budget category with spending as healthy", () => {
+  it("classifies a zero-budget category with spending as no_budget (unbudgeted spending), never overspent or healthy", () => {
     const status = statusForCategory(0, 500);
-    expect(status).toBe("overspent");
+    expect(status).toBe("no_budget");
+    expect(status).not.toBe("overspent");
     expect(status).not.toBe("healthy");
   });
 
   it("is healthy at 0% usage for a positive-budget, unused category", () => {
     expect(statusForCategory(1_000, 0)).toBe("healthy");
+  });
+
+  it("is no_budget for a negative budget too, regardless of spending", () => {
+    expect(statusForCategory(-100, 500)).toBe("no_budget");
   });
 });
 
@@ -183,6 +189,26 @@ describe("summarizeCategory", () => {
   it("computes remaining as budgeted minus spent, allowing negative", () => {
     const summary = summarizeCategory("อาหาร", 1_000, 1_500);
     expect(summary.remainingSatang).toBe(-500);
+  });
+
+  it("sets overspentSatang for a positive budget that was exceeded, and unbudgetedSpentSatang stays 0", () => {
+    const summary = summarizeCategory("อาหาร", 1_000, 1_500);
+    expect(summary.status).toBe("overspent");
+    expect(summary.overspentSatang).toBe(500);
+    expect(summary.unbudgetedSpentSatang).toBe(0);
+  });
+
+  it("sets unbudgetedSpentSatang for a zero-budget category with spending, and overspentSatang stays 0", () => {
+    const summary = summarizeCategory("เดินทาง", 0, 843_96);
+    expect(summary.status).toBe("no_budget");
+    expect(summary.unbudgetedSpentSatang).toBe(843_96);
+    expect(summary.overspentSatang).toBe(0);
+  });
+
+  it("has both overspentSatang and unbudgetedSpentSatang at 0 for a healthy positive-budget category", () => {
+    const summary = summarizeCategory("อาหาร", 1_000, 500);
+    expect(summary.overspentSatang).toBe(0);
+    expect(summary.unbudgetedSpentSatang).toBe(0);
   });
 });
 
@@ -220,10 +246,10 @@ describe("buildBudgetSummary", () => {
     expect(uncategorizedBudgetRow?.budgetCategoryId).toBeUndefined();
     expect(uncategorizedBudgetRow?.budgetedSatang).toBe(0);
     expect(uncategorizedBudgetRow?.spentSatang).toBe(500);
-    expect(uncategorizedBudgetRow?.status).toBe("overspent"); // zero budget + spending
+    expect(uncategorizedBudgetRow?.status).toBe("no_budget"); // zero budget + spending -- unbudgeted, not overspent
   });
 
-  it("computes overspentTotalSatang only from categories that are actually over budget", () => {
+  it("computes overspentTotalSatang only from categories with a positive budget that was actually exceeded", () => {
     const summary = buildBudgetSummary(
       "2026-07",
       budget(),
@@ -234,5 +260,65 @@ describe("buildBudgetSummary", () => {
       ],
     );
     expect(summary.overspentTotalSatang).toBe(500);
+  });
+
+  it("Issue 2 regression: zero-budget category with spending is unbudgeted, overspentTotalSatang stays 0, unbudgetedSpentTotalSatang equals the spend", () => {
+    const summary = buildBudgetSummary(
+      "2026-07",
+      budget({ incomeSatang: 5_000_00 }),
+      [], // no category budget configured at all
+      [tx({ type: "expense", category: "อื่น ๆ", amountSatang: 843_96 })],
+    );
+    const category = summary.categories.find((c) => c.label === "อื่น ๆ");
+    expect(category?.status).toBe("no_budget");
+    expect(summary.overspentTotalSatang).toBe(0);
+    expect(summary.unbudgetedSpentTotalSatang).toBe(843_96);
+  });
+
+  it("Issue 3 regression: income stays understandable as unallocated while overspent stays 0 and unbudgeted spend is reported separately", () => {
+    const summary = buildBudgetSummary(
+      "2026-07",
+      budget({ incomeSatang: 5_000_00 }),
+      [], // no category budget assigned
+      [tx({ type: "expense", category: "อื่น ๆ", amountSatang: 843_96 })],
+    );
+    expect(summary.expectedIncomeSatang).toBe(5_000_00);
+    expect(summary.plannedTotalSatang).toBe(0);
+    expect(summary.unallocatedIncomeSatang).toBe(5_000_00); // income - 0 planned = still 5,000
+    expect(summary.spentTotalSatang).toBe(843_96);
+    expect(summary.overspentTotalSatang).toBe(0);
+    expect(summary.unbudgetedSpentTotalSatang).toBe(843_96);
+  });
+
+  it("mixed categories: one real overspend and one zero-budget spend are kept separate in the totals", () => {
+    const summary = buildBudgetSummary(
+      "2026-07",
+      budget({ incomeSatang: 10_000_00 }),
+      [category({ label: "อาหาร", amountSatang: 1_000 })],
+      [
+        tx({ id: "a", type: "expense", category: "อาหาร", amountSatang: 1_500 }), // 500 over a positive budget
+        tx({ id: "b", type: "expense", category: "เดินทาง", amountSatang: 700 }), // no budget row at all
+      ],
+    );
+    const overspentCategory = summary.categories.find((c) => c.label === "อาหาร");
+    const unbudgetedCategory = summary.categories.find((c) => c.label === "เดินทาง");
+    expect(overspentCategory?.status).toBe("overspent");
+    expect(overspentCategory?.overspentSatang).toBe(500);
+    expect(unbudgetedCategory?.status).toBe("no_budget");
+    expect(unbudgetedCategory?.unbudgetedSpentSatang).toBe(700);
+    expect(summary.overspentTotalSatang).toBe(500);
+    expect(summary.unbudgetedSpentTotalSatang).toBe(700);
+  });
+
+  it("never produces a negative-zero remainingTotalSatang or unallocatedIncomeSatang when income exactly matches planned spend", () => {
+    const summary = buildBudgetSummary(
+      "2026-07",
+      budget({ incomeSatang: 1_000 }),
+      [category({ label: "อาหาร", amountSatang: 1_000 })],
+      [tx({ type: "expense", category: "อาหาร", amountSatang: 1_000 })],
+    );
+    expect(Object.is(summary.remainingTotalSatang, -0)).toBe(false);
+    expect(Object.is(summary.unallocatedIncomeSatang, -0)).toBe(false);
+    expect(formatTHB(summary.remainingTotalSatang)).toBe("฿0");
   });
 });

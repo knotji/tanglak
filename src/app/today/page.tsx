@@ -51,12 +51,16 @@ export default async function TodayPage() {
       .reduce((sum, transaction) => sum + transaction.amountSatang, 0);
     const monthlySpent = budgetSummary.spentTotalSatang;
     const overspentCategory = budgetSummary.categories.find((c) => c.status === "overspent");
+    const unbudgetedCategory = budgetSummary.categories.find(
+      (c) => c.status === "no_budget" && c.unbudgetedSpentSatang > 0,
+    );
     const nearLimitCategory = budgetSummary.categories.find((c) => c.status === "near_limit");
 
     const nextAction = determineNextAction({
       debts,
       hasBudget: budgetSummary.hasBudget,
       overspentCategoryLabel: overspentCategory?.label,
+      unbudgetedCategoryLabel: unbudgetedCategory?.label,
       nearLimitCategoryLabel: nearLimitCategory?.label,
       hasAnyTransaction: transactions.length > 0,
     });

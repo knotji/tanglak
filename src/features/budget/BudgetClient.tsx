@@ -21,7 +21,15 @@ import {
 import { formatTHB } from "@/lib/finance/money";
 import type { BudgetSummary } from "@/lib/finance/budget-calculations";
 
-function IncomeForm({ month, hasBudget }: { month: string; hasBudget: boolean }) {
+function IncomeForm({
+  month,
+  hasBudget,
+  savedIncomeSatang,
+}: {
+  month: string;
+  hasBudget: boolean;
+  savedIncomeSatang: number;
+}) {
   const [state, action, pending] = useActionState(saveMonthlyIncomeAction, { ok: false });
   return (
     <form action={action} className="rounded-[16px] border border-border bg-surface p-4">
@@ -30,13 +38,25 @@ function IncomeForm({ month, hasBudget }: { month: string; hasBudget: boolean })
           <p className="text-sm font-bold text-foreground">เริ่มตั้งงบเดือนนี้</p>
           <p className="mt-0.5 text-xs leading-5 text-text-secondary">ตั้งงบเพื่อรู้ว่าเดือนนี้ยังใช้ได้อีกเท่าไร</p>
         </div>
-      ) : null}
+      ) : (
+        <p className="mb-2 text-xs text-text-secondary">
+          รายรับที่บันทึกไว้ตอนนี้: <span className="font-bold text-foreground">{formatTHB(savedIncomeSatang)}</span>
+        </p>
+      )}
       <input type="hidden" name="month" value={month} />
       <label className="space-y-1 text-sm">
         <span className="font-medium">รายรับต่อเดือน (คาดการณ์)</span>
         <input
           name="income"
           inputMode="decimal"
+          // Pre-fills with the saved value on first mount (and whenever
+          // the selected month changes -- see the `key` at the call site)
+          // so this field never looks like an unrelated blank draft. It is
+          // intentionally uncontrolled after that: what the user types is
+          // just a draft until submitted, and the "รายรับที่บันทึกไว้ตอนนี้"
+          // line above always reflects the true saved value on every
+          // render, independent of this field's in-progress draft text.
+          defaultValue={hasBudget ? String(savedIncomeSatang / 100) : undefined}
           className="min-h-11 w-full rounded-[16px] border border-border px-3"
           placeholder="30000"
           aria-label="รายรับต่อเดือน"
@@ -249,7 +269,12 @@ export function BudgetClient({
         </div>
       ) : null}
 
-      <IncomeForm month={selectedMonth} hasBudget={summary.hasBudget} />
+      <IncomeForm
+        key={selectedMonth}
+        month={selectedMonth}
+        hasBudget={summary.hasBudget}
+        savedIncomeSatang={summary.expectedIncomeSatang}
+      />
 
       {canCopyPreviousMonth ? (
         <CopyPreviousMonthForm
@@ -289,6 +314,11 @@ export function BudgetClient({
         </dl>
         {summary.overspentTotalSatang > 0 ? (
           <p className="mt-3 text-xs font-bold text-overdue">ยอดเกินงบรวม {formatTHB(summary.overspentTotalSatang)}</p>
+        ) : null}
+        {summary.unbudgetedSpentTotalSatang > 0 ? (
+          <p className="mt-2 text-xs text-text-secondary">
+            ค่าใช้จ่ายในหมวดที่ยังไม่ได้ตั้งงบ {formatTHB(summary.unbudgetedSpentTotalSatang)}
+          </p>
         ) : null}
         {summary.uncategorizedSpentSatang > 0 ? (
           <p className="mt-2 text-xs text-text-secondary">

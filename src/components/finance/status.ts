@@ -37,7 +37,7 @@ export const financialStatusMeta = {
     icon: TrendingDown,
   },
   no_budget: {
-    label: "ยังไม่ตั้งงบ",
+    label: "ยังไม่ได้ตั้งงบ",
     cue: "ไม่มีงบ",
     className: "border-border bg-muted text-text-secondary",
     icon: CircleSlash,
@@ -71,7 +71,8 @@ export const financialStatusMeta = {
  * Canonical budget status for UI display, delegating to the budget domain
  * layer's `statusForCategory` (src/lib/finance/budget-calculations.ts) --
  * the single source of truth for thresholds (80% near-limit, 100% overspent
- * boundary, zero-budget-with-spending is always "overspent"). No threshold
+ * boundary; a category with no positive budget is always "no_budget",
+ * regardless of spending -- see that function's doc comment). No threshold
  * logic is duplicated here. Note the argument order is flipped relative to
  * `statusForCategory` to match this module's existing (spent, budget) call
  * sites.

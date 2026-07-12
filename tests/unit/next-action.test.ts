@@ -150,6 +150,52 @@ describe("determineNextAction — single highest-priority action", () => {
     expect(action.tone).toBe("overdue");
   });
 
+  it("surfaces an unbudgeted-spending category when there is no real overspending", () => {
+    const action = determineNextAction(
+      {
+        debts: [],
+        hasBudget: true,
+        unbudgetedCategoryLabel: "อื่น ๆ",
+        hasAnyTransaction: true,
+      },
+      TODAY,
+    );
+    expect(action.title).toBe('หมวด "อื่น ๆ" ยังไม่ได้ตั้งงบ');
+    expect(action.title).not.toContain("เกินงบ");
+    expect(action.action).toBe("ตั้งงบหมวดนี้");
+    expect(action.actionHref).toBe("/budget");
+  });
+
+  it("prioritizes a real overspent category above an unbudgeted-spending category", () => {
+    const action = determineNextAction(
+      {
+        debts: [],
+        hasBudget: true,
+        overspentCategoryLabel: "อาหาร",
+        unbudgetedCategoryLabel: "อื่น ๆ",
+        hasAnyTransaction: true,
+      },
+      TODAY,
+    );
+    expect(action.title).toContain("อาหาร");
+    expect(action.title).toContain("เกินงบ");
+  });
+
+  it("prioritizes an unbudgeted-spending category above a near-limit category", () => {
+    const action = determineNextAction(
+      {
+        debts: [],
+        hasBudget: true,
+        unbudgetedCategoryLabel: "อื่น ๆ",
+        nearLimitCategoryLabel: "เดินทาง",
+        hasAnyTransaction: true,
+      },
+      TODAY,
+    );
+    expect(action.title).toContain("อื่น ๆ");
+    expect(action.title).not.toContain("เดินทาง");
+  });
+
   it("surfaces a near-limit category only when nothing is overspent", () => {
     const action = determineNextAction(
       {
