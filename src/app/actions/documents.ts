@@ -21,6 +21,12 @@ import { processAndExtractDocument } from "@/lib/ai/extract-document";
 import { safeDocumentExtractionMessage } from "@/lib/ai/extraction-errors";
 import { parseOptionalMoney, parseRequiredMoney } from "@/lib/finance/money-guards";
 import { DEBT_ERROR_DUE_DATE_INVALID_TH, isValidDueDate, parseInterestRateAnnual } from "@/lib/finance/debt-guards";
+import {
+  bangkokDateTimeLocalToInstant,
+  isValidDateKey,
+  parseWallClockComponents,
+  TRANSACTION_OCCURRED_AT_REQUIRED_TH,
+} from "@/lib/finance/date";
 import { getMockState } from "@/lib/data/mock-store";
 import { logSafeError } from "@/lib/observability/safe-diagnostics";
 
@@ -246,8 +252,11 @@ export async function confirmDocumentAction(
       const socialSecurity = formData.get("socialSecurity") as string;
       const paymentDate = formData.get("paymentDate") as string;
 
-      if (!netIncome || !paymentDate) {
-        return { ok: false, message: "ต้องระบุยอดเงินสุทธิและวันที่จ่ายเงิน" };
+      if (!netIncome) {
+        return { ok: false, message: "ต้องระบุยอดเงินสุทธิ" };
+      }
+      if (!isValidDateKey(paymentDate)) {
+        return { ok: false, message: TRANSACTION_OCCURRED_AT_REQUIRED_TH };
       }
 
       // Re-validate and parse server-side in integer satang, independently
@@ -286,8 +295,11 @@ export async function confirmDocumentAction(
       const paymentMethod = formData.get("paymentMethod") as string;
       const itemsJson = formData.get("items") as string;
 
-      if (!totalPaid || !occurredAt) {
-        return { ok: false, message: "ต้องระบุยอดเงินจ่ายจริงและวันที่ทำรายการ" };
+      if (!totalPaid) {
+        return { ok: false, message: "ต้องระบุยอดเงินจ่ายจริง" };
+      }
+      if (!parseWallClockComponents(occurredAt || "")) {
+        return { ok: false, message: TRANSACTION_OCCURRED_AT_REQUIRED_TH };
       }
 
       const totalPaidResult = parseRequiredMoney(totalPaid, "nonnegative");
@@ -298,7 +310,7 @@ export async function confirmDocumentAction(
       const transaction = await createTransaction(user.id, {
         type: "expense",
         amountSatang: totalPaidSatang,
-        occurredAt: occurredAt.includes("T") ? occurredAt : `${occurredAt}T12:00:00+07:00`,
+        occurredAt: bangkokDateTimeLocalToInstant(occurredAt),
         merchant: merchant || "ร้านค้าไม่ระบุชื่อ",
         category: documentType === "delivery_receipt" ? "เดลิเวอรี" : "อื่น ๆ",
         paymentMethod,
@@ -347,8 +359,8 @@ export async function confirmDocumentAction(
       const txType = (formData.get("type") as "transfer" | "expense" | "debt_payment") || "transfer";
       const debtId = formData.get("debtId") as string;
 
-      if (!amount || !occurredAt) {
-        return { ok: false, message: "ต้องระบุจำนวนเงินและวันที่ทำรายการ" };
+      if (!amount) {
+        return { ok: false, message: "ต้องระบุจำนวนเงิน" };
       }
 
       // A debt payment must be strictly positive; other transfer/expense
@@ -364,11 +376,14 @@ export async function confirmDocumentAction(
         // Use addDebtPayment which automatically handles transactions & debt_payments tables and recalculates cycles
         await addDebtPayment(user.id, debtId, amountSatang);
       } else {
+        if (!parseWallClockComponents(occurredAt || "")) {
+          return { ok: false, message: TRANSACTION_OCCURRED_AT_REQUIRED_TH };
+        }
         // Create normal transfer or expense transaction
         await createTransaction(user.id, {
           type: txType,
           amountSatang,
-          occurredAt: occurredAt.includes("T") ? occurredAt : `${occurredAt}T12:00:00+07:00`,
+          occurredAt: bangkokDateTimeLocalToInstant(occurredAt),
           merchant: destinationName || "ผู้รับโอนไม่ทราบชื่อ",
           category: txType === "transfer" ? "โอนเงิน" : "อื่น ๆ",
           note: `เลขอ้างอิง: ${referenceNumber || "-"}\nธนาคาร: ${bank || "-"}\nโอนจาก: xxxx-${accountLastFour || "-"}\nไปยัง: xxxx-${destinationAccountLastFour || "-"}`,
@@ -464,8 +479,11 @@ export async function confirmDocumentAction(
       const txType = (formData.get("type") as Transaction["type"]) || "expense";
       const paymentMethod = formData.get("paymentMethod") as string;
 
-      if (!totalPaid || !occurredAt) {
-        return { ok: false, message: "ต้องระบุยอดเงินและวันที่ทำรายการ" };
+      if (!totalPaid) {
+        return { ok: false, message: "ต้องระบุยอดเงิน" };
+      }
+      if (!parseWallClockComponents(occurredAt || "")) {
+        return { ok: false, message: TRANSACTION_OCCURRED_AT_REQUIRED_TH };
       }
 
       const totalPaidResult = parseRequiredMoney(totalPaid, txType === "debt_payment" ? "positive" : "nonnegative");
@@ -474,7 +492,7 @@ export async function confirmDocumentAction(
       await createTransaction(user.id, {
         type: txType,
         amountSatang: totalPaidResult.satang!,
-        occurredAt: occurredAt.includes("T") ? occurredAt : `${occurredAt}T12:00:00+07:00`,
+        occurredAt: bangkokDateTimeLocalToInstant(occurredAt),
         merchant: merchant || "ไม่ระบุชื่อรายการ",
         category: "อื่น ๆ",
         paymentMethod,

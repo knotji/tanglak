@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
@@ -19,9 +19,11 @@ import { parseOptionalMoney, parseRequiredMoney } from "@/lib/finance/money-guar
 import {
   getBangkokTodayString,
   getBangkokNowDateTimeLocalString,
+  isValidDateKey,
   parseWallClockComponents,
   formatThaiDateTimeLabel,
   isLikelyInferredNoonTimestamp,
+  TRANSACTION_OCCURRED_AT_REQUIRED_TH,
 } from "@/lib/finance/date";
 import {
   AlertTriangle,
@@ -100,6 +102,28 @@ function validateReviewMoneyFields(
 
   const txType = String(fd.get("type") || "");
   return requireField("totalPaid", txType === "debt_payment" ? "positive" : "nonnegative");
+}
+
+const OCCURRED_AT_UNCLEAR_FIELD = "transaction.occurredAt";
+const OCCURRED_AT_NEEDS_REVIEW_TITLE_TH = "อ่านวันที่และเวลาไม่ชัด";
+const OCCURRED_AT_NEEDS_REVIEW_BODY_TH = "กรุณาตรวจสอบหรือกรอกข้อมูลก่อนบันทึก";
+
+/**
+ * Final-confirmation validation for the transaction date/time field,
+ * mirroring the server-side check in confirmDocumentAction. debt_statement
+ * has no transaction occurredAt (it uses a debt due date instead); every
+ * other document type must have a real, parseable date/time before submit.
+ * This never fabricates a value -- it only reports whether the field the
+ * user can see is valid.
+ */
+function validateReviewOccurredAt(docType: string, fd: FormData): string | null {
+  if (docType === "debt_statement") return null;
+  if (docType === "salary_slip") {
+    const paymentDate = String(fd.get("paymentDate") || "");
+    return isValidDateKey(paymentDate) ? null : TRANSACTION_OCCURRED_AT_REQUIRED_TH;
+  }
+  const occurredAt = String(fd.get("occurredAt") || "");
+  return parseWallClockComponents(occurredAt) ? null : TRANSACTION_OCCURRED_AT_REQUIRED_TH;
 }
 
 type TimestampDisplayState = "extracted" | "inferred" | "missing" | "invalid";
@@ -182,12 +206,15 @@ export function ReviewForm({
     normalizedPreview?.documentType || doc.documentType || "other"
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [moneyError, setMoneyError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
   const [manualMode, setManualMode] = useState(false);
   const isFailed = doc.status === "failed" || doc.status === "failed_retryable" || doc.status === "failed_permanent";
-  const canRetry = doc.status === "failed" || doc.status === "failed_retryable";
+  // A document that is usable but still has a review-required field (e.g.
+  // an unclear transaction date) stays retryable, same as a failed one --
+  // reprocessing reuses this same document row and storage object.
+  const canRetry = doc.status === "failed" || doc.status === "failed_retryable" || doc.status === "needs_review";
   const failedMessage = doc.errorMessage && !/Zod|expected|received|[\[\{]|Gemini|quota|stack|Error/i.test(doc.errorMessage)
     ? doc.errorMessage
     : DOCUMENT_EXTRACTION_FALLBACK_MESSAGE;
@@ -200,6 +227,24 @@ export function ReviewForm({
   const initialDebt = extData.debt || {};
   const occurredAtIsFromDocument = Boolean(initialTx.occurredAt);
   const occurredAtWasInferred = isLikelyInferredNoonTimestamp(initialTx.occurredAt);
+  // Recorded by normalizeParsedTimestamp (src/lib/ai/gemini.ts) whenever the
+  // provider's reported date/time couldn't be confidently read. When true,
+  // the date/time inputs below must start blank rather than defaulting to
+  // "now" -- prefilling a plausible-looking current time would hide the
+  // gap and risk silently persisting a fabricated timestamp.
+  const occurredAtNeedsReview = Boolean(extraction?.unclearFields?.includes(OCCURRED_AT_UNCLEAR_FIELD));
+  // The occurredAt issue gets its own dedicated banner (below) with plain
+  // Thai copy, not the raw dotted field-path technical wording -- exclude
+  // it from the generic unclear-fields list so it isn't shown twice or as
+  // "transaction.occurredAt".
+  const otherUnclearFields = (extraction?.unclearFields ?? []).filter((f) => f !== OCCURRED_AT_UNCLEAR_FIELD);
+  const dateFieldRef = useRef<HTMLInputElement>(null);
+  // Red border for a missing or invalid datetime-local value, so the field
+  // is clearly highlighted without relying on the helper text alone.
+  const dateFieldBorderClass = (value: string) => {
+    const state = getTimestampDisplayState(value, occurredAtIsFromDocument, occurredAtWasInferred);
+    return state === "missing" || state === "invalid" ? "border-red-400" : "border-border";
+  };
 
   // Form Fields State
   // 1. Salary slip fields
@@ -214,13 +259,13 @@ export function ReviewForm({
     initialSalary.socialSecurity?.toString() || "0"
   );
   const [paymentDate, setPaymentDate] = useState(
-    initialTx.occurredAt?.slice(0, 10) || getBangkokTodayString()
+    initialTx.occurredAt?.slice(0, 10) || (occurredAtNeedsReview ? "" : getBangkokTodayString())
   );
 
   // 2. Receipt / Delivery receipt fields
   const [merchant, setMerchant] = useState(initialTx.merchant || "");
   const [occurredAt, setOccurredAt] = useState(
-    initialTx.occurredAt?.slice(0, 16) || getBangkokNowDateTimeLocalString()
+    initialTx.occurredAt?.slice(0, 16) || (occurredAtNeedsReview ? "" : getBangkokNowDateTimeLocalString())
   );
   const [subtotal, setSubtotal] = useState(initialReceipt.subtotal?.toString() || "");
   const [deliveryFee, setDeliveryFee] = useState(initialReceipt.deliveryFee?.toString() || "0");
@@ -237,7 +282,7 @@ export function ReviewForm({
   // 3. Transfer slip fields
   const [transferAmount, setTransferAmount] = useState(initialTx.amount?.toString() || "");
   const [transferDate, setTransferDate] = useState(
-    initialTx.occurredAt?.slice(0, 16) || getBangkokNowDateTimeLocalString()
+    initialTx.occurredAt?.slice(0, 16) || (occurredAtNeedsReview ? "" : getBangkokNowDateTimeLocalString())
   );
   const [destinationName, setDestinationName] = useState(initialTx.merchant || "");
   const [refNumber, setRefNumber] = useState(initialTx.referenceNumber || "");
@@ -347,10 +392,22 @@ export function ReviewForm({
     // — this is only for immediate, correctable feedback).
     const clientMoneyError = validateReviewMoneyFields(docType, fd, items);
     if (clientMoneyError) {
-      setMoneyError(clientMoneyError);
+      setFormError(clientMoneyError);
       return;
     }
-    setMoneyError(null);
+
+    // Final confirmation requires a real, parseable transaction date/time --
+    // never fabricated. On failure, move focus to the field so the user can
+    // see and fix it immediately, matching the required Thai copy.
+    const clientOccurredAtError = validateReviewOccurredAt(docType, fd);
+    if (clientOccurredAtError) {
+      setFormError(clientOccurredAtError);
+      dateFieldRef.current?.focus();
+      dateFieldRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+
+    setFormError(null);
     setIsSubmitting(true);
 
     const res = await confirmDocumentAction(doc.id, fd);
@@ -499,7 +556,17 @@ export function ReviewForm({
                 </div>
               )}
 
-              {extraction && extraction.unclearFields.length > 0 && (
+              {occurredAtNeedsReview && (
+                <div role="alert" className="rounded-[16px] border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 flex gap-2">
+                  <AlertTriangle className="text-amber-600 shrink-0" size={18} />
+                  <div>
+                    <div className="font-bold">{OCCURRED_AT_NEEDS_REVIEW_TITLE_TH}</div>
+                    <p className="mt-1">{OCCURRED_AT_NEEDS_REVIEW_BODY_TH}</p>
+                  </div>
+                </div>
+              )}
+
+              {extraction && otherUnclearFields.length > 0 && (
                 <div className="rounded-[16px] border border-red-150 bg-red-50/70 p-4 text-sm text-red-800 flex gap-2">
                   <HelpCircle className="text-red-500 shrink-0" size={18} />
                   <div>
@@ -507,7 +574,7 @@ export function ReviewForm({
                     <p className="mt-1">
                       ฟิลด์ที่ไม่ชัดเจน:{" "}
                       <span className="font-mono bg-red-100 px-1 py-0.5 rounded">
-                        {extraction.unclearFields.join(", ")}
+                        {otherUnclearFields.join(", ")}
                       </span>
                     </p>
                   </div>
@@ -577,6 +644,7 @@ export function ReviewForm({
                 onSubmit={handleConfirmSubmit}
                 method="POST"
                 action="javascript:void(0);"
+                noValidate
                 className="rounded-[16px] border border-border bg-surface p-5 shadow-sm flex flex-col gap-4"
               >
                 {/* Document Type Selector */}
@@ -637,14 +705,23 @@ export function ReviewForm({
                           วันที่จ่ายเงิน
                         </label>
                         <input
+                          ref={docType === "salary_slip" ? dateFieldRef : undefined}
                           id={reviewFieldId("paymentDate")}
                           type="date"
                           name="paymentDate"
-                          className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
+                          className={`w-full rounded-[12px] border bg-white p-3 text-sm ${
+                            occurredAtNeedsReview && !paymentDate ? "border-red-400" : "border-border"
+                          }`}
                           value={paymentDate}
                           onChange={(e) => setPaymentDate(e.target.value)}
+                          aria-describedby={occurredAtNeedsReview ? reviewFieldId("paymentDateHelp") : undefined}
                           required
                         />
+                        {occurredAtNeedsReview && !paymentDate ? (
+                          <p id={reviewFieldId("paymentDateHelp")} className="mt-1 text-xs font-semibold text-red-600">
+                            กรุณาระบุวันที่จ่ายเงิน
+                          </p>
+                        ) : null}
                       </div>
                     </div>
 
@@ -739,10 +816,11 @@ export function ReviewForm({
                           วันและเวลาทำรายการ
                         </label>
                         <input
+                          ref={dateFieldRef}
                           id={reviewFieldId("occurredAt")}
                           type="datetime-local"
                           name="occurredAt"
-                          className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
+                          className={`w-full rounded-[12px] border bg-white p-3 text-sm ${dateFieldBorderClass(occurredAt)}`}
                           value={occurredAt}
                           onChange={(e) => setOccurredAt(e.target.value)}
                           aria-describedby={reviewFieldId("occurredAtHelp")}
@@ -930,10 +1008,11 @@ export function ReviewForm({
                           วันและเวลาโอน
                         </label>
                         <input
+                          ref={dateFieldRef}
                           id={reviewFieldId("occurredAt")}
                           type="datetime-local"
                           name="occurredAt"
-                          className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
+                          className={`w-full rounded-[12px] border bg-white p-3 text-sm ${dateFieldBorderClass(transferDate)}`}
                           value={transferDate}
                           onChange={(e) => setTransferDate(e.target.value)}
                           aria-describedby={reviewFieldId("occurredAtHelp")}
@@ -1364,10 +1443,11 @@ export function ReviewForm({
                           วันและเวลาที่ทำรายการ
                         </label>
                         <input
+                          ref={dateFieldRef}
                           id={reviewFieldId("occurredAt")}
                           type="datetime-local"
                           name="occurredAt"
-                          className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
+                          className={`w-full rounded-[12px] border bg-white p-3 text-sm ${dateFieldBorderClass(occurredAt)}`}
                           value={occurredAt}
                           onChange={(e) => setOccurredAt(e.target.value)}
                           aria-describedby={reviewFieldId("occurredAtHelp")}
@@ -1417,9 +1497,9 @@ export function ReviewForm({
                   </div>
                 )}
 
-                {moneyError ? (
+                {formError ? (
                   <p role="alert" className="rounded-[12px] border border-red-150 bg-red-50/70 p-3 text-sm font-semibold text-red-700">
-                    {moneyError}
+                    {formError}
                   </p>
                 ) : null}
 

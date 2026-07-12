@@ -213,6 +213,35 @@ export function formatThaiDateTimeLabel(value: string): string | null {
 }
 
 /**
+ * Final transaction-confirmation validation copy, shared by the review
+ * server action and the review UI's client-side pre-check. Occurred-at is
+ * required at this boundary (unlike draft extraction) and is never
+ * fabricated -- no current time, upload time, or guessed date. Used for
+ * both "missing" and "invalid" cases, per product's single required Thai
+ * message.
+ */
+export const TRANSACTION_OCCURRED_AT_REQUIRED_TH = "กรุณาระบุวันที่และเวลาของรายการ";
+
+/**
+ * Converts a validated `datetime-local` wall-clock value (`YYYY-MM-DDTHH:mm`,
+ * as produced by `parseWallClockComponents`) into a Bangkok-offset ISO
+ * instant (`YYYY-MM-DDTHH:mm:00+07:00`), matching the fixed-offset
+ * convention already used by `bangkokDateStartInstant`. This reads the exact
+ * digits the user saw and entered -- it never round-trips through `new
+ * Date()` (which would reinterpret an offset-less string using the server's
+ * own timezone and can silently shift the instant) and never substitutes
+ * any other date/time.
+ */
+export function bangkokDateTimeLocalToInstant(value: string): string {
+  const parts = parseWallClockComponents(value);
+  if (!parts) {
+    throw new Error("Invalid date");
+  }
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}T${pad(parts.hour)}:${pad(parts.minute)}:00+07:00`;
+}
+
+/**
  * Heuristic for whether an already-normalized ISO `occurredAt` is likely the
  * noon placeholder `parseDocumentTimestamp` (see `src/lib/ai/timestamp.ts`)
  * emits when a source document has a date but no time. That parser is
