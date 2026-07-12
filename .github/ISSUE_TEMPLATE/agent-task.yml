@@ -1,0 +1,120 @@
+name: Agent Task
+description: Ask an agent (Claude, Codex, or Gemini) to implement a change. Fillable from GitHub Mobile.
+title: "[Task] "
+labels: ["agent-task"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: One or two sentences on what should be true after this task is done.
+    validations:
+      required: true
+
+  - type: textarea
+    id: user-problem
+    attributes:
+      label: User problem
+      description: What is broken or missing for the person using the app? Plain language is fine.
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What should change. Be as specific as you can (pages, actions, behavior).
+    validations:
+      required: true
+
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: Anything nearby that should NOT change, even if it looks related.
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: A checklist of concrete, testable statements that must all be true for this task to be done.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence or screenshots
+      description: Attach a screenshot, screen recording, or paste an error message showing the current (wrong) behavior, if applicable.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: financial-risk
+    attributes:
+      label: Financial / data risk
+      description: Does this touch transactions, debts, payments, or document extraction?
+      options:
+        - "No — unrelated to money or user data"
+        - "Yes — read-only (display/reporting)"
+        - "Yes — writes financial data (see docs/agent/FINANCIAL_INVARIANTS.md)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: migration-allowed
+    attributes:
+      label: Migration allowed
+      description: Is the agent authorized to add a new Supabase migration for this task?
+      options:
+        - "No"
+        - "Yes"
+    validations:
+      required: true
+
+  - type: textarea
+    id: required-tests
+    attributes:
+      label: Required tests
+      description: Specific test cases or scenarios that must be covered (in addition to the standard suite in AGENTS.md).
+    validations:
+      required: false
+
+  - type: dropdown
+    id: suggested-agent
+    attributes:
+      label: Suggested agent
+      options:
+        - Unspecified
+        - Claude
+        - Codex
+        - Gemini
+    validations:
+      required: false
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - Low
+        - Normal
+        - High
+    validations:
+      required: false
+
+  - type: dropdown
+    id: production-smoke-test
+    attributes:
+      label: Production smoke-test requirement
+      description: Will the owner need to manually verify this in production after merge (e.g. against real data)?
+      options:
+        - "No"
+        - "Yes"
+    validations:
+      required: true
