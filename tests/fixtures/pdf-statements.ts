@@ -238,3 +238,55 @@ export async function buildPasswordProtectedPdf(): Promise<Buffer> {
     },
   );
 }
+
+/**
+ * Builds a custom length statement PDF
+ */
+export async function buildCustomStatementPdf(rowCount: number, year = 2569, startBase = 15000): Promise<Buffer> {
+  const rows: FixtureRow[] = [];
+  let balance = 5000000; // satang, 50,000.00 THB opening
+
+  for (let i = 1; i <= rowCount; i++) {
+    const day = String(1 + (i % 27)).padStart(2, "0");
+    const isCredit = i % 4 === 0;
+    const amountSatang = startBase + i * 1000;
+    if (isCredit) balance += amountSatang;
+    else balance -= amountSatang;
+
+    const description = `MERCHANT ${String(i).padStart(3, "0")} BKK`;
+
+    rows.push({
+      date: `${day}/07/${year}`,
+      description,
+      debit: isCredit ? undefined : (amountSatang / 100).toFixed(2),
+      credit: isCredit ? (amountSatang / 100).toFixed(2) : undefined,
+      balance: (balance / 100).toFixed(2),
+    });
+  }
+
+  return renderPdf((doc) => {
+    doc.fontSize(12).text("KBank Statement", { continued: false });
+    doc.fontSize(9).text("Account Name: SOMCHAI JAIDEE");
+    doc.text("Account No: xxxx-x-x1234-x");
+    doc.text(`Statement Period: 01/07/${year} - 31/07/${year}`);
+    doc.text("Opening Balance: 50,000.00");
+    doc.moveDown(0.5);
+
+    let rowsOnPage = 0;
+    const rowsPerPage = 11;
+
+    doc.font("Courier").fontSize(8).text(HEADER_LINE);
+    for (let i = 0; i < rows.length; i++) {
+      if (rowsOnPage >= rowsPerPage) {
+        doc.addPage();
+        doc.font("Courier").fontSize(8).text(HEADER_LINE);
+        rowsOnPage = 0;
+      }
+      doc.text(formatRow(rows[i]));
+      rowsOnPage++;
+    }
+
+    doc.moveDown(0.5);
+    doc.text(`Closing Balance: ${(balance / 100).toFixed(2)}`);
+  });
+}

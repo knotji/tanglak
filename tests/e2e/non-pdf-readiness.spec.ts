@@ -53,7 +53,7 @@ test("settings account management can create edit deactivate and block unsafe de
   await page.getByRole("button", { name: "แก้ไข" }).first().click();
   await page.getByLabel("ชื่อบัญชี").fill("บัญชีหลัก");
   await page.getByRole("button", { name: "บันทึกการแก้ไข" }).click();
-  await expect(page.getByText("บัญชีหลัก")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "บัญชีหลัก" })).toBeVisible();
 
   await page.goto("/transactions");
   await page.getByRole("button", { name: "+ เพิ่มรายการ" }).click();

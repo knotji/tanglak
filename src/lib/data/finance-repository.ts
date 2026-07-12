@@ -687,7 +687,7 @@ export async function listRecentConfirmedTransactions(userId: string): Promise<T
   if (isMockAuthEnabled()) {
     return getMockState().transactions
       .filter((tx) => tx.userId === userId && tx.status === "confirmed")
-      .slice(0, 100);
+      .slice(0, 1000);
   }
 
   const supabase = await createSupabaseServerClient();
@@ -1014,6 +1014,20 @@ export async function importReviewedRows(
   let mergedCount = 0;
   let skippedCount = 0;
 
+  const sentRowIds = new Set(rowDecisions.map(d => d.rowId));
+  const stagingRowsBefore = await listImportRows(userId, batchId);
+  for (const r of stagingRowsBefore) {
+    if (!sentRowIds.has(r.id)) {
+      if (r.importDecision !== "unresolved") {
+        await updateImportRow(userId, r.id, {
+          reviewStatus: "skipped",
+          importDecision: "skip",
+        });
+        skippedCount++;
+      }
+    }
+  }
+
   for (const dec of rowDecisions) {
     if (dec.decision === "import") {
       const type = dec.transactionType || "expense";
@@ -1103,8 +1117,22 @@ export async function importReviewedRows(
   // Update batch progress
   const batch = await getImportBatch(userId, batchId);
   if (batch) {
-    const newImported = (batch.importedRows || 0) + importedCount;
-    const newSkipped = (batch.skippedRows || 0) + skippedCount;
+    let newImported = (batch.importedRows || 0) + importedCount;
+    let newSkipped = (batch.skippedRows || 0) + skippedCount;
+
+    if (batch.status === "partially_imported") {
+      const stagingRows = await listImportRows(userId, batchId);
+      for (const r of stagingRows) {
+        if (r.importDecision === "unresolved") {
+          await updateImportRow(userId, r.id, {
+            reviewStatus: "skipped",
+            importDecision: "skip",
+          });
+          newSkipped++;
+        }
+      }
+    }
+
     // status is 'completed' if all staging rows are resolved, else 'partially_imported'
     const stagingRows = await listImportRows(userId, batchId);
     const unresolvedCount = stagingRows.filter((r) => r.importDecision === "unresolved").length;
