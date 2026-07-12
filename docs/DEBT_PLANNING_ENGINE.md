@@ -48,6 +48,34 @@ document-review confirmation path that can create a `debt_payment`
 transaction. A transaction that isn't a debt payment is unaffected — expense/
 income/transfer/refund never require a `debt_id`.
 
+**Import review follows the same invariant.** `commitImportRow` in
+`src/lib/data/finance-repository.ts` now calls `assertDebtPaymentLinked`
+before delegating to the mock store or the `import_commit_row` RPC, so a
+review decision that sets `transactionType: "debt_payment"` with no
+`debtId` is rejected with `กรุณาเลือกหนี้ที่เกี่ยวข้องกับรายการชำระนี้` and
+the row is left unresolved (retryable, values preserved) rather than
+silently confirmed. `ReviewBoardClient.tsx` blocks the "confirm" submit
+client-side the same way, expanding the offending row instead of sending
+the batch. The `public.import_commit_row` Postgres function
+(`202607110010_require_import_debt_payment_link.sql`) enforces the same
+rule as the ultimate boundary: `p_type = 'debt_payment' and p_debt_id is
+null` raises before any row is written, in addition to its existing
+same-user debt-ownership check for a non-null `p_debt_id`. **No path may
+silently create a debt to satisfy this invariant** — a row that fails this
+check must be corrected by the user (pick an existing debt or change the
+transaction type), never auto-resolved.
+
+**Legacy unlinked rows.** This invariant is enforced going forward only; no
+migration deletes, updates, or relinks a pre-existing `debt_payment`
+transaction with a null `debt_id`. Such rows may continue to affect
+overview/cash-flow totals under existing semantics (they still count as
+`debtPaymentSatang` cash flow), but — consistent with the recalculation
+rule above — they have never counted and still do not count toward any
+debt's `amount_paid_this_cycle_satang`, since that has always required a
+matching `debt_id`. A user may edit/link such a row later only through
+whatever explicit transaction-edit UI already exists; nothing links it
+automatically.
+
 Debt payments still count as `debtPaymentSatang` in monthly cash-flow totals. They are not living expenses and should not also be counted as category spend unless a feature intentionally models finance charges or fees as separate expense transactions.
 
 Minimum remaining is `max(0, minimum_payment_satang - amount_paid_this_cycle_satang)`. Full-cycle remaining is `max(0, amount_due_satang - amount_paid_this_cycle_satang)`. Missing minimum or amount-due fields are not treated as paid.
@@ -204,6 +232,29 @@ validated by this migration.
 described above, and adds explicit `revoke`/`grant` statements for it. No
 table row is read or written by this migration.
 
+`202607110010_require_import_debt_payment_link.sql` is additive: replaces
+`import_commit_row`'s body to reject `p_type = 'debt_payment' and
+p_debt_id is null` before locking or writing any row, closing the F-001 gap
+in `docs/SLIP_DEBT_FINAL_SECURITY_AUDIT.md` where import review could
+confirm an unlinked debt payment. It reapplies the same `security invoker`,
+`search_path`, `revoke all ... from public`, and `grant execute ... to
+authenticated` statements as 007, unchanged — this migration does not widen
+or narrow who may call the function, only what it accepts. `debt_id`
+ownership validation for a non-null value, source/destination account
+ownership validation, and the idempotent already-resolved short-circuit are
+all unchanged. `import_rollback_batch` is not touched by this migration and
+continues to work unmodified. No table row is read, updated, or deleted by
+this migration — existing unlinked `debt_payment` rows from before this
+migration are left exactly as they are (see "Payment Semantics" above).
+
+Deployment order is unchanged in shape, now extended by one step: 006 → 007
+→ 008 → 009 → 010. A database already current through 009 should propose
+only 010. **Live verification required after applying 010**: confirm a
+review decision with `type = debt_payment` and no `debt_id` is rejected
+end-to-end (not just accepted and silently unlinked), and confirm existing
+import/rollback behavior for linked debt payments and non-debt-payment rows
+is unchanged.
+
 No historical migration is edited and no existing row is rewritten. Existing rows with no cycle dates fall back to the current Bangkok month.
 
 ## Test Coverage
@@ -217,7 +268,10 @@ Current focused unit coverage includes:
 - Today-dashboard priority ordering: overdue > due-today > due-soon > unmet-minimum, with the required due-today/due-soon copy.
 - Debt-statement field persistence, and rejection of an unconfirmed create/update choice during document review.
 - Cross-user debt and account ID rejection.
-- Migration coverage for columns, constraints, Bangkok boundaries, and RPC ownership/grant checks (008, 009).
+- Migration coverage for columns, constraints, Bangkok boundaries, and RPC ownership/grant checks (008, 009, 010).
+- Import review rejects an unlinked `debt_payment` decision (missing `debtId`), accepts one linked to an owned debt, rejects one linked to another user's debt, leaves non-debt-payment rows unaffected, never auto-creates a debt, stays idempotent on retry, and rollback remains safe even when the only row in a batch was rejected.
+- A legacy (pre-invariant) unlinked `debt_payment` transaction is left untouched by an unrelated import commit in the same test run.
+- Migration assertions are line-ending agnostic (LF and CRLF both normalize to the same asserted content).
 
 Remaining higher-level coverage to add before release:
 
