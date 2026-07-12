@@ -39,19 +39,38 @@ export default async function HistoryImportSettingsPage() {
           subtitle="ประวัติการนำเข้าไฟล์ข้อมูลการเงินย้อนหลัง (Statements)"
         />
 
-        <div className="flex items-center justify-between">
+        <Link
+          href="/settings"
+          className="text-xs font-semibold text-text-secondary hover:underline"
+        >
+          ← กลับไปหน้าตั้งค่า
+        </Link>
+
+        <div className="flex flex-wrap gap-2">
           <Link
-            href="/settings"
-            className="text-xs font-semibold text-text-secondary hover:underline"
+            href="/upload"
+            className="flex min-h-11 items-center rounded-[16px] bg-primary px-4 text-sm font-bold text-white"
           >
-            ← กลับไปหน้าตั้งค่า
+            อัปโหลดสลิป
           </Link>
+          <Link
+            href="/transactions"
+            className="flex min-h-11 items-center rounded-[16px] border border-border bg-surface px-4 text-sm font-bold text-primary"
+          >
+            เพิ่มรายการเอง
+          </Link>
+        </div>
+
+        <div className="rounded-[16px] border border-border bg-muted p-3">
           <Link
             href="/history-import"
-            className="rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary-dark"
+            className="text-sm font-bold text-text-secondary hover:underline"
           >
-            + นำเข้า Statement ใหม่
+            การนำเข้ารายการแบบเดิม
           </Link>
+          <p className="mt-1 text-xs leading-5 text-text-secondary">
+            เหมาะสำหรับข้อมูลจำนวนมากและต้องตรวจสอบหลายรายการ
+          </p>
         </div>
 
         <div className="flex flex-col gap-3">
