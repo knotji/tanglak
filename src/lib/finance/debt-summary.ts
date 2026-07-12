@@ -31,14 +31,24 @@ function paidWithinCycle(debt: Debt, transactions: Transaction[], month: string)
     ? getDebtCycleWindow(debt)
     : { ...getBangkokMonthRange(month), isFallback: true };
 
+  // Compare as instants (epoch milliseconds), never as raw ISO strings --
+  // two different-but-equivalent timestamp representations of the same
+  // instant (e.g. a "Z" suffix vs an explicit "+07:00" offset) can sort
+  // differently under lexical string comparison even though the underlying
+  // instant is identical or on the correct side of the boundary. See F-007
+  // in docs/SLIP_DEBT_IMPLEMENTATION_FINDINGS.md. Cycle start is inclusive,
+  // cycle end is exclusive, matching window.startInstant/endExclusiveInstant.
+  const startMs = new Date(window.startInstant).getTime();
+  const endExclusiveMs = new Date(window.endExclusiveInstant).getTime();
+
   return transactions
     .filter((transaction) => transaction.debtId === debt.id)
     .filter((transaction) => transaction.status === "confirmed")
     .filter((transaction) => transaction.type === "debt_payment")
-    .filter(
-      (transaction) =>
-        transaction.occurredAt >= window.startInstant && transaction.occurredAt < window.endExclusiveInstant,
-    )
+    .filter((transaction) => {
+      const occurredMs = new Date(transaction.occurredAt).getTime();
+      return occurredMs >= startMs && occurredMs < endExclusiveMs;
+    })
     .reduce((sum, transaction) => sum + transaction.amountSatang, 0);
 }
 

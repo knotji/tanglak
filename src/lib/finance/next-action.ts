@@ -20,10 +20,13 @@ export type NextActionInput = {
 
 /**
  * Picks a single highest-priority action for the Today dashboard, per the
- * priority order: overdue debt > debt due soon > no monthly budget >
+ * priority order: overdue minimum > due today > due within 3 days > minimum
+ * not met (any other due date, including none) > no monthly budget >
  * overspent category > near-limit category > no transactions yet > "on
  * track" fallback. Only ever one action is returned -- callers must not
- * render more than one of these at a time.
+ * render more than one of these at a time. Due-today is a distinct tier
+ * from due-soon (see F-005 in docs/SLIP_DEBT_IMPLEMENTATION_FINDINGS.md) --
+ * it must never render as "due in 0 days" merged into the due-soon bucket.
  */
 export function determineNextAction(input: NextActionInput, today: Date = new Date()): NextAction {
   const overdueDebt = input.debts.find((debt) => isOverdue(debt, today));
@@ -37,26 +40,55 @@ export function determineNextAction(input: NextActionInput, today: Date = new Da
     };
   }
 
-  const dueSoonDebt = input.debts.find((debt) => {
+  const dueTodayDebt = input.debts.find((debt) => {
     if (!debt.dueDate || remainingToMinimum(debt) <= 0) return false;
-    const days = daysUntilDue(debt.dueDate, today);
-    return days >= 0 && days <= 3;
+    return daysUntilDue(debt.dueDate, today) === 0;
   });
-  if (dueSoonDebt) {
-    const days = daysUntilDue(dueSoonDebt.dueDate!, today);
+  if (dueTodayDebt) {
+    const otherUrgentCount = input.debts.filter((debt) => {
+      if (debt.id === dueTodayDebt.id || !debt.dueDate || remainingToMinimum(debt) <= 0) return false;
+      const days = daysUntilDue(debt.dueDate, today);
+      return days >= 0 && days <= 3;
+    }).length;
     return {
-      title: `${dueSoonDebt.name} ครบกำหนดใน ${days} วัน`,
-      body: `ยังขาดขั้นต่ำ ${formatTHB(remainingToMinimum(dueSoonDebt))}`,
+      title: "ครบกำหนดชำระวันนี้",
+      body:
+        `${dueTodayDebt.name} ยังขาดขั้นต่ำ ${formatTHB(remainingToMinimum(dueTodayDebt))}` +
+        (otherUrgentCount > 0 ? ` และมีหนี้ใกล้ครบกำหนดอีก ${otherUrgentCount} รายการ` : ""),
       action: "ดูแผนหนี้",
       actionHref: "/debts",
       tone: "debt",
     };
   }
 
-  // A debt with no due date in the near term but whose minimum this cycle
-  // still hasn't been met -- surfaced below overdue/due-soon debts but
-  // above monthly-budget prompts, since an unmet debt obligation still
-  // outranks budgeting nudges.
+  const dueSoonDebt = input.debts.find((debt) => {
+    if (!debt.dueDate || remainingToMinimum(debt) <= 0) return false;
+    const days = daysUntilDue(debt.dueDate, today);
+    return days >= 1 && days <= 3;
+  });
+  if (dueSoonDebt) {
+    const days = daysUntilDue(dueSoonDebt.dueDate!, today);
+    const otherUrgentCount = input.debts.filter((debt) => {
+      if (debt.id === dueSoonDebt.id || !debt.dueDate || remainingToMinimum(debt) <= 0) return false;
+      const otherDays = daysUntilDue(debt.dueDate, today);
+      return otherDays >= 1 && otherDays <= 3;
+    }).length;
+    return {
+      title: "ใกล้ครบกำหนดชำระ",
+      body:
+        `${dueSoonDebt.name} ครบกำหนดใน ${days} วัน ยังขาดขั้นต่ำ ${formatTHB(remainingToMinimum(dueSoonDebt))}` +
+        (otherUrgentCount > 0 ? ` และมีหนี้ใกล้ครบกำหนดอีก ${otherUrgentCount} รายการ` : ""),
+      action: "ดูแผนหนี้",
+      actionHref: "/debts",
+      tone: "debt",
+    };
+  }
+
+  // A debt with no due date in the near term (including one with no due
+  // date at all) but whose minimum this cycle still hasn't been met --
+  // surfaced below overdue/due-today/due-soon debts but above
+  // monthly-budget prompts, since an unmet debt obligation still outranks
+  // budgeting nudges.
   const unmetMinimumDebt = input.debts.find((debt) => remainingToMinimum(debt) > 0);
   if (unmetMinimumDebt) {
     return {
