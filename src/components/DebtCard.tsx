@@ -100,6 +100,16 @@ export function DebtCard({
           ดูรายละเอียด
         </Link>
       </div>
+      {debt.status === "active" && (
+        <div className="mt-2">
+          <Link
+            href={`/debts/${debt.id}/simulate`}
+            className="flex min-h-11 items-center justify-center rounded-[16px] bg-primary-soft text-sm font-bold text-primary w-full"
+          >
+            ควรจ่ายเท่าไร
+          </Link>
+        </div>
+      )}
       {remaining > 0 ? (
         <p className="mt-3 text-sm font-medium text-debt">
           ยังขาดขั้นต่ำ <MoneyAmount satang={remaining} />

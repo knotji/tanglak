@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { deleteDebtPaymentAction, updateDebtPaymentAction } from "@/app/actions/finance";
@@ -136,6 +137,16 @@ export function DebtPaymentHistoryClient({
         <p className="mt-2 text-sm text-text-secondary">
           ยังขาดขั้นต่ำ {formatTHB(Math.max(0, minimum - debt.amountPaidThisCycleSatang))}
         </p>
+        {debt.status === "active" && (
+          <div className="mt-4">
+            <Link
+              href={`/debts/${debt.id}/simulate`}
+              className="flex min-h-11 items-center justify-center rounded-[16px] bg-primary text-sm font-bold text-white w-full"
+            >
+              ควรจ่ายเท่าไร
+            </Link>
+          </div>
+        )}
       </section>
       {months.length ? (
         <div className="space-y-4">
