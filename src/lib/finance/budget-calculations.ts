@@ -1,4 +1,6 @@
 import type { BudgetCategory, MonthlyBudget, Transaction } from "@/types/domain";
+import { getBangkokMonthOf } from "./date";
+import { resolveCategoryFromLegacyLabel } from "./categories";
 
 /**
  * Status thresholds for a budget category's usage ratio (spent / budgeted).
@@ -44,7 +46,10 @@ function isBudgetRelevant(transaction: Transaction, month: string): boolean {
   // history-import transactions (rollback deletes the row entirely -- see
   // docs/HISTORY_IMPORT_IDEMPOTENCY.md) and anything still draft/needs_review/rejected.
   if (transaction.status !== "confirmed") return false;
-  if (!transaction.occurredAt.startsWith(month)) return false;
+  // Bangkok-local month comparison, not a naive string prefix -- Supabase
+  // returns occurredAt in UTC, so a prefix check silently drops/misfiles
+  // transactions near the Bangkok midnight boundary (see getBangkokMonthOf).
+  if (getBangkokMonthOf(transaction.occurredAt) !== month) return false;
   return (
     transaction.type === "expense" ||
     transaction.type === "debt_payment" ||
@@ -65,7 +70,14 @@ export type CategorySpendTotals = {
  * `category_label`) string equality against `budget_categories.label` --
  * this app does not join transactions to `categories.id` anywhere (see
  * docs/MONTHLY_BUDGET_ENGINE.md for why), so budgeting follows the same
- * free-text convention already used by the overview page.
+ * free-text convention already used by the overview page. Before matching,
+ * a transaction's raw category is normalized through the canonical catalog
+ * (src/lib/finance/categories.ts) when it's a recognized legacy label/alias
+ * (e.g. "อาหาร" -> "อาหารและเครื่องดื่ม") -- otherwise a legacy-labeled
+ * transaction and its canonical-labeled budget category would appear as
+ * two separate, duplicate-looking category rows instead of one.
+ * Genuinely unrecognized labels (not in the catalog at all) pass through
+ * unchanged so no historical data is silently dropped.
  */
 export function calculateCategorySpend(transactions: Transaction[], month: string): CategorySpendTotals {
   const raw: Record<string, number> = {};
@@ -74,11 +86,12 @@ export function calculateCategorySpend(transactions: Transaction[], month: strin
   for (const transaction of transactions) {
     if (!isBudgetRelevant(transaction, month)) continue;
     const delta = transactionSpendDelta(transaction);
-    const label = transaction.category?.trim();
-    if (!label) {
+    const rawLabel = transaction.category?.trim();
+    if (!rawLabel) {
       uncategorizedSatang += delta;
       continue;
     }
+    const label = resolveCategoryFromLegacyLabel(rawLabel)?.label ?? rawLabel;
     raw[label] = (raw[label] ?? 0) + delta;
   }
 
@@ -187,19 +200,41 @@ export function buildBudgetSummary(
 ): BudgetSummary {
   const spend = calculateCategorySpend(transactions, month);
 
-  const categorySummaries: CategorySummary[] = categories.map((category) =>
-    summarizeCategory(category.label, category.amountSatang, spend.byLabel[category.label] ?? 0, category.id),
-  );
+  // Budget category rows are normalized to their canonical catalog label
+  // too (not just transaction categories -- see calculateCategorySpend),
+  // so a legacy-labeled budget row (e.g. "อาหาร", created before the
+  // catalog existed) still matches spend bucketed under the canonical
+  // "อาหารและเครื่องดื่ม" label instead of silently showing 0 spent.
+  const categorySummaries: CategorySummary[] = categories.map((category) => {
+    const canonicalLabel = resolveCategoryFromLegacyLabel(category.label)?.label ?? category.label;
+    return summarizeCategory(canonicalLabel, category.amountSatang, spend.byLabel[canonicalLabel] ?? 0, category.id);
+  });
 
   // Include spend for any category that has transactions but no budget row
   // (a "category without a budget") so totals and the UI can surface it.
-  const budgetedLabels = new Set(categories.map((category) => category.label));
+  const budgetedLabels = new Set(categorySummaries.map((category) => category.label));
   for (const [label, spentSatang] of Object.entries(spend.byLabel)) {
     if (budgetedLabels.has(label)) continue;
     categorySummaries.push(summarizeCategory(label, 0, spentSatang));
   }
 
-  categorySummaries.sort((a, b) => a.label.localeCompare(b.label, "th"));
+  // Priority order for display (Issue 3): categories with spending and a
+  // budget first, then categories with spending but no budget (these must
+  // never be hidden just because no one configured a budget for them
+  // yet), then configured-but-unused categories, alphabetical within each
+  // tier. This is the one canonical order -- every page that lists
+  // categories (Budget, and any future consumer) gets it from here rather
+  // than re-deriving its own.
+  function priority(category: CategorySummary): number {
+    if (category.spentSatang > 0 && category.budgetedSatang > 0) return 0;
+    if (category.spentSatang > 0) return 1;
+    return 2;
+  }
+  categorySummaries.sort((a, b) => {
+    const priorityDelta = priority(a) - priority(b);
+    if (priorityDelta !== 0) return priorityDelta;
+    return a.label.localeCompare(b.label, "th");
+  });
 
   const plannedTotalSatang = categories.reduce((sum, category) => sum + category.amountSatang, 0);
   const categorySpentTotal = categorySummaries.reduce((sum, category) => sum + category.spentSatang, 0);

@@ -51,19 +51,25 @@ function category(overrides: Partial<BudgetCategory> = {}): BudgetCategory {
 
 describe("calculateCategorySpend — transaction inclusion rules", () => {
   it("counts confirmed expense transactions toward their category", () => {
+    // "อาหาร" is a legacy alias of the canonical "food" category
+    // (label "อาหารและเครื่องดื่ม") -- see the normalization test further
+    // down for that behavior specifically; this asserts against the
+    // canonical label since that's what byLabel is now keyed by.
     const spend = calculateCategorySpend(
       [tx({ type: "expense", category: "อาหาร", amountSatang: 1_000 })],
       "2026-07",
     );
-    expect(spend.byLabel["อาหาร"]).toBe(1_000);
+    expect(spend.byLabel["อาหารและเครื่องดื่ม"]).toBe(1_000);
   });
 
   it("counts confirmed debt_payment transactions toward their category", () => {
+    // "หนี้สิน" is a legacy alias of the canonical "debt" category
+    // (label "หนี้และสินเชื่อ").
     const spend = calculateCategorySpend(
       [tx({ type: "debt_payment", category: "หนี้สิน", amountSatang: 2_000 })],
       "2026-07",
     );
-    expect(spend.byLabel["หนี้สิน"]).toBe(2_000);
+    expect(spend.byLabel["หนี้และสินเชื่อ"]).toBe(2_000);
   });
 
   it("excludes income transactions entirely", () => {
@@ -140,8 +146,32 @@ describe("calculateCategorySpend — transaction inclusion rules", () => {
       [tx({ type: "expense", category: "  อาหาร  ", amountSatang: 600 })],
       "2026-07",
     );
-    expect(spend.byLabel["อาหาร"]).toBe(600);
+    expect(spend.byLabel["อาหารและเครื่องดื่ม"]).toBe(600);
     expect(spend.byLabel["  อาหาร  "]).toBeUndefined();
+    expect(spend.byLabel["อาหาร"]).toBeUndefined();
+  });
+
+  it("normalizes a legacy category label to its canonical catalog label, never producing a duplicate row alongside the canonical label", () => {
+    // Regression for Issue 8: a transaction tagged with the legacy alias
+    // "อาหาร" and one tagged with the canonical "อาหารและเครื่องดื่ม" must
+    // land in the exact same bucket, not two separate ones.
+    const spend = calculateCategorySpend(
+      [
+        tx({ id: "a", type: "expense", category: "อาหาร", amountSatang: 1_000 }),
+        tx({ id: "b", type: "expense", category: "อาหารและเครื่องดื่ม", amountSatang: 500 }),
+      ],
+      "2026-07",
+    );
+    expect(spend.byLabel["อาหารและเครื่องดื่ม"]).toBe(1_500);
+    expect(Object.keys(spend.byLabel)).toHaveLength(1);
+  });
+
+  it("passes through a genuinely unrecognized category label unchanged (never silently deletes it)", () => {
+    const spend = calculateCategorySpend(
+      [tx({ type: "expense", category: "หมวดที่แต่งขึ้นเอง", amountSatang: 300 })],
+      "2026-07",
+    );
+    expect(spend.byLabel["หมวดที่แต่งขึ้นเอง"]).toBe(300);
   });
 });
 
@@ -241,7 +271,8 @@ describe("buildBudgetSummary", () => {
       [], // no budget categories created
       [tx({ type: "expense", category: "เดินทาง", amountSatang: 500 })],
     );
-    const uncategorizedBudgetRow = summary.categories.find((c) => c.label === "เดินทาง");
+    // "เดินทาง" normalizes to the canonical "transport" label "การเดินทาง".
+    const uncategorizedBudgetRow = summary.categories.find((c) => c.label === "การเดินทาง");
     expect(uncategorizedBudgetRow).toBeDefined();
     expect(uncategorizedBudgetRow?.budgetCategoryId).toBeUndefined();
     expect(uncategorizedBudgetRow?.budgetedSatang).toBe(0);
@@ -300,8 +331,8 @@ describe("buildBudgetSummary", () => {
         tx({ id: "b", type: "expense", category: "เดินทาง", amountSatang: 700 }), // no budget row at all
       ],
     );
-    const overspentCategory = summary.categories.find((c) => c.label === "อาหาร");
-    const unbudgetedCategory = summary.categories.find((c) => c.label === "เดินทาง");
+    const overspentCategory = summary.categories.find((c) => c.label === "อาหารและเครื่องดื่ม");
+    const unbudgetedCategory = summary.categories.find((c) => c.label === "การเดินทาง");
     expect(overspentCategory?.status).toBe("overspent");
     expect(overspentCategory?.overspentSatang).toBe(500);
     expect(unbudgetedCategory?.status).toBe("no_budget");

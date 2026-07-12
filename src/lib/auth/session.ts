@@ -52,7 +52,15 @@ async function getCurrentUserUncached(): Promise<AppUser | null> {
 export const getCurrentUser = cache(getCurrentUserUncached);
 
 export async function requireUser(): Promise<AppUser> {
-  const user = await getCurrentUserUncached();
+  // Uses the request-memoized getCurrentUser, not getCurrentUserUncached
+  // directly -- the real (non-mock) path calls supabase.auth.getUser(),
+  // which re-validates the JWT against Supabase Auth over the network
+  // (unlike getSession()). requireUser() is called at the top of every
+  // page; without this, any additional call to it (or to getCurrentUser)
+  // elsewhere in the same request would repeat that network round-trip
+  // instead of reusing the one already in flight/resolved for this
+  // request (see Issue 6: "redundant auth/session checks").
+  const user = await getCurrentUser();
   if (!user) redirect("/auth");
   return user;
 }

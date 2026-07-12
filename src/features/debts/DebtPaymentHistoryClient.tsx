@@ -201,7 +201,10 @@ export function DebtPaymentHistoryClient({
             onSaved={() => {
               setEditing(null);
               showToast("บันทึกการชำระแล้ว", "success");
-              router.refresh();
+              // No router.refresh() here -- updateDebtPaymentAction already
+              // calls revalidatePath(`/debts/${debtId}`) etc., and Next.js
+              // automatically refetches once the useActionState-bound form
+              // action resolves.
             }}
           />
         ) : null}

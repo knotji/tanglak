@@ -8,19 +8,9 @@ import { PageHeader } from "@/components/PageHeader";
 import { BudgetStatusBadge } from "@/components/finance/BudgetStatusBadge";
 import { requireUser } from "@/lib/auth/session";
 import { requireCompletedOnboarding } from "@/lib/auth/onboarding";
-import {
-  getMonthlyBudget,
-  listAllTransactions,
-  listBudgetCategories,
-  listDebts,
-} from "@/lib/data/finance-repository";
-import { buildBudgetSummary } from "@/lib/finance/budget-calculations";
-import {
-  calculateMonthlyTotals,
-  calculateCashRemaining,
-  calculateHistoricalInsights,
-  remainingToMinimum,
-} from "@/lib/finance/calculations";
+import { listAllTransactions, listDebts } from "@/lib/data/finance-repository";
+import { getMonthlyFinanceSnapshot } from "@/lib/finance/monthly-snapshot";
+import { calculateCashRemaining, calculateHistoricalInsights, remainingToMinimum } from "@/lib/finance/calculations";
 import { formatTHB } from "@/lib/finance/money";
 import { timePage } from "@/lib/observability/timing";
 import { getBangkokMonthString } from "@/lib/finance/date";
@@ -35,25 +25,31 @@ export default async function OverviewPage() {
   return timePage("/overview", async () => {
     const user = await requireUser();
     const month = getBangkokMonthString();
-    const [, allTransactions, debts, monthlyBudget] = await Promise.all([
+    // listAllTransactions is only for calculateHistoricalInsights (a
+    // genuinely multi-month feature); every other figure on this page comes
+    // from the one canonical month-scoped snapshot (see
+    // src/lib/finance/monthly-snapshot.ts) -- this page used to fetch
+    // listAllTransactions and filter client-side with a naive
+    // `occurredAt.startsWith(month)` check, which silently undercounted
+    // transactions near the Bangkok midnight boundary since Supabase
+    // returns occurredAt in UTC. Independent queries run in parallel.
+    const [, allTransactions, debts, snapshot] = await Promise.all([
       requireCompletedOnboarding(user),
       listAllTransactions(user.id),
       listDebts(user.id),
-      getMonthlyBudget(user.id, month),
+      getMonthlyFinanceSnapshot(user.id, month),
     ]);
-    const transactions = allTransactions.filter((transaction) => transaction.occurredAt.startsWith(month));
-    const totals = calculateMonthlyTotals(transactions, month);
+    const { totals, budgetSummary } = snapshot;
     const insights = calculateHistoricalInsights(allTransactions);
-    const categories = transactions
-      .filter((transaction) => transaction.type === "expense")
-      .reduce<Record<string, number>>((acc, transaction) => {
-        const key = transaction.category ?? "อื่น ๆ";
-        acc[key] = (acc[key] ?? 0) + transaction.amountSatang;
-        return acc;
-      }, {});
+    // Reuses the same canonical, legacy-normalized, deduplicated category
+    // spend already computed for the budget section above -- this page
+    // used to independently re-derive its own category breakdown from raw
+    // transactions (expense-only, no legacy-label normalization), which
+    // could show a different total/category set than Budget and Today for
+    // the same month (Issue 1: "do not let individual pages independently
+    // reimplement filters").
+    const categoriesWithSpend = budgetSummary.categories.filter((category) => category.spentSatang > 0);
 
-    const budgetCategories = monthlyBudget ? await listBudgetCategories(user.id, monthlyBudget.id) : [];
-    const budgetSummary = buildBudgetSummary(month, monthlyBudget, budgetCategories, transactions);
     // Canonical saved monthly income (same source as the Budget page) --
     // never the sum of actual income-type transactions, which is a
     // different concept. See calculateCashRemaining in calculations.ts.
@@ -91,11 +87,18 @@ export default async function OverviewPage() {
               <div className="mt-3 flex items-center justify-between">
                 <div>
                   <p className="text-xs text-text-secondary">ใช้ไป {formatTHB(budgetSummary.spentTotalSatang)} จาก {formatTHB(budgetSummary.plannedTotalSatang)}</p>
-                  <p
-                    className={`tabular mt-1 text-lg font-bold ${budgetSummary.remainingTotalSatang < 0 ? "text-overdue" : "text-foreground"}`}
-                  >
-                    เหลืองบ {formatTHB(budgetSummary.remainingTotalSatang)}
-                  </p>
+                  {budgetSummary.plannedTotalSatang > 0 ? (
+                    // Only meaningful against a real, positive allocation --
+                    // never a negative figure that's really just "no
+                    // category budget was ever set" (Issue 2).
+                    <p
+                      className={`tabular mt-1 text-lg font-bold ${budgetSummary.remainingTotalSatang < 0 ? "text-overdue" : "text-foreground"}`}
+                    >
+                      เหลืองบ {formatTHB(budgetSummary.remainingTotalSatang)}
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-lg font-bold text-text-secondary">ยังไม่ได้ตั้งงบ</p>
+                  )}
                 </div>
                 <BudgetStatusBadge status={budgetSummary.status} />
               </div>
@@ -155,7 +158,7 @@ export default async function OverviewPage() {
           </section>
         )}
 
-        {Object.keys(categories).length ? (
+        {categoriesWithSpend.length ? (
           <section className="rounded-[16px] border border-border bg-surface p-4" aria-label="หมวดที่ใช้จริง">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-bold text-foreground">หมวดที่ใช้จริง</h2>
@@ -164,14 +167,12 @@ export default async function OverviewPage() {
               </Link>
             </div>
             <div className="mt-2 divide-y divide-border/70">
-              {Object.entries(categories)
-                .filter(([, amount]) => amount !== 0)
-                .map(([category, amount]) => (
-                  <div key={category} className="flex items-center justify-between py-3 text-sm">
-                    <span className="font-medium text-text-secondary">{category}</span>
-                    <span className="tabular font-bold">{formatTHB(amount)}</span>
-                  </div>
-                ))}
+              {categoriesWithSpend.map((category) => (
+                <div key={category.label} className="flex items-center justify-between py-3 text-sm">
+                  <span className="font-medium text-text-secondary">{category.label}</span>
+                  <span className="tabular font-bold">{formatTHB(category.spentSatang)}</span>
+                </div>
+              ))}
             </div>
           </section>
         ) : (

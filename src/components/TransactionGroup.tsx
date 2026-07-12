@@ -1,5 +1,5 @@
+import { MoneyAmount } from "@/components/MoneyAmount";
 import { TransactionRow } from "@/components/TransactionRow";
-import { formatTHB } from "@/lib/finance/money";
 import type { Transaction } from "@/types/domain";
 import { getBangkokTodayString } from "@/lib/finance/date";
 
@@ -38,10 +38,9 @@ export function TransactionGroup({
     <section className="rounded-[16px] border border-border bg-surface px-4 py-2">
       <div className="flex items-center justify-between border-b border-border/70 py-3">
         <h2 className="text-sm font-bold">{dayLabel(date)}</h2>
-        <p className={`tabular text-sm font-bold ${total < 0 ? "text-expense" : "text-income"}`}>
-          {total < 0 ? "" : "+"}
-          {formatTHB(total)}
-        </p>
+        {/* Green is not applied merely because the day's net total is
+            positive -- see MoneyFlowRow.tsx for the underlying principle. */}
+        <MoneyAmount satang={total} tone={total < 0 ? "expense" : "neutral"} showSign={total >= 0} className="text-sm font-bold" />
       </div>
       <div className="divide-y divide-border/60">
         {transactions.map((transaction) => (

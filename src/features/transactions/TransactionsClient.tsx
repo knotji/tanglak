@@ -180,7 +180,11 @@ export function TransactionsClient({
             setOpen(false);
             setEditing(undefined);
             setMessage(editing ? "บันทึกการแก้ไขแล้ว" : "บันทึกรายการแล้ว");
-            router.refresh();
+            // No router.refresh() here -- saveTransactionAction already
+            // calls revalidatePath("/transactions") etc., and Next.js
+            // automatically refetches this route's data once a
+            // useActionState-bound form action resolves. An explicit
+            // refresh here would just repeat that fetch.
           }}
         />
       </MobileBottomSheet>

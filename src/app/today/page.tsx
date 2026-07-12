@@ -8,16 +8,11 @@ import { MoneyAmount } from "@/components/MoneyAmount";
 import { CompactTransactionRow } from "@/components/finance/CompactTransactionRow";
 import { requireCompletedOnboarding } from "@/lib/auth/onboarding";
 import { requireUser } from "@/lib/auth/session";
-import {
-  getMonthlyBudget,
-  listBudgetCategories,
-  listDebts,
-  listTransactions,
-} from "@/lib/data/finance-repository";
-import { buildBudgetSummary } from "@/lib/finance/budget-calculations";
+import { listDebts } from "@/lib/data/finance-repository";
+import { getMonthlyFinanceSnapshot } from "@/lib/finance/monthly-snapshot";
 import { determineNextAction } from "@/lib/finance/next-action";
 import { timePage } from "@/lib/observability/timing";
-import { getBangkokTodayString, getBangkokMonthString } from "@/lib/finance/date";
+import { getBangkokTodayString, getBangkokMonthString, getBangkokDateOf } from "@/lib/finance/date";
 
 function formatTodayHeading(todayKey: string) {
   const date = new Date(`${todayKey}T00:00:00+07:00`);
@@ -34,17 +29,17 @@ export default async function TodayPage() {
     const user = await requireUser();
     const todayKey = getBangkokTodayString();
     const month = getBangkokMonthString();
-    const [, transactions, debts, monthlyBudget] = await Promise.all([
+    const [, snapshot, debts] = await Promise.all([
       requireCompletedOnboarding(user),
-      listTransactions(user.id, month),
+      getMonthlyFinanceSnapshot(user.id, month),
       listDebts(user.id),
-      getMonthlyBudget(user.id, month),
     ]);
-    const categories = monthlyBudget ? await listBudgetCategories(user.id, monthlyBudget.id) : [];
-    const budgetSummary = buildBudgetSummary(month, monthlyBudget, categories, transactions);
+    const { transactions, budgetSummary } = snapshot;
 
+    // Bangkok-local date comparison, not a naive string prefix -- see
+    // getBangkokDateOf in date.ts.
     const todayTransactions = transactions
-      .filter((transaction) => transaction.occurredAt.startsWith(todayKey))
+      .filter((transaction) => getBangkokDateOf(transaction.occurredAt) === todayKey)
       .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
     const spentToday = todayTransactions
       .filter((transaction) => transaction.type === "expense")
@@ -82,11 +77,18 @@ export default async function TodayPage() {
           )}
           <div className="mt-4 grid grid-cols-2 gap-2">
             <CompactStat label="เดือนนี้ใช้ไป" amountSatang={monthlySpent} />
-            <CompactStat
-              label="งบที่เหลือ"
-              amountSatang={budgetSummary.hasBudget ? budgetSummary.remainingTotalSatang : 0}
-              tone={budgetSummary.remainingTotalSatang < 0 ? "debt" : "income"}
-            />
+            {budgetSummary.plannedTotalSatang > 0 ? (
+              // A remaining-budget figure is only meaningful against a real,
+              // positive allocation -- never show a negative number that's
+              // really just "no category budget was ever set" (Issue 2).
+              <CompactStat
+                label="งบที่เหลือ"
+                amountSatang={budgetSummary.remainingTotalSatang}
+                tone={budgetSummary.remainingTotalSatang < 0 ? "debt" : "income"}
+              />
+            ) : (
+              <CompactStat label="งบที่เหลือ" valueLabel="ยังไม่ได้ตั้งงบ" tone="default" />
+            )}
           </div>
         </section>
 

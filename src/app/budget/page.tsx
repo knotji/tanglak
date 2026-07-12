@@ -1,8 +1,8 @@
 import { BudgetClient } from "@/features/budget/BudgetClient";
 import { requireCompletedOnboarding } from "@/lib/auth/onboarding";
 import { requireUser } from "@/lib/auth/session";
-import { getMonthlyBudget, listBudgetCategories, listAllTransactions } from "@/lib/data/finance-repository";
-import { buildBudgetSummary } from "@/lib/finance/budget-calculations";
+import { getMonthlyBudget, listBudgetCategories } from "@/lib/data/finance-repository";
+import { getMonthlyFinanceSnapshot } from "@/lib/finance/monthly-snapshot";
 import {
   formatBangkokMonthLabel,
   getBangkokMonthString,
@@ -23,21 +23,23 @@ export default async function BudgetPage({
     const selectedMonth = resolveBangkokMonthQuery(resolvedSearchParams?.month);
     const previousMonth = shiftMonth(selectedMonth, -1);
 
-    const [, budget, transactions] = await Promise.all([
+    // Canonical month-scoped snapshot (see monthly-snapshot.ts) -- this
+    // page used to fetch listAllTransactions(user.id) (every transaction,
+    // all time, unfiltered) and rely entirely on buildBudgetSummary's own
+    // internal month filter, which used the same naive
+    // `occurredAt.startsWith(month)` check now fixed to be Bangkok-aware.
+    // Fetching only this month's transactions up front is both correct and
+    // avoids transferring/holding a user's entire transaction history to
+    // build one month's budget view.
+    const [, snapshot, previousMonthBudget] = await Promise.all([
       requireCompletedOnboarding(user),
-      getMonthlyBudget(user.id, selectedMonth),
-      listAllTransactions(user.id),
-    ]);
-
-    const [categories, previousMonthBudget] = await Promise.all([
-      budget ? listBudgetCategories(user.id, budget.id) : Promise.resolve([]),
+      getMonthlyFinanceSnapshot(user.id, selectedMonth),
       getMonthlyBudget(user.id, previousMonth),
     ]);
+    const { monthlyBudget: budget, budgetSummary: summary } = snapshot;
     const previousMonthCategories = previousMonthBudget
       ? await listBudgetCategories(user.id, previousMonthBudget.id)
       : [];
-
-    const summary = buildBudgetSummary(selectedMonth, budget, categories, transactions);
 
     return (
       <BudgetClient

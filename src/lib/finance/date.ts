@@ -15,6 +15,40 @@ export function getBangkokTodayString(date: Date = new Date()): string {
 }
 
 /**
+ * Converts an arbitrary ISO instant (any offset -- `Z`, `+00:00`, `+07:00`,
+ * etc.) to its Bangkok-local `YYYY-MM-DD` calendar date. Use this instead of
+ * `occurredAt.slice(0, 10)` / `.startsWith(dateKey)` whenever the string's
+ * literal offset isn't guaranteed to already be `+07:00` -- Supabase
+ * (PostgREST) returns `timestamptz` columns normalized to UTC, so a naive
+ * string-prefix check silently mis-buckets any transaction whose Bangkok
+ * wall-clock date differs from its UTC calendar date (any time from
+ * 00:00-06:59 Bangkok, whose UTC date is still the previous day). This is
+ * the root cause of a real production bug where Overview/Budget undercounted
+ * transactions that Today/Transactions counted correctly.
+ */
+export function getBangkokDateOf(isoInstant: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(isoInstant));
+  const year = parts.find((p) => p.type === "year")!.value;
+  const month = parts.find((p) => p.type === "month")!.value;
+  const day = parts.find((p) => p.type === "day")!.value;
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Converts an arbitrary ISO instant to its Bangkok-local `YYYY-MM` calendar
+ * month. See getBangkokDateOf for why this must not be a naive string-prefix
+ * check.
+ */
+export function getBangkokMonthOf(isoInstant: string): string {
+  return getBangkokDateOf(isoInstant).slice(0, 7);
+}
+
+/**
  * Gets the current Bangkok wall-clock date/time as a `YYYY-MM-DDTHH:mm`
  * string suitable for a `datetime-local` input's default value. Using
  * `new Date().toISOString()` for this purpose is a known footgun: it

@@ -1,5 +1,5 @@
 import type { Account, Debt, Transaction } from "@/types/domain";
-import { getBangkokTodayString } from "@/lib/finance/date";
+import { getBangkokTodayString, getBangkokMonthOf } from "@/lib/finance/date";
 
 export type MonthlyTotals = {
   incomeSatang: number;
@@ -30,7 +30,11 @@ export function calculateMonthlyTotals(
   };
 
   const totals = transactions
-    .filter((transaction) => transaction.occurredAt.startsWith(month))
+    // Bangkok-local month comparison, not a naive string prefix -- see
+    // getBangkokMonthOf for why a prefix check silently mis-buckets
+    // transactions near the Bangkok midnight boundary when occurredAt is
+    // returned in UTC (as Supabase does).
+    .filter((transaction) => getBangkokMonthOf(transaction.occurredAt) === month)
     .reduce((acc, transaction) => {
       if (transaction.status !== "confirmed") {
         acc.unreviewedCount += 1;
@@ -194,7 +198,7 @@ export function calculateHistoricalInsights(transactions: Transaction[]): Histor
   const deliveryTxs = confirmedTxs.filter((tx) => tx.category === "เดลิเวอรี");
   const deliveryByMonth: Record<string, number> = {};
   deliveryTxs.forEach((tx) => {
-    const month = tx.occurredAt.slice(0, 7);
+    const month = getBangkokMonthOf(tx.occurredAt);
     deliveryByMonth[month] = (deliveryByMonth[month] ?? 0) + tx.amountSatang;
   });
   const deliveryMonths = Object.keys(deliveryByMonth);
@@ -214,7 +218,7 @@ export function calculateHistoricalInsights(transactions: Transaction[]): Histor
   expenses.forEach((tx) => {
     const key = tx.merchant || tx.note || "";
     if (!key || key.length < 3) return;
-    const month = tx.occurredAt.slice(0, 7);
+    const month = getBangkokMonthOf(tx.occurredAt);
     if (!expenseGroups[key]) {
       expenseGroups[key] = { months: new Set(), amountSatang: tx.amountSatang };
     }
@@ -238,7 +242,7 @@ export function calculateHistoricalInsights(transactions: Transaction[]): Histor
 
   // 3. Debt Payment Consistency
   const debtPayments = confirmedTxs.filter((tx) => tx.type === "debt_payment");
-  const debtPaymentMonths = new Set(debtPayments.map((tx) => tx.occurredAt.slice(0, 7)));
+  const debtPaymentMonths = new Set(debtPayments.map((tx) => getBangkokMonthOf(tx.occurredAt)));
   if (debtPaymentMonths.size >= 2) {
     insights.push({
       id: "debt-consistency",

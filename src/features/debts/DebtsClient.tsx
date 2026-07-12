@@ -35,7 +35,10 @@ export function DebtsClient({ debts, transactions = [] }: { debts: Debt[]; trans
     setOpen(null);
     setSelectedDebt(null);
     if (success) setMessage(success);
-    router.refresh();
+    // No router.refresh() here -- saveDebtAction/addDebtPaymentAction
+    // already call revalidatePath("/debts") etc., and Next.js
+    // automatically refetches once the useActionState-bound form action
+    // resolves.
   }
 
   async function markPaid(debt: Debt) {
