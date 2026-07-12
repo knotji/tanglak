@@ -198,7 +198,19 @@ export function parseDocumentTimestamp(raw: unknown): TimestampParseResult {
   if (ISO_LIKE_PATTERN.test(trimmed)) {
     const hasTime = /[T\s]\d{2}:\d{2}/.test(trimmed);
     const hasOffset = /(Z|[+-]\d{2}:?\d{2})$/.test(trimmed);
-    const normalized = trimmed.replace(" ", "T");
+    let normalized = trimmed.replace(" ", "T");
+
+    // A 4-digit year > 2400 in an otherwise ISO-shaped candidate is a
+    // Buddhist Era year printed in ISO form (e.g. a "2569-07-05" slip
+    // date), not a Gregorian year — convert it before trusting the fast
+    // path, exactly like resolveYear() does for the textual/numeric
+    // paths below. Wall-clock time and offset are preserved untouched.
+    const beYearMatch = normalized.match(/^(\d{4})-/);
+    if (beYearMatch && Number(beYearMatch[1]) > 2400) {
+      const gregorianYear = Number(beYearMatch[1]) - 543;
+      normalized = `${String(gregorianYear).padStart(4, "0")}${normalized.slice(4)}`;
+    }
+
     // Only date-only strings are ambiguous to the native parser without an
     // explicit UTC marker; time-bearing strings without an offset already
     // parse fine (as local time) purely for validity-checking purposes.
@@ -207,7 +219,7 @@ export function parseDocumentTimestamp(raw: unknown): TimestampParseResult {
       return { state: "invalid", warning: TIMESTAMP_INVALID_WARNING_TH };
     }
     if (!hasTime) {
-      return { state: "inferred", iso: `${trimmed}T12:00:00${DEFAULT_TIMEZONE_OFFSET}` };
+      return { state: "inferred", iso: `${normalized}T12:00:00${DEFAULT_TIMEZONE_OFFSET}` };
     }
     if (!hasOffset) {
       return { state: "extracted", iso: `${normalized}${DEFAULT_TIMEZONE_OFFSET}` };

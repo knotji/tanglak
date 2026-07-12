@@ -191,5 +191,30 @@ describe("parseDocumentTimestamp", () => {
       expect(result.state).toBe("inferred");
       expect(result.iso).toBe("2026-07-11T12:00:00+07:00");
     });
+
+    it("converts a BE year in an ISO-shaped candidate with time and offset instead of bypassing BE conversion", () => {
+      const result = parseDocumentTimestamp("2569-07-05T13:44:00+07:00");
+      expect(result.state).toBe("extracted");
+      expect(result.iso).toBe("2026-07-05T13:44:00+07:00");
+    });
+
+    it("converts a BE year in a bare ISO-shaped date-only candidate", () => {
+      const result = parseDocumentTimestamp("2569-07-05");
+      expect(result.state).toBe("inferred");
+      expect(result.iso).toBe("2026-07-05T12:00:00+07:00");
+    });
+
+    it("leaves a normal Gregorian ISO timestamp unchanged (not misread as BE)", () => {
+      const result = parseDocumentTimestamp("2026-07-05T13:44:00+07:00");
+      expect(result.state).toBe("extracted");
+      expect(result.iso).toBe("2026-07-05T13:44:00+07:00");
+    });
+
+    it("rejects an invalid BE-shaped ISO value (bad month) instead of guessing", () => {
+      const result = parseDocumentTimestamp("2569-13-05T13:44:00+07:00");
+      expect(result.state).toBe("invalid");
+      expect(result.warning).toBe(TIMESTAMP_INVALID_WARNING_TH);
+      expect(result.iso).toBeUndefined();
+    });
   });
 });
