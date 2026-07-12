@@ -369,21 +369,32 @@ export async function confirmDocumentAction(
       if (!amountResult.ok) return { ok: false, message: amountResult.error };
       const amountSatang = amountResult.satang!;
 
+      // Every transfer-slip confirmation -- debt_payment included -- must
+      // carry an explicit, validated occurredAt before anything is written.
+      // This used to be checked only inside the non-debt_payment branch,
+      // which let a debt_payment confirmation reach addDebtPayment (and its
+      // server-time fallback) without any date validation at all.
+      if (!parseWallClockComponents(occurredAt || "")) {
+        return { ok: false, message: TRANSACTION_OCCURRED_AT_REQUIRED_TH };
+      }
+      const occurredAtInstant = bangkokDateTimeLocalToInstant(occurredAt);
+
       if (txType === "debt_payment") {
         if (!debtId) {
           return { ok: false, message: "กรุณาระบุบัญชีหนี้สินที่เกี่ยวข้องกับการชำระ" };
         }
-        // Use addDebtPayment which automatically handles transactions & debt_payments tables and recalculates cycles
-        await addDebtPayment(user.id, debtId, amountSatang);
+        // Use addDebtPayment which automatically handles transactions &
+        // debt_payments tables and recalculates cycles. The reviewed,
+        // user-confirmed occurredAt is passed explicitly -- never the
+        // function's own "pay now" default, which is reserved for the
+        // separate manual quick-pay flow (addDebtPaymentAction).
+        await addDebtPayment(user.id, debtId, amountSatang, occurredAtInstant);
       } else {
-        if (!parseWallClockComponents(occurredAt || "")) {
-          return { ok: false, message: TRANSACTION_OCCURRED_AT_REQUIRED_TH };
-        }
         // Create normal transfer or expense transaction
         await createTransaction(user.id, {
           type: txType,
           amountSatang,
-          occurredAt: bangkokDateTimeLocalToInstant(occurredAt),
+          occurredAt: occurredAtInstant,
           merchant: destinationName || "ผู้รับโอนไม่ทราบชื่อ",
           category: txType === "transfer" ? "โอนเงิน" : "อื่น ๆ",
           note: `เลขอ้างอิง: ${referenceNumber || "-"}\nธนาคาร: ${bank || "-"}\nโอนจาก: xxxx-${accountLastFour || "-"}\nไปยัง: xxxx-${destinationAccountLastFour || "-"}`,

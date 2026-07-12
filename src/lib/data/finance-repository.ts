@@ -583,17 +583,31 @@ async function setDebtStatus(userId: string, id: string, status: Debt["status"])
   return mapDebt(data);
 }
 
-export async function addDebtPayment(userId: string, debtId: string, amountSatang: number) {
+/**
+ * `occurredAt`, when provided, must already be a validated, explicit ISO
+ * instant (e.g. from `bangkokDateTimeLocalToInstant`) -- this function never
+ * validates or reformats it. Callers that omit it get the existing "pay now"
+ * quick-pay behavior (e.g. the manual debt payment form), which is
+ * unaffected by the missing-occurredAt review-flow fix. Document-review
+ * confirmation (a reviewed, user-editable date/time) must always pass an
+ * explicit, already-validated `occurredAt` -- never rely on this default.
+ */
+export async function addDebtPayment(
+  userId: string,
+  debtId: string,
+  amountSatang: number,
+  occurredAt?: string,
+) {
   // A debt payment must be a real, positive payment (Category A) — zero and
   // negative amounts are rejected here before anything is persisted.
   assertMoneySatang(amountSatang, "positive", "amountSatang");
 
-  const now = new Date().toISOString();
+  const paidAt = occurredAt ?? new Date().toISOString();
   const debt = await getDebtForUser(userId, debtId);
   const transaction = await createTransaction(userId, {
     type: "debt_payment",
     amountSatang,
-    occurredAt: now,
+    occurredAt: paidAt,
     merchant: `ชำระ ${debt.name}`,
     debtId,
   });
@@ -605,7 +619,7 @@ export async function addDebtPayment(userId: string, debtId: string, amountSatan
       debt_id: debtId,
       transaction_id: transaction.id,
       amount_satang: amountSatang,
-      paid_at: now,
+      paid_at: paidAt,
     });
     if (error) throw new Error(error.message);
   }
