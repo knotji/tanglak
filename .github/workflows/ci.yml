@@ -2,10 +2,18 @@
 #
 # Scope: verify a pull request before a human reviews/merges it. This
 # workflow never merges, never deploys, and never writes to a real
-# Supabase project -- every job runs with E2E_MOCK_AUTH=1, which the app's
-# own middleware (middleware.ts) short-circuits before any real Supabase
-# client is constructed, so no Supabase/Gemini credentials are needed or
-# used here at all.
+# Supabase project.
+#
+# E2E_MOCK_AUTH scoping: only the `e2e` job sets E2E_MOCK_AUTH=1, which
+# the app's own middleware (middleware.ts) and several data-layer
+# helpers (isMockAuthEnabled(), e.g. src/lib/import/adapters/*.ts)
+# short-circuit real Supabase/Gemini calls for -- so no credentials are
+# needed for E2E either. It is deliberately NOT set at the workflow
+# level: several production modules (e.g. GenericBankCSVParser.parse())
+# branch on isMockAuthEnabled() and return canned mock data when it is
+# "1", which would silently replace real parsing in the unit-test job
+# if the variable leaked into `npm run test`. Keep this scoped to the
+# `e2e` job only -- do not hoist it back to workflow level.
 #
 # Action pinning note: actions/checkout, actions/setup-node, and
 # actions/upload-artifact are official, GitHub-maintained actions. They
@@ -30,12 +38,6 @@ permissions:
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
-
-env:
-  # Every job runs the app in mock-auth mode. This is a deliberate,
-  # documented choice (see file header) -- never set this in a real
-  # deployment.
-  E2E_MOCK_AUTH: "1"
 
 jobs:
   unit-static-checks:
@@ -87,6 +89,10 @@ jobs:
     name: E2E
     runs-on: ubuntu-latest
     needs: [unit-static-checks]
+    env:
+      # Scoped to this job only -- see the file header comment on why
+      # this must never be set at workflow level.
+      E2E_MOCK_AUTH: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4

@@ -1,8 +1,31 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { detectCSVDelimiter, detectCSVHeaders, validateRunningBalance } from "../../src/lib/import/validators";
 import { parseThaiBuddhistYearDate, parseAmountSatang } from "../../src/lib/import/normalize";
 import { GenericBankCSVParser } from "../../src/lib/import/adapters/generic-bank-csv";
 import type { ParsedTransaction } from "../../src/lib/import/types";
+
+// GenericBankCSVParser.parse() intentionally short-circuits to canned mock
+// data when process.env.E2E_MOCK_AUTH === "1" (see
+// src/lib/import/adapters/generic-bank-csv.ts) so E2E tests never need real
+// Supabase/Gemini credentials. The "real parsing" tests below exist
+// specifically to exercise the non-mock code path, so they must not
+// silently start receiving mock output just because something in the
+// ambient environment (e.g. a misconfigured CI job) happens to have that
+// variable set. Force it unset for the duration of this file regardless of
+// what the environment provides, and restore whatever was there before.
+const ORIGINAL_E2E_MOCK_AUTH = process.env.E2E_MOCK_AUTH;
+
+beforeEach(() => {
+  delete process.env.E2E_MOCK_AUTH;
+});
+
+afterEach(() => {
+  if (ORIGINAL_E2E_MOCK_AUTH === undefined) {
+    delete process.env.E2E_MOCK_AUTH;
+  } else {
+    process.env.E2E_MOCK_AUTH = ORIGINAL_E2E_MOCK_AUTH;
+  }
+});
 
 // Helper to generate a CSV with N data rows
 function generateCSV(rows: number, delimiter = ","): string {
