@@ -20,6 +20,7 @@ import {
 } from "@/app/actions/budget";
 import { formatTHB } from "@/lib/finance/money";
 import type { BudgetSummary } from "@/lib/finance/budget-calculations";
+import { listBudgetableExpenseCategories } from "@/lib/finance/categories";
 
 function IncomeForm({
   month,
@@ -81,24 +82,46 @@ function IncomeForm({
 function CategoryForm({
   month,
   monthlyBudgetId,
+  availableCategoryLabels,
 }: {
   month: string;
   monthlyBudgetId: string;
+  availableCategoryLabels: string[];
 }) {
   const [state, action, pending] = useActionState(saveBudgetCategoryAction, { ok: false });
+
+  if (availableCategoryLabels.length === 0) {
+    return (
+      <p className="rounded-[16px] border border-dashed border-border bg-surface p-3 text-center text-xs text-text-secondary">
+        ตั้งงบครบทุกหมวดหมู่ที่มีแล้ว
+      </p>
+    );
+  }
+
   return (
     <form action={action} className="rounded-[16px] border border-dashed border-border bg-surface p-3">
       <input type="hidden" name="month" value={month} />
       <input type="hidden" name="monthlyBudgetId" value={monthlyBudgetId} />
       <div className="grid grid-cols-2 gap-2">
         <label className="space-y-1 text-xs">
-          <span className="font-semibold text-text-secondary">ชื่อหมวดหมู่</span>
-          <input
+          <span className="font-semibold text-text-secondary">หมวดหมู่</span>
+          {/* Canonical category catalog (src/lib/finance/categories.ts) --
+              no more free-text category creation; every budgetable
+              category already exists in the catalog, so the user always
+              picks from a real list instead of typing (and possibly
+              typo'ing) a label. Categories that already have a budget row
+              this month are excluded to avoid a duplicate-label conflict. */}
+          <select
             name="label"
             className="min-h-11 w-full rounded-[12px] border border-border px-2 text-sm"
-            placeholder="อาหาร"
             aria-label="ชื่อหมวดหมู่ใหม่"
-          />
+          >
+            {availableCategoryLabels.map((label) => (
+              <option key={label} value={label}>
+                {label}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="space-y-1 text-xs">
           <span className="font-semibold text-text-secondary">งบต่อเดือน</span>
@@ -245,6 +268,13 @@ export function BudgetClient({
 }) {
   const router = useRouter();
   const isHistorical = selectedMonth < currentMonth;
+  // Categories that already have a budget row this month are excluded --
+  // the DB enforces one row per (monthly_budget_id, label), so offering
+  // them again would only ever surface the "already budgeted" error.
+  const configuredLabels = new Set(summary.categories.filter((c) => c.budgetCategoryId).map((c) => c.label));
+  const availableCategoryLabels = listBudgetableExpenseCategories()
+    .map((category) => category.label)
+    .filter((label) => !configuredLabels.has(label));
 
   function goToMonth(month: string) {
     router.push(`/budget?month=${month}`);
@@ -340,7 +370,13 @@ export function BudgetClient({
         )}
       </section>
 
-      {monthlyBudgetId ? <CategoryForm month={selectedMonth} monthlyBudgetId={monthlyBudgetId} /> : null}
+      {monthlyBudgetId ? (
+        <CategoryForm
+          month={selectedMonth}
+          monthlyBudgetId={monthlyBudgetId}
+          availableCategoryLabels={availableCategoryLabels}
+        />
+      ) : null}
     </AppShell>
   );
 }

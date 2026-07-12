@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { categorizeByMerchantRule, categorizeStatementDescription } from "@/lib/finance/category-fallback";
+import {
+  categorizeByMerchantRule,
+  categorizeStatementDescription,
+  resolveExpenseCategoryLabel,
+  resolveExtractedCategory,
+} from "@/lib/finance/category-fallback";
+import { getCategoryById } from "@/lib/finance/categories";
 
 describe("categorizeByMerchantRule — Part D deterministic merchant rules", () => {
   it("matches known supermarkets to groceries", () => {
@@ -106,5 +112,64 @@ describe("categorizeStatementDescription — bank/credit-card statement keyword 
   it("falls back to the canonical 'other' category when nothing matches", () => {
     expect(categorizeStatementDescription("UNKNOWN VENDOR XYZ").id).toBe("other");
     expect(categorizeStatementDescription(undefined).id).toBe("other");
+  });
+});
+
+describe("resolveExpenseCategoryLabel — document confirm write-path helper", () => {
+  it("resolves a merchant-hint match over the fallback id", () => {
+    expect(resolveExpenseCategoryLabel("TOPS MARKET", "other")).toBe(getCategoryById("groceries")!.label);
+  });
+
+  it("falls back to the caller-supplied default category id when no merchant signal exists", () => {
+    expect(resolveExpenseCategoryLabel("Unknown Merchant XYZ", "food")).toBe(getCategoryById("food")!.label);
+  });
+
+  it("falls back to 'other' if the caller's default id is itself invalid", () => {
+    expect(resolveExpenseCategoryLabel("Unknown Merchant XYZ", "not-a-real-id")).toBe(getCategoryById("other")!.label);
+  });
+
+  it("handles a missing merchant gracefully", () => {
+    expect(resolveExpenseCategoryLabel(undefined, "food")).toBe(getCategoryById("food")!.label);
+    expect(resolveExpenseCategoryLabel(null, "food")).toBe(getCategoryById("food")!.label);
+  });
+});
+
+describe("resolveExtractedCategory — Part C AI-output enforcement", () => {
+  it("uses the AI's categoryId when it is a valid, active catalog id", () => {
+    const result = resolveExtractedCategory({ categoryId: "groceries", merchant: "Some Shop", defaultCategoryId: "other" });
+    expect(result.category.id).toBe("groceries");
+    expect(result.source).toBe("ai");
+  });
+
+  it("never trusts an invented/unknown categoryId -- falls through to merchant-hint matching instead", () => {
+    const result = resolveExtractedCategory({
+      categoryId: "totally-made-up-category",
+      merchant: "STARBUCKS THONGLOR",
+      defaultCategoryId: "other",
+    });
+    expect(result.category.id).toBe("food");
+    expect(result.source).toBe("rule");
+  });
+
+  it("falls through to the description when merchant gives no signal", () => {
+    const result = resolveExtractedCategory({
+      merchant: "Unknown Merchant XYZ",
+      description: "NETFLIX.COM subscription renewal",
+      defaultCategoryId: "other",
+    });
+    expect(result.category.id).toBe("subscriptions");
+    expect(result.source).toBe("rule");
+  });
+
+  it("falls back to the caller's default category id when nothing else matches", () => {
+    const result = resolveExtractedCategory({ merchant: "Unknown Merchant XYZ", defaultCategoryId: "food" });
+    expect(result.category.id).toBe("food");
+    expect(result.source).toBe("default");
+  });
+
+  it("falls back to the safe 'other' category when nothing matches and no default is given a valid id", () => {
+    const result = resolveExtractedCategory({ defaultCategoryId: "not-a-real-id" });
+    expect(result.category.id).toBe("other");
+    expect(result.source).toBe("default");
   });
 });

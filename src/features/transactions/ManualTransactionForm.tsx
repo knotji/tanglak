@@ -9,7 +9,19 @@ import { saveTransactionAction } from "@/app/actions/finance";
 import { AccountSelector } from "@/features/accounts/AccountSelector";
 import { DEBT_ERROR_UNLINKED_PAYMENT_TH } from "@/lib/finance/debt-guards";
 import { parseRequiredMoney } from "@/lib/finance/money-guards";
+import {
+  EXPENSE_CATEGORIES,
+  INCOME_CATEGORIES,
+  getCategoryById,
+  resolveCategoryFromLegacyLabel,
+  DEFAULT_EXPENSE_CATEGORY_ID,
+  DEFAULT_INCOME_CATEGORY_ID,
+} from "@/lib/finance/categories";
 import type { Account, Debt, Transaction } from "@/types/domain";
+
+const DEFAULT_EXPENSE_CATEGORY_LABEL = getCategoryById(DEFAULT_EXPENSE_CATEGORY_ID)!.label;
+const DEFAULT_INCOME_CATEGORY_LABEL = getCategoryById(DEFAULT_INCOME_CATEGORY_ID)!.label;
+const TRANSFERS_CATEGORY_LABEL = getCategoryById("transfers")!.label;
 
 const schema = z.object({
   type: z.enum(["income", "expense", "debt_payment", "transfer", "refund"]),
@@ -22,6 +34,26 @@ const schema = z.object({
 });
 
 type FormValues = z.infer<typeof schema>;
+
+/**
+ * Category options for the given transaction type, from the canonical
+ * catalog (src/lib/finance/categories.ts) -- income transactions offer
+ * income categories, everything else (expense/debt_payment/refund) offers
+ * the full expense catalog (including "debt" and "other", per the existing
+ * budget-matching convention where a debt_payment counts toward a "debt"
+ * budget category). If the transaction being edited has a legacy category
+ * value that doesn't resolve to any canonical category, it's kept as an
+ * extra option so editing never silently discards unrecognized historical
+ * data (Part G: "do not silently delete category information").
+ */
+function categoryOptionsFor(type: FormValues["type"], existingLegacyLabel?: string) {
+  const catalog = type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+  const labels = catalog.map((category) => category.label);
+  if (existingLegacyLabel && !resolveCategoryFromLegacyLabel(existingLegacyLabel)) {
+    return [existingLegacyLabel, ...labels];
+  }
+  return labels;
+}
 
 export function ManualTransactionForm({
   transaction,
@@ -42,7 +74,14 @@ export function ManualTransactionForm({
       type: transaction?.type ?? "expense",
       amount: transaction ? String(transaction.amountSatang / 100) : "",
       label: transaction?.merchant ?? "",
-      category: transaction?.category ?? "อาหาร",
+      // A fresh transaction defaults to the generic "other"/"other_income"
+      // category rather than silently guessing a specific one -- the user
+      // picks a real category from the visible select below. An existing
+      // transaction keeps its own saved category exactly as-is (including
+      // an unrecognized legacy value, via categoryOptionsFor above).
+      category:
+        transaction?.category ??
+        ((transaction?.type ?? "expense") === "income" ? DEFAULT_INCOME_CATEGORY_LABEL : DEFAULT_EXPENSE_CATEGORY_LABEL),
       date: transaction?.occurredAt.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
       sourceAccountId: transaction?.sourceAccountId ?? "",
       debtId: transaction?.debtId ?? "",
@@ -63,7 +102,14 @@ export function ManualTransactionForm({
   useEffect(() => {
     if (state.ok) {
       window.localStorage.removeItem("tanglak.transactionDraft");
-      reset({ type: "expense", amount: "", label: "", category: "อาหาร", date: new Date().toISOString().slice(0, 10), debtId: "" });
+      reset({
+        type: "expense",
+        amount: "",
+        label: "",
+        category: DEFAULT_EXPENSE_CATEGORY_LABEL,
+        date: new Date().toISOString().slice(0, 10),
+        debtId: "",
+      });
       onSaved?.();
     }
   }, [onSaved, reset, state.ok]);
@@ -121,6 +167,23 @@ export function ManualTransactionForm({
           <span className="font-medium">วันที่</span>
           <input type="date" className="min-h-11 w-full rounded-[16px] border border-border bg-white px-3" {...register("date")} name="date" />
         </label>
+        {selectedType !== "transfer" ? (
+          <label className="col-span-2 space-y-1 text-sm">
+            <span className="font-medium">หมวดหมู่</span>
+            <select
+              className="min-h-11 w-full rounded-[16px] border border-border bg-white px-3"
+              {...register("category")}
+              name="category"
+              aria-label="หมวดหมู่"
+            >
+              {categoryOptionsFor(selectedType, transaction?.category).map((label) => (
+                <option key={label} value={label}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
       </div>
       {accounts.length ? (
         <label className="mt-3 block space-y-1 text-sm">
@@ -146,7 +209,13 @@ export function ManualTransactionForm({
           </select>
         </label>
       ) : null}
-      <input type="hidden" value="อาหาร" {...register("category")} name="category" />
+      {selectedType === "transfer" ? (
+        // Own-account transfers aren't user-categorized (see the
+        // "transfers" catalog entry) -- submit its canonical label so the
+        // transaction still has a sensible category string, without
+        // showing a picker the user would have nothing meaningful to pick.
+        <input type="hidden" value={TRANSFERS_CATEGORY_LABEL} {...register("category")} name="category" />
+      ) : null}
       {formState.errors.amount || formState.errors.label ? (
         <p className="mt-3 text-sm text-overdue">กรอกข้อมูลขั้นต่ำให้ครบก่อนบันทึก</p>
       ) : null}

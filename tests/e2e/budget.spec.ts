@@ -55,18 +55,20 @@ test.describe("monthly budget engine", () => {
     await page.getByRole("button", { name: "บันทึกรายรับ" }).click();
     await expect(page.getByText("บันทึกรายรับแล้ว")).toBeVisible();
 
-    await page.getByLabel("ชื่อหมวดหมู่ใหม่").fill("อาหาร");
+    await page.getByLabel("ชื่อหมวดหมู่ใหม่").selectOption("อาหารและเครื่องดื่ม");
     await page.getByLabel("งบประมาณหมวดหมู่ใหม่").fill("5000");
     await page.getByRole("button", { name: "+ เพิ่มหมวดหมู่งบประมาณ" }).click();
 
     await expect(page.getByText("อาหาร")).toBeVisible();
     await expect(page.getByText("฿5,000").first()).toBeVisible();
 
-    // Duplicate category label is rejected.
-    await page.getByLabel("ชื่อหมวดหมู่ใหม่").fill("อาหาร");
-    await page.getByLabel("งบประมาณหมวดหมู่ใหม่").fill("1000");
-    await page.getByRole("button", { name: "+ เพิ่มหมวดหมู่งบประมาณ" }).click();
-    await expect(page.getByText("มีงบหมวดนี้ในเดือนนี้แล้ว")).toBeVisible();
+    // The category catalog select (src/lib/finance/categories.ts) excludes
+    // any category that already has a budget row this month, so a
+    // duplicate can no longer even be selected from the UI -- this is a
+    // stronger guarantee than the old free-text input's server-side
+    // duplicate rejection message.
+    const categoryOptions = await page.getByLabel("ชื่อหมวดหมู่ใหม่").locator("option").allTextContents();
+    expect(categoryOptions).not.toContain("อาหารและเครื่องดื่ม");
   });
 
   test("negative category budget is rejected with the safe Thai message", async ({ page }) => {
@@ -77,7 +79,7 @@ test.describe("monthly budget engine", () => {
     await page.getByRole("button", { name: "บันทึกรายรับ" }).click();
     await expect(page.getByText("บันทึกรายรับแล้ว")).toBeVisible();
 
-    await page.getByLabel("ชื่อหมวดหมู่ใหม่").fill("เดินทาง");
+    await page.getByLabel("ชื่อหมวดหมู่ใหม่").selectOption("การเดินทาง");
     await page.getByLabel("งบประมาณหมวดหมู่ใหม่").fill("-500");
     await page.getByRole("button", { name: "+ เพิ่มหมวดหมู่งบประมาณ" }).click();
     await expect(page.getByText("งบประมาณต้องไม่ติดลบ")).toBeVisible();
@@ -90,7 +92,7 @@ test.describe("monthly budget engine", () => {
     await page.getByLabel("รายรับต่อเดือน").fill("20000");
     await page.getByRole("button", { name: "บันทึกรายรับ" }).click();
     await expect(page.getByText("บันทึกรายรับแล้ว")).toBeVisible();
-    await page.getByLabel("ชื่อหมวดหมู่ใหม่").fill("อาหาร");
+    await page.getByLabel("ชื่อหมวดหมู่ใหม่").selectOption("อาหารและเครื่องดื่ม");
     await page.getByLabel("งบประมาณหมวดหมู่ใหม่").fill("4000");
     await page.getByRole("button", { name: "+ เพิ่มหมวดหมู่งบประมาณ" }).click();
     await expect(page.getByText("อาหาร")).toBeVisible();
@@ -114,7 +116,7 @@ test.describe("monthly budget engine", () => {
     await page.getByLabel("รายรับต่อเดือน").fill("45000");
     await page.getByRole("button", { name: "บันทึกรายรับ" }).click();
     await expect(page.getByText("บันทึกรายรับแล้ว")).toBeVisible();
-    await page.getByLabel("ชื่อหมวดหมู่ใหม่").fill("อาหาร");
+    await page.getByLabel("ชื่อหมวดหมู่ใหม่").selectOption("อาหารและเครื่องดื่ม");
     await page.getByLabel("งบประมาณหมวดหมู่ใหม่").fill("6000");
     await page.getByRole("button", { name: "+ เพิ่มหมวดหมู่งบประมาณ" }).click();
     await expect(page.getByText("อาหาร")).toBeVisible();
@@ -152,9 +154,10 @@ test.describe("monthly budget engine", () => {
     await page.getByRole("button", { name: "บันทึกรายรับ" }).click();
     await expect(page.getByText("บันทึกรายรับแล้ว")).toBeVisible();
 
-    // Manual transaction entry always tags "อาหาร" -- budget exactly that
-    // category at a small amount so a single expense pushes it over.
-    await page.getByLabel("ชื่อหมวดหมู่ใหม่").fill("อาหาร");
+    // Budget the "อาหารและเครื่องดื่ม" (food) category at a small amount,
+    // then explicitly pick that same category on a manual expense so a
+    // single transaction pushes it over.
+    await page.getByLabel("ชื่อหมวดหมู่ใหม่").selectOption("อาหารและเครื่องดื่ม");
     await page.getByLabel("งบประมาณหมวดหมู่ใหม่").fill("100");
     await page.getByRole("button", { name: "+ เพิ่มหมวดหมู่งบประมาณ" }).click();
     await expect(page.getByText("ปกติ")).toBeVisible(); // healthy at 0% spend
@@ -163,6 +166,7 @@ test.describe("monthly budget engine", () => {
     await page.getByRole("button", { name: "+ เพิ่มรายการ" }).click();
     await page.getByLabel("จำนวนเงิน").fill("500");
     await page.getByLabel("ชื่อรายการ").fill("Overspend Test");
+    await page.getByLabel("หมวดหมู่").selectOption("อาหารและเครื่องดื่ม");
     await page.getByRole("button", { name: "เพิ่มรายการ", exact: true }).click();
     await expect(page.getByText("Overspend Test")).toBeVisible();
 

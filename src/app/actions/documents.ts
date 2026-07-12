@@ -29,6 +29,8 @@ import {
 } from "@/lib/finance/date";
 import { getMockState } from "@/lib/data/mock-store";
 import { logSafeError } from "@/lib/observability/safe-diagnostics";
+import { resolveExpenseCategoryLabel } from "@/lib/finance/category-fallback";
+import { getCategoryById } from "@/lib/finance/categories";
 
 export type DocumentActionState = {
   ok: boolean;
@@ -284,7 +286,7 @@ export async function confirmDocumentAction(
         amountSatang: netIncomeSatang,
         occurredAt: `${paymentDate}T12:00:00+07:00`,
         merchant: employer || "รายได้เงินเดือน",
-        category: "รายได้",
+        category: getCategoryById("salary")!.label,
         note,
       });
 
@@ -312,7 +314,12 @@ export async function confirmDocumentAction(
         amountSatang: totalPaidSatang,
         occurredAt: bangkokDateTimeLocalToInstant(occurredAt),
         merchant: merchant || "ร้านค้าไม่ระบุชื่อ",
-        category: documentType === "delivery_receipt" ? "เดลิเวอรี" : "อื่น ๆ",
+        // Merchant-aware categorization (src/lib/finance/category-fallback.ts)
+        // -- e.g. a receipt merchant "TOPS" now correctly resolves to
+        // groceries instead of a blanket "อื่น ๆ". delivery_receipt still
+        // defaults to food when the merchant gives no stronger signal,
+        // matching the prior fixed behavior for that document type.
+        category: resolveExpenseCategoryLabel(merchant, documentType === "delivery_receipt" ? "food" : "other"),
         paymentMethod,
         note: documentType === "delivery_receipt" ? "ชำระเงินค่าอาหาร/บริการส่ง" : undefined,
       });
@@ -396,7 +403,10 @@ export async function confirmDocumentAction(
           amountSatang,
           occurredAt: occurredAtInstant,
           merchant: destinationName || "ผู้รับโอนไม่ทราบชื่อ",
-          category: txType === "transfer" ? "โอนเงิน" : "อื่น ๆ",
+          category:
+            txType === "transfer"
+              ? getCategoryById("transfers")!.label
+              : resolveExpenseCategoryLabel(destinationName, "other"),
           note: `เลขอ้างอิง: ${referenceNumber || "-"}\nธนาคาร: ${bank || "-"}\nโอนจาก: xxxx-${accountLastFour || "-"}\nไปยัง: xxxx-${destinationAccountLastFour || "-"}`,
         });
       }
@@ -505,7 +515,7 @@ export async function confirmDocumentAction(
         amountSatang: totalPaidResult.satang!,
         occurredAt: bangkokDateTimeLocalToInstant(occurredAt),
         merchant: merchant || "ไม่ระบุชื่อรายการ",
-        category: "อื่น ๆ",
+        category: resolveExpenseCategoryLabel(merchant, "other"),
         paymentMethod,
         source: "manual",
         documentId: doc.id,

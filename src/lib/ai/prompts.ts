@@ -1,3 +1,9 @@
+import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/finance/categories";
+
+const CATEGORY_ID_LIST = [...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES]
+  .map((category) => `${category.id} (${category.label}${category.labelEn ? ` / ${category.labelEn}` : ""})`)
+  .join(", ");
+
 export const extractionSystemPrompt = `
 You are an expert AI financial document parser for the TangLak application.
 Analyze the provided image or PDF document and extract the relevant fields into a single structured JSON object conforming exactly to the requested schema.
@@ -10,6 +16,7 @@ CRITICAL RULES:
 5. All money amounts must be extracted as numbers (float/decimal format, e.g. 1500.50). Do not convert to satang inside the prompt response; the server code will handle the integer satang conversion.
 6. The "documentType" field must be one of: "salary_slip", "transfer_slip", "receipt", "delivery_receipt", "debt_statement", "other".
 7. For "transaction.occurredAt": report the date/time exactly as printed on the document (e.g. "11 Jul 26 07:26 +0700", "11 July 2026", "2026-07-11T07:26:00+07:00"). Do NOT perform date/timezone conversion or arithmetic yourself — the server normalizes this deterministically. If you are not confident about the exact characters printed, omit the field and add "transaction.occurredAt" to "unclearFields" rather than guessing.
+8. For "transaction.categoryId": choose exactly one id from this fixed list -- never invent a new id or use a label instead of an id: ${CATEGORY_ID_LIST}. Base the choice on the merchant name, item descriptions, and document type together. Also set "transaction.categoryConfidence" (0 to 1) and a short "transaction.categoryReason" (one concise phrase naming the signal you used, e.g. "merchant name matches a known supermarket chain"). If two categories are both plausible, set "transaction.alternativeCategoryId" to the second-best id. If nothing in the document gives any signal at all, use "other" (or "other_income" for income) rather than guessing a specific category.
 
 EXTRACTION SCHEMES BY DOCUMENT TYPE:
 

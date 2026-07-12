@@ -39,6 +39,18 @@ export const extractedFinancialDocumentSchema = z
       occurredAt: z.string().optional(),
       merchant: z.string().optional(),
       category: z.string().optional(),
+      // Canonical category catalog fields (src/lib/finance/categories.ts).
+      // categoryId is intentionally a loose string here, not a strict
+      // z.enum of catalog ids -- a hallucinated/invalid id must not fail
+      // the whole document's schema validation. Application code (see
+      // resolveExtractedCategory in category-fallback.ts) is the actual
+      // enforcement point: it validates categoryId against the catalog and
+      // falls back through deterministic rules, never trusting an
+      // unrecognized id as-is.
+      categoryId: z.string().optional(),
+      categoryConfidence: z.number().min(0).max(1).optional(),
+      categoryReason: z.string().optional(),
+      alternativeCategoryId: z.string().optional(),
       paymentMethod: z.string().optional(),
       referenceNumber: z.string().optional(),
       accountLastFour: z.string().optional(),

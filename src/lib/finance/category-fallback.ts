@@ -79,3 +79,58 @@ export function categorizeStatementDescription(description: string | undefined |
 
   return getCategoryById(DEFAULT_EXPENSE_CATEGORY_ID)!;
 }
+
+/**
+ * Resolves a document-confirm write path's category label using merchant
+ * text, falling back to an explicit default category id (chosen by the
+ * caller based on document context, e.g. "food" for a delivery receipt)
+ * when there's no merchant-hint signal. Used by the document confirm
+ * actions (src/app/actions/documents.ts) in place of a single hardcoded
+ * category string per document type.
+ */
+export function resolveExpenseCategoryLabel(merchant: string | undefined | null, fallbackCategoryId: string): string {
+  const merchantMatch = categorizeByMerchantRule(merchant);
+  if (merchantMatch) return merchantMatch.category.label;
+  return (getCategoryById(fallbackCategoryId) ?? getCategoryById(DEFAULT_EXPENSE_CATEGORY_ID)!).label;
+}
+
+export type ExtractedCategoryResolution = {
+  category: CategoryDefinition;
+  /** Where the final category came from -- for internal debugging/observability, per Part C. */
+  source: "ai" | "rule" | "default";
+};
+
+/**
+ * Resolves the AI extraction's category suggestion into a guaranteed-valid
+ * canonical category (Part C: "AI must select only from active canonical
+ * categories. AI must never invent category IDs or labels"). This is the
+ * actual enforcement point -- the AI schema's `categoryId` field is
+ * intentionally unconstrained (see schemas.ts) so a hallucinated value
+ * never fails validation for the whole document; this function is what
+ * guarantees the id that finally gets used is real.
+ *
+ * Priority: a categoryId that matches an active catalog entry (the AI
+ * result) > a merchant-hint deterministic match on merchant/description
+ * text > the caller-supplied default category id.
+ */
+export function resolveExtractedCategory(input: {
+  categoryId?: string;
+  merchant?: string | null;
+  description?: string | null;
+  defaultCategoryId: string;
+}): ExtractedCategoryResolution {
+  const aiCategory = input.categoryId ? getCategoryById(input.categoryId) : undefined;
+  if (aiCategory?.active) {
+    return { category: aiCategory, source: "ai" };
+  }
+
+  const merchantMatch = categorizeByMerchantRule(input.merchant) ?? categorizeByMerchantRule(input.description);
+  if (merchantMatch) {
+    return { category: merchantMatch.category, source: "rule" };
+  }
+
+  const fallback =
+    getCategoryById(input.defaultCategoryId) ??
+    getCategoryById(DEFAULT_EXPENSE_CATEGORY_ID)!;
+  return { category: fallback, source: "default" };
+}
