@@ -1,0 +1,110 @@
+name: Bug Report
+description: Report something that is behaving incorrectly. Fillable from GitHub Mobile.
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: Actual behavior
+      description: What actually happens right now?
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected behavior
+      description: What should happen instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro-steps
+    attributes:
+      label: Reproduction steps
+      description: Numbered steps to trigger the bug, starting from a known state.
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: input
+    id: route
+    attributes:
+      label: Route / page
+      description: e.g. /debts/[id], /upload, /settings/data
+    validations:
+      required: false
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Screenshot / error
+      description: Attach a screenshot and/or paste the exact error text (console, toast, server log).
+    validations:
+      required: false
+
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: Frequency
+      options:
+        - Always
+        - Sometimes
+        - "Once (not yet reproduced again)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: data-impact
+    attributes:
+      label: Data impact
+      description: Did this create, corrupt, or lose any transaction, debt, or document data?
+      options:
+        - "No data impact"
+        - "Possibly — please describe below"
+        - "Yes — describe exactly what data is affected below"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Production or localhost
+      options:
+        - Production (tanglak.vercel.app)
+        - Localhost / dev
+        - Both
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: What must be true for this bug to be considered fixed?
+      placeholder: |
+        - [ ] ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: migration-allowed
+    attributes:
+      label: Migration allowed
+      options:
+        - "No"
+        - "Yes"
+    validations:
+      required: true
+
+  - type: textarea
+    id: regression-tests
+    attributes:
+      label: Required regression tests
+      description: What test should exist afterward to make sure this specific bug never comes back?
+    validations:
+      required: false

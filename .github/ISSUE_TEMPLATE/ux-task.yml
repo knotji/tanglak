@@ -1,0 +1,96 @@
+name: UX Task
+description: Request a UI/UX change or improvement. Fillable from GitHub Mobile.
+title: "[UX] "
+labels: ["ux"]
+body:
+  - type: textarea
+    id: user-journey
+    attributes:
+      label: User journey
+      description: Which flow is this part of, from the user's perspective (e.g. "uploading a slip", "reviewing a debt cycle")?
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-pain
+    attributes:
+      label: Current pain
+      description: What's wrong, confusing, or slow about the current experience?
+    validations:
+      required: true
+
+  - type: textarea
+    id: target-outcome
+    attributes:
+      label: Target outcome
+      description: What should the experience feel like after this change?
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Attach current-state screenshots, and a sketch/reference of the desired state if you have one.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: mobile-viewport
+    attributes:
+      label: Mobile viewport
+      description: Does this change need to be verified on a mobile viewport?
+      options:
+        - "Yes (this app is mobile-first — default to yes)"
+        - "No — desktop-only surface"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: desktop-viewport
+    attributes:
+      label: Desktop viewport
+      description: Does this change also need to be verified on a desktop viewport?
+      options:
+        - "Yes"
+        - "No"
+    validations:
+      required: true
+
+  - type: textarea
+    id: accessibility
+    attributes:
+      label: Accessibility expectations
+      description: Any specific requirements (contrast, tap target size, screen reader label, keyboard focus order)?
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: states-required
+    attributes:
+      label: States required
+      description: Which UI states must this change account for?
+      options:
+        - label: Loading
+        - label: Empty
+        - label: Error
+        - label: Success
+        - label: Disabled
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: A checklist of concrete, testable statements that must all be true for this task to be done.
+      placeholder: |
+        - [ ] ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: Anything nearby that should NOT change.
+    validations:
+      required: false
