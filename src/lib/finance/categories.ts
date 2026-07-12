@@ -158,7 +158,7 @@ export const EXPENSE_CATEGORIES: readonly CategoryDefinition[] = [
     budgetable: true,
     active: true,
     aliases: ["ค่าน้ำ", "ค่าไฟ", "สาธารณูปโภค", "utilities", "internet", "มือถือ"],
-    merchantHints: ["ais", "true", "dtac", "การไฟฟ้า", "การประปา", "3bb", "cat telecom", "nt "],
+    merchantHints: ["ais", "true", "dtac", "การไฟฟ้า", "การประปา", "3bb", "cat telecom"],
   },
   {
     id: "debt",

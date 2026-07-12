@@ -2,6 +2,7 @@ import type { ImportParser, ParseResult, ParsedTransaction } from "../types";
 import { detectCSVDelimiter, detectCSVHeaders } from "../validators";
 import { parseAmountSatang, parseThaiBuddhistYearDate } from "../normalize";
 import { isMockAuthEnabled } from "@/lib/auth/session";
+import { categorizeByMerchantRule } from "@/lib/finance/category-fallback";
 
 /**
  * RFC 4180-compatible CSV line parser that handles quoted fields with internal
@@ -129,6 +130,13 @@ export class GenericBankCSVParser implements ImportParser {
       // Reference number
       const referenceNumber = mapping.referenceIdx !== -1 ? cols[mapping.referenceIdx] : undefined;
 
+      // Deterministic merchant-hint categorization (src/lib/finance/category-fallback.ts)
+      // for likely-expense rows only -- credit/income rows are left
+      // uncategorized here and get the correct income-side default
+      // ("รายได้") from parser-registry.ts's suggestedCategory fallback,
+      // since this categorizer only knows expense categories.
+      const suggestedCategory = direction === "debit" ? categorizeByMerchantRule(description)?.category.label : undefined;
+
       rows.push({
         sourceRowIndex: i - 1,
         occurredAt,
@@ -137,6 +145,7 @@ export class GenericBankCSVParser implements ImportParser {
         direction,
         runningBalanceSatang,
         referenceNumber,
+        suggestedCategory,
         rawData: cols,
       });
     }

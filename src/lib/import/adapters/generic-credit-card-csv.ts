@@ -2,6 +2,7 @@ import type { ImportParser, ParseResult, ParsedTransaction } from "../types";
 import { detectCSVDelimiter, detectCSVHeaders } from "../validators";
 import { parseAmountSatang, parseThaiBuddhistYearDate } from "../normalize";
 import { isMockAuthEnabled } from "@/lib/auth/session";
+import { categorizeStatementDescription } from "@/lib/finance/category-fallback";
 
 export class GenericCreditCardCSVParser implements ImportParser {
   name = "generic-credit-card-csv";
@@ -77,19 +78,18 @@ export class GenericCreditCardCSVParser implements ImportParser {
         direction = val < 0 ? "credit" : "debit";
       }
 
-      // Check description keywords to adjust suggestions
+      // Check description keywords to adjust the transaction type suggestion.
       let suggestedType: "expense" | "income" | "debt_payment" | "transfer" | undefined = "expense";
-      let suggestedCategory = "อื่น ๆ";
-
       const lowercaseDesc = description.toLowerCase();
       if (lowercaseDesc.includes("payment") || lowercaseDesc.includes("ชำระ") || lowercaseDesc.includes("โอน")) {
         suggestedType = "debt_payment";
         direction = "credit";
-      } else if (lowercaseDesc.includes("fee") || lowercaseDesc.includes("ค่าธรรมเนียม")) {
-        suggestedCategory = "ค่าธรรมเนียม";
-      } else if (lowercaseDesc.includes("interest") || lowercaseDesc.includes("ดอกเบี้ย")) {
-        suggestedCategory = "ดอกเบี้ย";
       }
+
+      // Deterministic fallback categorizer (src/lib/finance/category-fallback.ts):
+      // merchant-hint match first, then fee/interest statement keywords,
+      // then the canonical "other" category -- never an unrecognized string.
+      const suggestedCategory = categorizeStatementDescription(description).label;
 
       rows.push({
         sourceRowIndex: i - 1,
