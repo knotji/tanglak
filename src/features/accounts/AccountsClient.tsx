@@ -35,7 +35,9 @@ export function AccountsClient({ accounts }: { accounts: Account[] }) {
     setSheet(null);
     setSelected(undefined);
     if (message) showToast(message, "success");
-    router.refresh();
+    // No router.refresh() here -- saveAccountAction already calls
+    // revalidatePath("/settings/accounts") etc., and Next.js automatically
+    // refetches once the useActionState-bound form action resolves.
   }
 
   function runAction(account: Account, action: () => Promise<{ ok: boolean; message?: string }>) {

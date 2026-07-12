@@ -1,6 +1,6 @@
 import { formatTHB } from "@/lib/finance/money";
 
-export type MoneyAmountTone = "income" | "expense" | "neutral";
+export type MoneyAmountTone = "income" | "expense" | "debt" | "neutral";
 export type MoneyAmountFormat = "full" | "compact";
 
 function assertIntegerSatang(satang: number) {
@@ -51,8 +51,10 @@ export function MoneyAmount({
       ? "text-income"
       : tone === "expense"
         ? "text-expense"
-        : "text-foreground";
-  const semanticTone = tone === "income" ? "รายรับ" : tone === "expense" ? "รายจ่าย" : "ยอดเงิน";
+        : tone === "debt"
+          ? "text-debt"
+          : "text-foreground";
+  const semanticTone = tone === "income" ? "รายรับ" : tone === "expense" || tone === "debt" ? "รายจ่าย" : "ยอดเงิน";
 
   return (
     <span

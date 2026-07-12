@@ -13,18 +13,19 @@ export function TransactionRow({
   onDelete?: (transaction: Transaction) => void;
   busy?: boolean;
 }) {
-  const sign =
-    transaction.type === "income" || transaction.type === "refund"
-      ? "+"
-      : transaction.type === "transfer"
-        ? ""
-        : "-";
-  const amountTone =
-    transaction.type === "income" || transaction.type === "refund"
-      ? "text-income"
-      : transaction.type === "debt_payment"
-        ? "text-debt"
-        : "text-expense";
+  const isIncoming = transaction.type === "income" || transaction.type === "refund";
+  const isTransfer = transaction.type === "transfer";
+  const tone: "income" | "expense" | "debt" | "neutral" = isIncoming
+    ? "income"
+    : transaction.type === "debt_payment"
+      ? "debt"
+      : isTransfer
+        ? "neutral"
+        : "expense";
+  // Signed amount fed to MoneyAmount itself (not a separately-colored raw
+  // "+"/"-" text node next to it) -- see MoneyFlowRow.tsx for why that
+  // split ends up rendering the sign and the digits in different colors.
+  const signedSatang = isIncoming || isTransfer ? transaction.amountSatang : -transaction.amountSatang;
   const time = new Intl.DateTimeFormat("th-TH", {
     hour: "2-digit",
     minute: "2-digit",
@@ -43,10 +44,7 @@ export function TransactionRow({
           {transaction.type === "debt_payment" ? " · จ่ายหนี้" : ""}
         </p>
       </div>
-      <span className={`text-sm font-bold ${amountTone}`}>
-        {sign}
-        <MoneyAmount satang={transaction.amountSatang} />
-      </span>
+      <MoneyAmount satang={signedSatang} tone={tone} showSign={isIncoming} className="text-sm font-bold" />
       {(onEdit || onDelete) && (
         <div className="flex gap-1">
           {onEdit ? (
