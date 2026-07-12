@@ -17,9 +17,36 @@ Statement metadata is stored separately:
 - `remaining_installments`: optional non-negative integer.
 - `credit_limit_satang`: optional non-negative credit limit.
 
+Locked invariant: `minimum_payment_satang` must never exceed
+`outstanding_balance_satang` for the same debt row. Enforced in every layer
+that can write these fields: `ManualDebtForm.tsx` (client, fast feedback
+only), `saveDebtAction` (server action), `validateDebtInput` in
+`finance-repository.ts` (checked against the final merged state — a patch
+that only changes one of the two fields is still validated against the
+other's current stored value), and the document-review debt-statement
+confirm path in `actions/documents.ts`. The database also enforces this via
+the `debts_minimum_not_above_outstanding` `NOT VALID` check constraint added
+in `202607110008_debt_minimum_not_above_outstanding.sql`. The check is a
+no-op whenever either value is unset — an unset outstanding balance never
+constrains the minimum. Violations are rejected with
+`ยอดขั้นต่ำต้องไม่มากกว่ายอดหนี้ทั้งหมด`; no layer silently clamps either
+value.
+
 ## Payment Semantics
 
-Only confirmed transactions with `type = debt_payment` and a matching `debt_id` affect a debt's `amount_paid_this_cycle_satang`. Unlinked `debt_payment` transactions remain cash-flow records, but they do not count toward any debt. Old-cycle and future-cycle payments are excluded from the cached current-cycle total.
+Only confirmed transactions with `type = debt_payment` and a matching `debt_id` affect a debt's `amount_paid_this_cycle_satang`. Old-cycle and future-cycle payments are excluded from the cached current-cycle total.
+
+Locked invariant: a transaction of type `debt_payment` must always carry an
+explicit, same-user `debt_id` — an unlinked `debt_payment` can no longer be
+created or persisted at all (never silently downgraded to `expense`, never
+auto-linked, never leaves a debt auto-created). This is enforced in
+`createTransaction`/`updateTransaction` (`assertDebtPaymentLinked` in
+`src/lib/finance/debt-guards.ts`, checked against the final merged state),
+in `saveTransactionAction` and `ManualTransactionForm.tsx` (which now
+requires picking a debt whenever "ชำระหนี้" is selected), and in every
+document-review confirmation path that can create a `debt_payment`
+transaction. A transaction that isn't a debt payment is unaffected — expense/
+income/transfer/refund never require a `debt_id`.
 
 Debt payments still count as `debtPaymentSatang` in monthly cash-flow totals. They are not living expenses and should not also be counted as category spend unless a feature intentionally models finance charges or fees as separate expense transactions.
 
@@ -41,6 +68,26 @@ closing a debt always requires the existing explicit
 `markDebtPaidOff`/"ปิดหนี้" user action. `debtDueStatus` reaching
 `cycle_paid_in_full` or the outstanding balance reaching zero must never be
 read as "the debt is closed."
+
+The Today dashboard's single highest-priority action
+(`src/lib/finance/next-action.ts`, `determineNextAction`) ranks debt urgency
+as: overdue minimum > due today > due within 3 days > minimum not met (any
+other due date, including none) > monthly-budget prompts. Due today
+(`ครบกำหนดชำระวันนี้`) is a distinct tier from due soon
+(`ใกล้ครบกำหนดชำระ`) — it is never rendered as "due in 0 days" merged into
+the due-soon bucket. Only one card is ever returned; when more than one debt
+shares a tier, any additional urgent debts are summarized in the card's body
+text (`และมีหนี้ใกล้ครบกำหนดอีก N รายการ`) rather than rendered as competing
+cards.
+
+**Reopening a closed debt is deferred to Phase 2.** The
+`reopenDebt` repository primitive still exists (kept for a future reviewed
+Phase 2 flow) but `reopenDebtAction` — the only path any Phase 1 UI can
+reach it through — always rejects with
+`การเปิดหนี้ที่ปิดแล้วยังไม่รองรับในเวอร์ชันนี้` instead of calling it. The
+debts list shows closed debts as `ปิดหนี้แล้ว` /
+`ข้อมูลและประวัติการชำระยังคงเก็บไว้` with no reopen control; a closed
+debt's payment history remains fully visible via its detail/history page.
 
 ## Interest-rate display (approximation only)
 
@@ -82,11 +129,57 @@ only ever change `totalPaidThisMonthSatang`/`totalRemainingMinimumSatang`,
 consistent with the product rule that payments never auto-reduce total
 outstanding balance.
 
+`paidWithinCycle` (the per-debt helper behind `totalPaidThisMonthSatang`)
+compares transaction timestamps as instants (`new Date(...).getTime()`),
+never as raw ISO strings. Two different-but-equivalent representations of
+the same instant (a `Z`-suffixed UTC timestamp versus an explicit
+`+07:00`-offset one) can sort differently under lexical string comparison
+even when the underlying instant is on the correct side of a cycle
+boundary; instant comparison avoids that class of bug. Cycle/month windows
+are half-open: the start instant is inclusive, the end instant
+(`endExclusiveInstant`, the next Bangkok midnight) is exclusive.
+
+**Scope, in UI terms:** `DebtsClient.tsx` renders two separate sections so
+the two scopes can never be read as the same number — `ยอดหนี้ทั้งหมด`
+(lifetime `totalOutstandingSatang`, independent of due month) and
+`สรุปเดือนนี้` (target-month `totalDueThisMonthSatang` /
+`totalMinimumThisMonthSatang` / `totalPaidThisMonthSatang` — labeled
+"จ่ายแล้วในรอบที่เกี่ยวข้อง" — /
+`totalRemainingMinimumSatang`), with footer copy explicitly calling out that
+the this-month box does not represent the lifetime total and may not match
+the budget page's or overview page's own debt-related totals, since each
+page scopes its numbers differently.
+
 ## Security
 
 Repository writes validate caller-supplied debt IDs and account IDs against the current user before inserting or updating transactions/import batches. The import commit RPC also validates source and destination account ownership before writing transaction links, so direct RPC calls cannot attach another user's account.
 
-RLS remains the primary database boundary. The RPCs use `security invoker`, so table RLS still applies, and the functions include explicit `user_id` checks for clearer failures and defense in depth.
+RLS remains the primary database boundary. `import_commit_row` and
+`import_rollback_batch` use `security invoker`, so table RLS still applies,
+and the functions include explicit `user_id` checks for clearer failures and
+defense in depth.
+
+`public.recalculate_debt_paid_this_cycle(uuid)` is `security definer` (it
+recomputes a cached total across a debt's own transactions, which needs to
+run regardless of the caller's own RLS visibility). As originally shipped in
+`202607110007`, it had no explicit grants, so Postgres's default
+PUBLIC-executable grant applied — meaning it was directly callable, with any
+debt UUID, by any authenticated (and, since Supabase exposes every
+public-schema function over PostgREST, even anonymous) caller.
+`202607110009_harden_debt_recalculation_execute.sql` closes this: EXECUTE is
+explicitly revoked from PUBLIC and re-granted only to `authenticated`
+(preserving the existing call chain — `import_commit_row`/
+`import_rollback_batch` are `security invoker`, so their nested
+`perform public.recalculate_debt_paid_this_cycle(...)` calls are checked
+against the `authenticated` role and still work), and the function body now
+rejects any caller whose `auth.uid()` doesn't own the target debt
+(`auth.uid()` is null and therefore unrestricted only in service-role/
+administrative contexts that carry no JWT). The application layer's own
+`recalculateDebtPaidThisCycle` TypeScript helper does not call this RPC at
+all — it recomputes and writes directly through the Supabase client, scoped
+by RLS and an explicit `user_id` filter — so this RPC is reachable only from
+the two trusted import functions and, now, from a direct call that owns the
+target debt.
 
 ## Migration Notes
 
@@ -96,6 +189,20 @@ RLS remains the primary database boundary. The RPCs use `security invoker`, so t
 - Adds `NOT VALID` checks for cycle date ordering and non-negative credit limits.
 - Adds an index for cycle recalculation over user/debt/type/status/occurred timestamp.
 - Replaces `recalculate_debt_paid_this_cycle`, `import_commit_row`, and `import_rollback_batch` so imports use the same cycle-scoped Bangkok semantics.
+- This migration's preflight/rollback documentation is lighter than
+  `202607110006`'s; that gap is intentionally left as-is rather than rewritten
+  after the fact (see F-010 in `docs/SLIP_DEBT_IMPLEMENTATION_FINDINGS.md`) —
+  historical migrations are never edited, only followed by additive ones.
+
+`202607110008_debt_minimum_not_above_outstanding.sql` is additive: adds a
+`NOT VALID` check constraint enforcing the minimum-not-above-outstanding
+invariant described above. No existing row is scanned, rewritten, or
+validated by this migration.
+
+`202607110009_harden_debt_recalculation_execute.sql` is additive: replaces
+`recalculate_debt_paid_this_cycle`'s body to add the ownership check
+described above, and adds explicit `revoke`/`grant` statements for it. No
+table row is read or written by this migration.
 
 No historical migration is edited and no existing row is rewritten. Existing rows with no cycle dates fall back to the current Bangkok month.
 
@@ -103,16 +210,20 @@ No historical migration is edited and no existing row is rewritten. Existing row
 
 Current focused unit coverage includes:
 
-- Active-cycle scoping, fallback month behavior, and unlinked debt-payment exclusion.
+- Active-cycle scoping, fallback month behavior, and rejection of unlinked debt-payment transactions at the repository layer.
+- Minimum-not-above-outstanding rejection, including the final-merged-state case where a patch only touches one of the two fields.
 - Minimum-paid versus full-cycle-paid status.
-- Bangkok due-today/overdue boundaries.
-- Debt-statement field persistence.
+- Bangkok due-today/overdue boundaries, plus instant-based (not lexical) cycle-window boundary tests: cycle start inclusive, cycle end exclusive, a UTC `Z` timestamp mapping into the Bangkok cycle, first/last instant of a month.
+- Today-dashboard priority ordering: overdue > due-today > due-soon > unmet-minimum, with the required due-today/due-soon copy.
+- Debt-statement field persistence, and rejection of an unconfirmed create/update choice during document review.
 - Cross-user debt and account ID rejection.
-- Migration coverage for columns, constraints, Bangkok boundaries, and RPC ownership checks.
+- Migration coverage for columns, constraints, Bangkok boundaries, and RPC ownership/grant checks (008, 009).
 
 Remaining higher-level coverage to add before release:
 
 - E2E review confirmation for a debt statement, proving no debt is created until confirm.
 - E2E duplicate slip/import behavior with linked debt payments.
 - Concurrent import/debt-payment updates against a real database.
-- Legacy statement-import route deprecation or hiding behavior.
+- A live-database (not migration-text-assertion) check that
+  `recalculate_debt_paid_this_cycle` actually rejects a cross-user call at
+  runtime, once a database-backed test harness is available.
