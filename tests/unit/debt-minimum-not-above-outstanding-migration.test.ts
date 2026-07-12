@@ -2,10 +2,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+// Normalize line endings before asserting -- git on Windows can check this
+// file out with CRLF, and a multi-line substring match must not depend on
+// which line-ending convention the working tree happens to have (see F-002
+// in docs/SLIP_DEBT_FINAL_SECURITY_AUDIT.md).
 const migration = readFileSync(
   join(process.cwd(), "supabase/migrations/202607110008_debt_minimum_not_above_outstanding.sql"),
   "utf8",
-);
+).replace(/\r\n/g, "\n");
 
 describe("debt minimum-not-above-outstanding migration", () => {
   it("adds an additive, not-valid check constraint", () => {

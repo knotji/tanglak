@@ -9,6 +9,7 @@ import {
   rollbackImportBatch,
 } from "@/lib/data/finance-repository";
 import { getMockState } from "@/lib/data/mock-store";
+import { DEBT_ERROR_UNLINKED_PAYMENT_TH } from "@/lib/finance/debt-guards";
 import type { ImportRow } from "@/types/domain";
 
 vi.mock("@/lib/auth/session", async (importOriginal) => {
@@ -291,5 +292,179 @@ describe("history import commit idempotency", () => {
 
     const batchAfter = await getImportBatch("user-a", batch.id);
     expect(batchAfter?.status).toBe("rolled_back");
+  });
+});
+
+describe("F-001: import review cannot confirm an unlinked debt_payment", () => {
+  beforeEach(() => {
+    const state = getMockState();
+    state.transactions = [];
+    state.debts = [];
+    state.accounts = [];
+    state.importBatches = [];
+    state.importRows = [];
+    state.users.clear();
+  });
+
+  it("rejects a debt_payment row with no debtId, leaving the row retryable and no transaction created", async () => {
+    const { batch, rows } = await seedBatch("user-a", 1, 5_000);
+    const decisions = [
+      { rowId: rows[0].id, decision: "import" as const, transactionType: "debt_payment" as const, amountSatang: 5_000 },
+    ];
+
+    const result = await importReviewedRows("user-a", batch.id, undefined, decisions);
+
+    expect(result.importedCount).toBe(0);
+    expect(result.failedCount).toBe(1);
+    expect(result.failures[0]?.message).toBe(DEBT_ERROR_UNLINKED_PAYMENT_TH);
+
+    const state = getMockState();
+    expect(state.transactions.filter((t) => t.importRowId === rows[0].id)).toHaveLength(0);
+
+    const rowsAfter = await listImportRows("user-a", batch.id);
+    expect(rowsAfter[0]?.reviewStatus).not.toBe("imported"); // left retryable, values preserved
+    expect(rowsAfter[0]?.importDecision).not.toBe("import");
+  });
+
+  it("confirms a debt_payment row linked to a debt owned by the same user", async () => {
+    const debt = await createDebt("user-a", {
+      name: "KTC",
+      amountDueSatang: 100_000,
+      minimumPaymentSatang: 50_000,
+      dueDate: "2026-07-18",
+    });
+    const { batch, rows } = await seedBatch("user-a", 1, 5_000);
+    const decisions = [
+      {
+        rowId: rows[0].id,
+        decision: "import" as const,
+        transactionType: "debt_payment" as const,
+        debtId: debt.id,
+        amountSatang: 5_000,
+      },
+    ];
+
+    const result = await importReviewedRows("user-a", batch.id, undefined, decisions);
+
+    expect(result.importedCount).toBe(1);
+    expect(result.failedCount).toBe(0);
+    const state = getMockState();
+    expect(state.transactions.filter((t) => t.debtId === debt.id)).toHaveLength(1);
+  });
+
+  it("rejects a debt_payment row linked to another user's debt", async () => {
+    const otherUsersDebt = await createDebt("user-b", {
+      name: "Someone Else's Card",
+      amountDueSatang: 100_000,
+      minimumPaymentSatang: 50_000,
+      dueDate: "2026-07-18",
+    });
+    const { batch, rows } = await seedBatch("user-a", 1, 5_000);
+    const decisions = [
+      {
+        rowId: rows[0].id,
+        decision: "import" as const,
+        transactionType: "debt_payment" as const,
+        debtId: otherUsersDebt.id,
+        amountSatang: 5_000,
+      },
+    ];
+
+    const result = await importReviewedRows("user-a", batch.id, undefined, decisions);
+
+    expect(result.importedCount).toBe(0);
+    expect(result.failedCount).toBe(1);
+    const state = getMockState();
+    expect(state.transactions.filter((t) => t.importRowId === rows[0].id)).toHaveLength(0);
+  });
+
+  it("an expense row with no debtId remains valid and is imported normally", async () => {
+    const { batch, rows } = await seedBatch("user-a", 1, 5_000);
+    const decisions = [
+      { rowId: rows[0].id, decision: "import" as const, transactionType: "expense" as const, amountSatang: 5_000 },
+    ];
+
+    const result = await importReviewedRows("user-a", batch.id, undefined, decisions);
+    expect(result.importedCount).toBe(1);
+    expect(result.failedCount).toBe(0);
+  });
+
+  it("an income row with no debtId remains valid and is imported normally", async () => {
+    const { batch, rows } = await seedBatch("user-a", 1, 5_000);
+    const decisions = [
+      { rowId: rows[0].id, decision: "import" as const, transactionType: "income" as const, amountSatang: 5_000 },
+    ];
+
+    const result = await importReviewedRows("user-a", batch.id, undefined, decisions);
+    expect(result.importedCount).toBe(1);
+    expect(result.failedCount).toBe(0);
+  });
+
+  it("rejecting an unlinked debt_payment import never creates a debt as a side effect", async () => {
+    const { batch, rows } = await seedBatch("user-a", 1, 5_000);
+    const decisions = [
+      { rowId: rows[0].id, decision: "import" as const, transactionType: "debt_payment" as const, amountSatang: 5_000 },
+    ];
+
+    await importReviewedRows("user-a", batch.id, undefined, decisions);
+
+    const state = getMockState();
+    expect(state.debts.filter((d) => d.userId === "user-a")).toHaveLength(0);
+  });
+
+  it("retrying an unlinked debt_payment commit is idempotently rejected every time (no partial state)", async () => {
+    const { batch, rows } = await seedBatch("user-a", 1, 5_000);
+    const decisions = [
+      { rowId: rows[0].id, decision: "import" as const, transactionType: "debt_payment" as const, amountSatang: 5_000 },
+    ];
+
+    const first = await importReviewedRows("user-a", batch.id, undefined, decisions);
+    const second = await importReviewedRows("user-a", batch.id, undefined, decisions);
+
+    expect(first.failedCount).toBe(1);
+    expect(second.failedCount).toBe(1);
+    const state = getMockState();
+    expect(state.transactions.filter((t) => t.importRowId === rows[0].id)).toHaveLength(0);
+  });
+
+  it("rollback remains safe when a batch contains only rejected (never-committed) debt_payment rows", async () => {
+    const { batch, rows } = await seedBatch("user-a", 1, 5_000);
+    await importReviewedRows("user-a", batch.id, undefined, [
+      { rowId: rows[0].id, decision: "import" as const, transactionType: "debt_payment" as const, amountSatang: 5_000 },
+    ]);
+
+    // Nothing was ever committed for this row, so rollback has nothing to
+    // undo -- it must not throw or corrupt batch state.
+    await expect(rollbackImportBatch("user-a", batch.id)).resolves.not.toThrow();
+  });
+
+  it("does not delete or rewrite a pre-existing (legacy) unlinked debt_payment transaction", async () => {
+    // Simulates a row that was already committed as an unlinked
+    // debt_payment before this invariant existed. This fix must not
+    // retroactively touch it.
+    const state = getMockState();
+    const legacyTx = {
+      id: "legacy-unlinked-debt-payment",
+      userId: "user-a",
+      type: "debt_payment" as const,
+      status: "confirmed" as const,
+      amountSatang: 12_000,
+      currency: "THB" as const,
+      occurredAt: "2026-01-05T10:00:00+07:00",
+      merchant: "Legacy Import",
+      source: "history_import" as const,
+      debtId: undefined,
+    };
+    state.transactions.push(legacyTx);
+
+    const { batch, rows } = await seedBatch("user-a", 1, 5_000);
+    await importReviewedRows("user-a", batch.id, undefined, [
+      { rowId: rows[0].id, decision: "import" as const, transactionType: "expense" as const, amountSatang: 5_000 },
+    ]);
+
+    const stillThere = getMockState().transactions.find((t) => t.id === "legacy-unlinked-debt-payment");
+    expect(stillThere).toBeDefined();
+    expect(stillThere?.debtId).toBeUndefined();
+    expect(stillThere?.amountSatang).toBe(12_000);
   });
 });
