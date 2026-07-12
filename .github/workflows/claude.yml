@@ -1,0 +1,52 @@
+# Claude Code GitHub Action — @claude mention responder.
+#
+# This is a template. It will not run successfully until the repository
+# owner completes the one-time setup in
+# docs/agent/OWNER_SETUP_CHECKLIST.md (install the Claude GitHub App and
+# add the ANTHROPIC_API_KEY secret). Until then this workflow is inert:
+# GitHub Actions will still parse it, but the action step will fail
+# authentication rather than doing anything unsafe.
+#
+# Source: this matches the official "Basic workflow" example from
+# https://code.claude.com/docs/en/github-actions (Claude Code Action v1,
+# GA syntax) as of the time this file was written. Do not hand-edit the
+# `anthropics/claude-code-action@v1` pin to a different tag without
+# checking that page again -- v1.0 introduced breaking changes from the
+# prior `@beta` input shape.
+#
+# What this does: when someone comments "@claude ..." on an Issue or a
+# Pull Request, the action reads the comment, does the requested work
+# (e.g. implement a feature, answer a question, fix a bug), and pushes
+# its changes as commits on a branch / opens or updates a PR. It cannot
+# merge a PR, change repository settings, or deploy -- those are not
+# capabilities this action has, regardless of the permissions below.
+#
+# Least privilege: only the three permissions the Claude GitHub App
+# itself requires (see docs/agent/OWNER_SETUP_CHECKLIST.md) are granted
+# here. No `id-token`, no `actions:`, no `deployments:` permission.
+
+name: Claude Code
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  claude:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # No `prompt:` input -- for issue_comment / pull_request_review_comment
+          # events the action auto-responds to "@claude" mentions using the
+          # comment body itself as the instruction. AGENTS.md and CLAUDE.md in
+          # this repository are read automatically and govern what Claude may
+          # do (dedicated branch + PR only, no merge, no deploy, no secrets).

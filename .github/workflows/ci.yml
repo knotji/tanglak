@@ -1,0 +1,125 @@
+# TangLak pull request verification.
+#
+# Scope: verify a pull request before a human reviews/merges it. This
+# workflow never merges, never deploys, and never writes to a real
+# Supabase project -- every job runs with E2E_MOCK_AUTH=1, which the app's
+# own middleware (middleware.ts) short-circuits before any real Supabase
+# client is constructed, so no Supabase/Gemini credentials are needed or
+# used here at all.
+#
+# Action pinning note: actions/checkout, actions/setup-node, and
+# actions/upload-artifact are official, GitHub-maintained actions. They
+# are pinned to major version tags (not an immutable commit SHA) because
+# this workflow was authored without live access to the GitHub Actions
+# marketplace to fetch/verify a current SHA -- inventing one would be
+# worse than a documented, low-risk tag pin. The repository owner can
+# tighten these to SHA pins later (e.g. via Dependabot's
+# `github-actions` ecosystem, which proposes SHA-pinned updates) without
+# any workflow logic changes.
+
+name: CI
+
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Every job runs the app in mock-auth mode. This is a deliberate,
+  # documented choice (see file header) -- never set this in a real
+  # deployment.
+  E2E_MOCK_AUTH: "1"
+
+jobs:
+  unit-static-checks:
+    name: Unit / Static Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies (deterministic)
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [unit-static-checks]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies (deterministic)
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+  e2e:
+    name: E2E
+    runs-on: ubuntu-latest
+    needs: [unit-static-checks]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies (deterministic)
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      # Not `npm run test:e2e` -- that script's env-setting syntax
+      # (`cmd /c set "E2E_MOCK_AUTH=1"`) is Windows-only. The env var is
+      # already set for this job above, and playwright.config.ts's own
+      # webServer.env also sets it for the server process it starts, so a
+      # plain build + playwright run is equivalent and cross-platform.
+      - name: Build (mock-auth)
+        run: npm run build
+
+      - name: Run E2E suite
+        run: npx playwright test --workers=6
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
