@@ -277,9 +277,17 @@ export async function confirmBatchAction(
     revalidatePath("/overview");
 
     if (result.failedCount > 0) {
+      // Surface the actual per-row rejection reason (a safe Thai message
+      // already produced by the repository/RPC guard, e.g. the unlinked
+      // debt_payment invariant) when every failure shares the same cause,
+      // instead of only a generic count -- the UI-level check normally
+      // prevents this from being reached, but the server/RPC layer is the
+      // real invariant boundary and must not degrade to an opaque message.
+      const distinctReasons = new Set(result.failures.map((f) => f.message));
+      const reasonSuffix = distinctReasons.size === 1 ? `: ${[...distinctReasons][0]}` : "";
       return {
         ok: true,
-        message: `นำเข้าข้อมูลสำเร็จบางส่วน: สำเร็จ ${result.importedCount + result.mergedCount} รายการ, ไม่สำเร็จ ${result.failedCount} รายการ, เหลือค้าง ${result.remainingCount} รายการ กรุณาลองใหม่อีกครั้ง`,
+        message: `นำเข้าข้อมูลสำเร็จบางส่วน: สำเร็จ ${result.importedCount + result.mergedCount} รายการ, ไม่สำเร็จ ${result.failedCount} รายการ, เหลือค้าง ${result.remainingCount} รายการ กรุณาลองใหม่อีกครั้ง${reasonSuffix}`,
       };
     }
     return { ok: true, message: "นำเข้าข้อมูลสำเร็จ" };

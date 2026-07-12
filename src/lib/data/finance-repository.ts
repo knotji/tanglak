@@ -1537,8 +1537,14 @@ async function commitImportRow(
   debtId: string | undefined,
 ): Promise<{ transactionId: string; alreadyImported: boolean }> {
   // Validate independently of whatever the client already checked, using
-  // the same financial value guards as every other write path.
+  // the same financial value guards and locked debt_payment-linkage
+  // invariant as every other write path (createTransaction/
+  // updateTransaction). Import review is not exempt: a debt_payment row
+  // reaching commit without a debt_id must be rejected here, not silently
+  // confirmed as an unlinked cashflow transaction (see F-001 in
+  // docs/SLIP_DEBT_FINAL_SECURITY_AUDIT.md).
   assertMoneySatang(amountSatang, type === "debt_payment" ? "positive" : "nonnegative", "amountSatang");
+  assertDebtPaymentLinked(type, debtId);
   if (debtId) await assertDebtBelongsToUser(userId, debtId);
   if (sourceAccountId) await assertAccountBelongsToUser(userId, sourceAccountId);
   if (destinationAccountId) await assertAccountBelongsToUser(userId, destinationAccountId);

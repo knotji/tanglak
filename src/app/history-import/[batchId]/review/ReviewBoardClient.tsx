@@ -403,6 +403,21 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
         };
       });
 
+    // Locked Phase 1 rule: a debt_payment row can never be confirmed
+    // without an explicit debt_id -- never silently downgraded to
+    // expense, never auto-linked. Block the whole submission and expand
+    // the first offending row so entered values (merchant, date, amount)
+    // are preserved for the user to fix, rather than letting it reach the
+    // server and come back as an opaque partial-failure count.
+    const unlinkedDebtPaymentRow = payload.find(
+      (row) => row.decision === "import" && row.transactionType === "debt_payment" && !row.debtId,
+    );
+    if (unlinkedDebtPaymentRow) {
+      setErrorMsg("กรุณาเลือกหนี้ที่เกี่ยวข้องกับรายการชำระนี้");
+      setExpandedRowId(unlinkedDebtPaymentRow.rowId);
+      return;
+    }
+
     startTransition(async () => {
       const res = await confirmBatchAction(batch.id, batch.accountId, payload);
       if (res.ok) {
