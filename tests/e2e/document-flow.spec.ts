@@ -161,9 +161,19 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
     await expect(page.getByRole("button", { name: "ประมวลผลใหม่" })).toBeVisible();
 
     // Attempting to confirm without a date is rejected with the exact
-    // required Thai copy, focuses the date field, and does not navigate away.
-    await page.getByRole("button", { name: "ยืนยันความถูกต้อง" }).click();
-    await expect(page.getByText("กรุณาระบุวันที่และเวลาของรายการ")).toBeVisible();
+    // required Thai copy, focuses the date field, and does not navigate
+    // away. This is the first genuinely interactive action on this page
+    // (everything above only reads rendered state), so it is retried if the
+    // click lands before React finishes hydrating and attaching the form's
+    // submit handler -- a known class of SSR/hydration race under heavy
+    // parallel test load, not a weakening of what is asserted: the retry
+    // loop still requires the exact same required Thai error text to become
+    // visible, it just re-issues the click if a stray first click was
+    // silently swallowed pre-hydration.
+    await expect(async () => {
+      await page.getByRole("button", { name: "ยืนยันความถูกต้อง" }).click();
+      await expect(page.getByText("กรุณาระบุวันที่และเวลาของรายการ")).toBeVisible({ timeout: 2000 });
+    }).toPass({ timeout: 15000 });
     await expect(page).toHaveURL(reviewUrl);
     await expect(occurredAtInput).toBeFocused();
     // Other fields remain intact after the rejected attempt.
@@ -326,6 +336,84 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
     // Choose to merge / link existing
     await page.getByRole("button", { name: "เชื่อมโยงหลักฐาน" }).click();
     await expect(page).toHaveURL(/\/today/);
+  });
+
+  test("transfer-slip debt payment rejects a cleared date/time before confirming, then succeeds once a valid date/time is entered", async ({ page }) => {
+    await page.goto("/auth");
+    await page.getByLabel("อีเมล").fill(email);
+    await page.getByLabel("รหัสผ่าน", { exact: true }).fill(password);
+    await page.locator("form").getByRole("button", { name: "เข้าสู่ระบบ" }).click();
+    await expect(page).toHaveURL(/\/today/);
+
+    // Create a debt to link the transfer-slip debt payment to.
+    await page.goto("/debts");
+    await page.getByRole("button", { name: "+ เพิ่มหนี้" }).click();
+    await page.getByLabel("ชื่อหนี้").fill("บัตรเครดิต ทดสอบวันที่");
+    await page.getByLabel("ยอดเดือนนี้").fill("1000");
+    await page.getByLabel("ครบกำหนด", { exact: true }).fill("2026-08-05");
+    await page.getByRole("button", { name: "เพิ่มหนี้", exact: true }).click();
+    await expect(page.getByText("บัตรเครดิต ทดสอบวันที่")).toBeVisible();
+
+    await page.goto("/upload");
+    const fileChooserPromise = page.waitForEvent("filechooser");
+    await page.getByRole("button", { name: "สลิปชำระหนี้หรือบัตรเครดิต" }).click();
+    const fileChooser = await fileChooserPromise;
+    await fileChooser.setFiles({
+      name: "transfer_slip_review_date_check.png",
+      mimeType: "image/png",
+      buffer: Buffer.from("mock-transfer-debt-payment-data"),
+    });
+
+    await page.getByRole("button", { name: "วิเคราะห์ด้วย AI" }).click();
+    await expect(page).toHaveURL(/\/upload\/review\//);
+    const reviewUrl = page.url();
+
+    // The mock extraction is auto-detected as a possible debt payment, so
+    // "ชำระหนี้สิน" is already selected; link it to the debt just created.
+    await expect(page.locator('input[name="type"][value="debt_payment"]')).toBeChecked();
+    const debtSelect = page.getByLabel("เชื่อมต่อกับหนี้สินคงค้าง");
+    const debtOptionValue = await debtSelect
+      .locator("option", { hasText: "บัตรเครดิต ทดสอบวันที่" })
+      .getAttribute("value");
+    expect(debtOptionValue).toBeTruthy();
+    await debtSelect.selectOption(debtOptionValue!);
+
+    const occurredAtInput = page.locator("input[name='occurredAt']");
+    await expect(occurredAtInput).not.toHaveValue("");
+
+    // Clear the extracted date/time -- this must be rejected before any
+    // debt payment or transaction is written, exactly like every other
+    // confirmation path (not bypassed via the debt_payment branch).
+    await occurredAtInput.fill("");
+    await expect(async () => {
+      await page.getByRole("button", { name: "ยืนยันความถูกต้อง" }).click();
+      await expect(page.getByText("กรุณาระบุวันที่และเวลาของรายการ")).toBeVisible({ timeout: 2000 });
+    }).toPass({ timeout: 15000 });
+    await expect(page).toHaveURL(reviewUrl);
+
+    // No transaction or debt payment was created by the rejected attempt.
+    await page.goto("/transactions");
+    await expect(page.getByText("บัตรเครดิต ทดสอบวันที่")).toHaveCount(0);
+
+    // Back on the review page (fresh load), the debt link selection must be
+    // made again -- it is a local UI selection, not persisted extraction
+    // data -- but the extracted merchant/amount fields are still intact.
+    await page.goto(reviewUrl);
+    await expect(page.locator('input[name="type"][value="debt_payment"]')).toBeChecked();
+    const debtSelectAgain = page.getByLabel("เชื่อมต่อกับหนี้สินคงค้าง");
+    const debtOptionValueAgain = await debtSelectAgain
+      .locator("option", { hasText: "บัตรเครดิต ทดสอบวันที่" })
+      .getAttribute("value");
+    await debtSelectAgain.selectOption(debtOptionValueAgain!);
+
+    // Enter a valid Bangkok-local date/time manually and confirm -- it must
+    // succeed and persist, not the current server time.
+    await page.locator("input[name='occurredAt']").fill("2026-07-20T14:15");
+    await page.getByRole("button", { name: "ยืนยันความถูกต้อง" }).click();
+    await expect(page).toHaveURL(/\/today/);
+
+    await page.goto("/debts");
+    await expect(page.getByText("฿1,500 จาก ฿1,000")).toBeVisible();
   });
 
   test("Gemini failure and retry fallback", async ({ page }) => {

@@ -398,12 +398,15 @@ export function ReviewForm({
 
     // Final confirmation requires a real, parseable transaction date/time --
     // never fabricated. On failure, move focus to the field so the user can
-    // see and fix it immediately, matching the required Thai copy.
+    // see and fix it immediately, matching the required Thai copy. Focusing
+    // the element already brings it into view per spec (and does so
+    // instantly) -- a separate smooth-scroll animation is intentionally not
+    // used here, since an animated scroll is unnecessary and can visibly lag
+    // behind the state update under load.
     const clientOccurredAtError = validateReviewOccurredAt(docType, fd);
     if (clientOccurredAtError) {
       setFormError(clientOccurredAtError);
       dateFieldRef.current?.focus();
-      dateFieldRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
 
