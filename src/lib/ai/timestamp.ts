@@ -42,6 +42,58 @@ const MONTH_NAMES: Record<string, number> = {
   november: 11,
   dec: 12,
   december: 12,
+  // Thai abbreviated months (with trailing dot)
+  "ม.ค.": 1,
+  "ก.พ.": 2,
+  "มี.ค.": 3,
+  "เม.ย.": 4,
+  "พ.ค.": 5,
+  "มิ.ย.": 6,
+  "ก.ค.": 7,
+  "ส.ค.": 8,
+  "ก.ย.": 9,
+  "ต.ค.": 10,
+  "พ.ย.": 11,
+  "ธ.ค.": 12,
+  // Thai abbreviated months (without trailing dot)
+  "ม.ค": 1,
+  "ก.พ": 2,
+  "มี.ค": 3,
+  "เม.ย": 4,
+  "พ.ค": 5,
+  "มิ.ย": 6,
+  "ก.ค": 7,
+  "ส.ค": 8,
+  "ก.ย": 9,
+  "ต.ค": 10,
+  "พ.ย": 11,
+  "ธ.ค": 12,
+  // Thai abbreviated months (no dots at all)
+  "มค": 1,
+  "กพ": 2,
+  "มีค": 3,
+  "เมย": 4,
+  "พค": 5,
+  "มิย": 6,
+  "กค": 7,
+  "สค": 8,
+  "กย": 9,
+  "ตค": 10,
+  "พย": 11,
+  "ธค": 12,
+  // Thai full months
+  "มกราคม": 1,
+  "กุมภาพันธ์": 2,
+  "มีนาคม": 3,
+  "เมษายน": 4,
+  "พฤษภาคม": 5,
+  "มิถุนายน": 6,
+  "กรกฎาคม": 7,
+  "สิงหาคม": 8,
+  "กันยายน": 9,
+  "ตุลาคม": 10,
+  "พฤศจิกายน": 11,
+  "ธันวาคม": 12,
 };
 
 // Asia/Bangkok has been UTC+7 year-round with no DST since 1920 — safe to
@@ -56,9 +108,9 @@ export const TIMESTAMP_AMBIGUOUS_WARNING_TH =
 const ISO_LIKE_PATTERN = /^\d{4}-\d{2}-\d{2}([T\s]\d{2}:\d{2}(:\d{2})?(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/;
 
 // "11 Jul 26", "11 Jul 2026", "11 July 2026", optionally "07:26" and/or
-// "+0700" / "+07:00".
+// "+0700" / "+07:00". Also supports Thai month names and Buddhist Era years.
 const TEXTUAL_DATE_PATTERN =
-  /^(\d{1,2})\s+([A-Za-z]{3,9})\.?\s+(\d{2}|\d{4})(?:[,\s]+(\d{1,2}):(\d{2}))?(?:\s*(Z|[+-]\d{2}:?\d{2}))?\s*$/;
+  /^(\d{1,2})\s+([A-Za-z\u0e00-\u0e7f\.]+)\s+(\d{2}|\d{4})(?:[,\s\-]+(?:เวลา\s+)?(\d{1,2}):(\d{2}))?(?:\s*(Z|[+-]\d{2}:?\d{2}))?\s*$/;
 
 // "07/11/2026", "11/07/2026", "07-11-2026" — numeric, locale-ambiguous.
 const NUMERIC_DATE_PATTERN =
@@ -75,10 +127,19 @@ function normalizeOffset(raw: string | undefined): string {
   return raw;
 }
 
-function resolveTwoDigitYear(yearStr: string): number {
-  // This app's data only ever spans the 2020s-2030s; a 2-digit year is
-  // always meant as 20xx here (never 19xx).
-  return yearStr.length === 2 ? 2000 + Number(yearStr) : Number(yearStr);
+function resolveYear(yearStr: string): number {
+  let yearNum = Number(yearStr);
+  if (yearStr.length === 2) {
+    if (yearNum > 40) {
+      // E.g. 69 indicates 2569 BE, which is 2026 AD
+      yearNum = (yearNum + 2500) - 543;
+    } else {
+      yearNum += 2000;
+    }
+  } else if (yearNum > 2400) {
+    yearNum -= 543;
+  }
+  return yearNum;
 }
 
 function isValidCalendarDate(year: number, month: number, day: number): boolean {
@@ -159,9 +220,16 @@ export function parseDocumentTimestamp(raw: unknown): TimestampParseResult {
   const textual = trimmed.match(TEXTUAL_DATE_PATTERN);
   if (textual) {
     const [, dayStr, monthStr, yearStr, hourStr, minuteStr, offsetStr] = textual;
-    const month = MONTH_NAMES[monthStr.toLowerCase()];
+    let monthKey = monthStr.toLowerCase();
+    if (!MONTH_NAMES[monthKey] && monthKey.endsWith(".")) {
+      const withoutTrailing = monthKey.slice(0, -1);
+      if (MONTH_NAMES[withoutTrailing]) {
+        monthKey = withoutTrailing;
+      }
+    }
+    const month = MONTH_NAMES[monthKey];
     if (!month) return { state: "invalid", warning: TIMESTAMP_INVALID_WARNING_TH };
-    return buildResult(resolveTwoDigitYear(yearStr), month, Number(dayStr), hourStr, minuteStr, offsetStr);
+    return buildResult(resolveYear(yearStr), month, Number(dayStr), hourStr, minuteStr, offsetStr);
   }
 
   // 3. Fully numeric slash/dash dates are inherently locale-ambiguous
@@ -183,7 +251,7 @@ export function parseDocumentTimestamp(raw: unknown): TimestampParseResult {
     } else {
       return { state: "invalid", warning: TIMESTAMP_AMBIGUOUS_WARNING_TH };
     }
-    return buildResult(resolveTwoDigitYear(yearStr), month, day, hourStr, minuteStr, offsetStr);
+    return buildResult(resolveYear(yearStr), month, day, hourStr, minuteStr, offsetStr);
   }
 
   // A candidate value exists but matches none of the supported shapes.

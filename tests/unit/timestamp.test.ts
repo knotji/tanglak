@@ -142,4 +142,54 @@ describe("parseDocumentTimestamp", () => {
     expect(result.state).toBe("invalid");
     expect(result.iso).toBeUndefined();
   });
+
+  describe("Thai Buddhist-era date parsing & BE-to-AD year resolution", () => {
+    it("parses SCB bank slip date string with abbreviated Thai month and 4-digit BE year", () => {
+      const result = parseDocumentTimestamp("05 ก.ค. 2569 - 13:44");
+      expect(result.state).toBe("extracted");
+      expect(result.iso).toBe("2026-07-05T13:44:00+07:00");
+    });
+
+    it("parses Thai date with full Thai month name and 4-digit BE year", () => {
+      const result = parseDocumentTimestamp("05 กรกฎาคม 2569 - 13:44");
+      expect(result.state).toBe("extracted");
+      expect(result.iso).toBe("2026-07-05T13:44:00+07:00");
+    });
+
+    it("parses Thai date with abbreviated Thai month and 2-digit BE year (> 40)", () => {
+      const result = parseDocumentTimestamp("05 ก.ค. 69 - 13:44");
+      expect(result.state).toBe("extracted");
+      expect(result.iso).toBe("2026-07-05T13:44:00+07:00");
+    });
+
+    it("parses English date with abbreviated month and 2-digit AD year (<= 40)", () => {
+      const result = parseDocumentTimestamp("05 Jul 26 - 13:44");
+      expect(result.state).toBe("extracted");
+      expect(result.iso).toBe("2026-07-05T13:44:00+07:00");
+    });
+
+    it("parses English date with 4-digit AD year", () => {
+      const result = parseDocumentTimestamp("05 Jul 2026 - 13:44");
+      expect(result.state).toBe("extracted");
+      expect(result.iso).toBe("2026-07-05T13:44:00+07:00");
+    });
+
+    it("parses unambiguous numeric date with BE year", () => {
+      const result = parseDocumentTimestamp("15/07/2569 13:44");
+      expect(result.state).toBe("extracted");
+      expect(result.iso).toBe("2026-07-15T13:44:00+07:00");
+    });
+
+    it("parses Thai date with 'เวลา' separator", () => {
+      const result = parseDocumentTimestamp("05 ก.ค. 2569 เวลา 13:44");
+      expect(result.state).toBe("extracted");
+      expect(result.iso).toBe("2026-07-05T13:44:00+07:00");
+    });
+
+    it("parses English date with trailing dot on month name", () => {
+      const result = parseDocumentTimestamp("11 Jul. 2026");
+      expect(result.state).toBe("inferred");
+      expect(result.iso).toBe("2026-07-11T12:00:00+07:00");
+    });
+  });
 });
