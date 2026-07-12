@@ -11,3 +11,6 @@ export const LENDER_RISK_WARNING =
 
 export const UNKNOWN_BEHAVIOR_WARNING = 
   "ควรตรวจสอบกับผู้ให้กู้ก่อนว่าเงินที่จ่ายเกินขั้นต่ำจะถูกนำไปลดเงินต้นหรือไม่";
+
+export const UNKNOWN_BEHAVIOR_EXPLANATION =
+  "TangLak ยังไม่แสดงผลประหยัดดอกเบี้ยหรือวันปิดหนี้ที่เร็วขึ้น จนกว่าจะทราบเงื่อนไขนี้";

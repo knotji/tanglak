@@ -32,11 +32,13 @@ export interface DebtSimulationOutput {
   nextPeriodInterestSatang: number;
   estimatedInstallmentsRemaining: number | null;
   estimatedPayoffDate: string | null; // e.g., "สิงหาคม 2569" or "August 2026"
-  estimatedRemainingInterestSatang: number;
-  interestSavedVsMinimumSatang: number;
+  estimatedRemainingInterestSatang: number | null;
+  interestSavedVsMinimumSatang: number | null;
   cashRemainingAfterPaymentSatang: number | null;
   affordabilityStatus: AffordabilityStatus;
   warnings: string[];
   assumptions: string[];
   precisionLevel: "full" | "limited" | "none";
+  affordablePaymentSatang?: number | null;
+  shortfallSatang?: number | null;
 }

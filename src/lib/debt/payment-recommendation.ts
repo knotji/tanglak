@@ -5,8 +5,8 @@ export interface PlanOptions {
   minimum: DebtSimulationOutput;
   recommended: DebtSimulationOutput;
   accelerated: DebtSimulationOutput;
-  recommendedAmountSatang: number;
-  acceleratedAmountSatang: number;
+  recommendedAmountSatang: number | null;
+  acceleratedAmountSatang: number | null;
 }
 
 /**
@@ -42,8 +42,8 @@ export function generatePlanOptions(
 
   const payoffAmountSatang = balanceSatang + firstMonthInterest + earlyPayoffFeeSatang;
 
-  let recAmountSatang = minimumPaymentSatang;
-  let accAmountSatang = minimumPaymentSatang;
+  let recAmountSatang: number | null = null;
+  let accAmountSatang: number | null = null;
 
   const hasContext =
     plannedIncomeSatang !== undefined &&
@@ -51,36 +51,30 @@ export function generatePlanOptions(
     debtPaymentsThisMonthSatang !== undefined;
 
   if (hasContext) {
-    // Recommended plan amount = plannedIncome - spending - already paid - reserve - buffer
-    const affordableRec =
-      plannedIncomeSatang -
-      currentMonthSpendingSatang -
-      debtPaymentsThisMonthSatang -
-      minimumCashReserveSatang -
-      safeBufferSatang;
+    const availableCashFlow = plannedIncomeSatang - currentMonthSpendingSatang - debtPaymentsThisMonthSatang;
 
-    recAmountSatang = Math.max(minimumPaymentSatang, affordableRec);
-    recAmountSatang = Math.min(payoffAmountSatang, recAmountSatang);
+    // Recommended plan: cash left after reserve & buffer
+    const affordableRec = availableCashFlow - minimumCashReserveSatang - safeBufferSatang;
+    if (affordableRec >= minimumPaymentSatang) {
+      recAmountSatang = Math.min(payoffAmountSatang, affordableRec);
+    } else {
+      recAmountSatang = null;
+    }
 
-    // Accelerated plan amount = plannedIncome - spending - already paid - reserve
-    const affordableAcc =
-      plannedIncomeSatang -
-      currentMonthSpendingSatang -
-      debtPaymentsThisMonthSatang -
-      minimumCashReserveSatang;
-
-    accAmountSatang = Math.max(minimumPaymentSatang, affordableAcc);
-    accAmountSatang = Math.min(payoffAmountSatang, accAmountSatang);
-
-    // Safety: Accelerated should be at least Recommended
-    accAmountSatang = Math.max(accAmountSatang, recAmountSatang);
+    // Accelerated plan: cash left after reserve
+    const affordableAcc = availableCashFlow - minimumCashReserveSatang;
+    if (affordableAcc >= minimumPaymentSatang) {
+      accAmountSatang = Math.min(payoffAmountSatang, affordableAcc);
+      if (recAmountSatang !== null) {
+        accAmountSatang = Math.max(accAmountSatang, recAmountSatang);
+      }
+    } else {
+      accAmountSatang = null;
+    }
   } else {
-    // Financial context is incomplete:
-    // We cannot offer a personalized recommendation.
-    // We set recommended to minimum, and accelerated to a sensible default extra (e.g. minimum + ฿1,000, capped at payoff)
-    recAmountSatang = minimumPaymentSatang;
-    accAmountSatang = Math.min(payoffAmountSatang, minimumPaymentSatang + 100000); // +฿1,000
-    accAmountSatang = Math.max(accAmountSatang, recAmountSatang);
+    // Financial context is incomplete: no personalized recommendation
+    recAmountSatang = null;
+    accAmountSatang = null;
   }
 
   // Simulate all three plans
@@ -91,12 +85,12 @@ export function generatePlanOptions(
 
   const recommended = simulateDebtPayment({
     ...input,
-    paymentAmountSatang: recAmountSatang,
+    paymentAmountSatang: recAmountSatang !== null ? recAmountSatang : minimumPaymentSatang,
   });
 
   const accelerated = simulateDebtPayment({
     ...input,
-    paymentAmountSatang: accAmountSatang,
+    paymentAmountSatang: accAmountSatang !== null ? accAmountSatang : minimumPaymentSatang,
   });
 
   return {

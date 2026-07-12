@@ -208,47 +208,57 @@ export function simulateDebtPayment(input: DebtSimulationInput): DebtSimulationO
   // If the payment is below minimum or if it doesn't amortize:
   let estimatedInstallmentsRemaining: number | null = null;
   let estimatedPayoffDate: string | null = null;
-  let estimatedRemainingInterest = 0;
-  let interestSavedVsMinimum = 0;
+  let estimatedRemainingInterest: number | null = null;
+  let interestSavedVsMinimum: number | null = null;
 
-  if (currentPlan.doesAmortize) {
-    estimatedInstallmentsRemaining = currentPlan.months;
-    estimatedRemainingInterest = currentPlan.totalInterest - interestPaidThisPayment;
-
-    // Calculate payoff date
-    if (dueDate) {
-      const start = new Date(dueDate);
-      // Add months
-      start.setMonth(start.getMonth() + (currentPlan.months - 1));
-      const thaiYear = start.getFullYear() + 543;
-      const monthNames = [
-        "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
-        "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
-      ];
-      estimatedPayoffDate = `${monthNames[start.getMonth()]} ${thaiYear}`;
-    }
-  } else {
+  if (extraPaymentBehavior === "unknown") {
+    // Cannot evaluate future projection without knowing behavior
     estimatedInstallmentsRemaining = null;
     estimatedPayoffDate = null;
-    estimatedRemainingInterest = 0;
-    warnings.push("ยอดชำระเฉลี่ยต่ำเกินไปสำหรับการชำระหนี้ให้หมด (หนี้ไม่ลดลงหรือลดลงช้ามาก)");
-  }
-
-  // Calculate interest saved compared to minimum plan
-  if (minBaseline.doesAmortize && currentPlan.doesAmortize) {
-    // If advance_installment, we do not claim guaranteed interest savings from principal reduction
-    if (extraPaymentBehavior === "advance_installment") {
-      interestSavedVsMinimum = 0;
-    } else {
-      interestSavedVsMinimum = Math.max(0, minBaseline.totalInterest - currentPlan.totalInterest);
-    }
+    estimatedRemainingInterest = null;
+    interestSavedVsMinimum = null;
   } else {
-    interestSavedVsMinimum = 0;
+    if (currentPlan.doesAmortize) {
+      estimatedInstallmentsRemaining = currentPlan.months;
+      estimatedRemainingInterest = Math.max(0, currentPlan.totalInterest - interestPaidThisPayment);
+
+      // Calculate payoff date
+      if (dueDate) {
+        const start = new Date(dueDate);
+        // Add months
+        start.setMonth(start.getMonth() + (currentPlan.months - 1));
+        const thaiYear = start.getFullYear() + 543;
+        const monthNames = [
+          "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+          "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
+        ];
+        estimatedPayoffDate = `${monthNames[start.getMonth()]} ${thaiYear}`;
+      }
+    } else {
+      estimatedInstallmentsRemaining = null;
+      estimatedPayoffDate = null;
+      estimatedRemainingInterest = 0;
+      warnings.push("ยอดชำระเฉลี่ยต่ำเกินไปสำหรับการชำระหนี้ให้หมด (หนี้ไม่ลดลงหรือลดลงช้ามาก)");
+    }
+
+    // Calculate interest saved compared to minimum plan
+    if (minBaseline.doesAmortize && currentPlan.doesAmortize) {
+      // If advance_installment, we do not claim guaranteed interest savings from principal reduction
+      if (extraPaymentBehavior === "advance_installment") {
+        interestSavedVsMinimum = 0;
+      } else {
+        interestSavedVsMinimum = Math.max(0, minBaseline.totalInterest - currentPlan.totalInterest);
+      }
+    } else {
+      interestSavedVsMinimum = 0;
+    }
   }
 
   // 6. Financial Context & Affordability calculations
   let cashRemainingAfterPayment: number | null = null;
   let affordabilityStatus: DebtSimulationOutput["affordabilityStatus"] = "insufficient_data";
+  let affordablePaymentSatang: number | null = null;
+  let shortfallSatang: number | null = null;
 
   const hasContext =
     plannedIncomeSatang !== undefined &&
@@ -256,15 +266,6 @@ export function simulateDebtPayment(input: DebtSimulationInput): DebtSimulationO
     debtPaymentsThisMonthSatang !== undefined;
 
   if (hasContext) {
-    // The user has already paid some debt this month.
-    // If they pay the simulated amount this month, their remaining cash is:
-    // cashRemaining = plannedIncome - actual spending - debtPaymentsThisMonth (excluding this debt if this is the first payment, or including it?
-    // Wait! Let's check: "debtPaymentsAlreadyMadeThisMonth" in the app usually includes payments for ALL debts.
-    // So if the user is deciding how much to pay *for this debt*, the payment for this debt this month is `actualPaymentThisMonth`.
-    // So cash remaining after payment = plannedIncome - actual spending - debtPaymentsAlreadyMadeThisMonth - actualPaymentThisMonth
-    // Wait, let's make sure if `debtPaymentsThisMonthSatang` already includes a payment for this debt, we adjust it, or if it does not.
-    // In typical budgets, we subtract the new payment.
-    // Let's implement:
     const remainingCash =
       plannedIncomeSatang -
       currentMonthSpendingSatang -
@@ -276,7 +277,9 @@ export function simulateDebtPayment(input: DebtSimulationInput): DebtSimulationO
     const minReserve = minimumCashReserveSatang || 0;
     const safeBuffer = safeBufferSatang || 0;
 
-    if (remainingCash >= minReserve + safeBuffer) {
+    if (actualPaymentThisMonth < minimumPaymentSatang && actualPaymentThisMonth < fullPayoffAmount) {
+      affordabilityStatus = "risky";
+    } else if (remainingCash >= minReserve + safeBuffer) {
       affordabilityStatus = "safe";
     } else if (remainingCash >= minReserve) {
       affordabilityStatus = "tight";
@@ -285,7 +288,9 @@ export function simulateDebtPayment(input: DebtSimulationInput): DebtSimulationO
     }
 
     const availableCashBeforeThis = plannedIncomeSatang - currentMonthSpendingSatang - debtPaymentsThisMonthSatang;
-    if (availableCashBeforeThis < minimumPaymentSatang) {
+    affordablePaymentSatang = Math.max(0, availableCashBeforeThis - minReserve);
+    if (affordablePaymentSatang < minimumPaymentSatang) {
+      shortfallSatang = minimumPaymentSatang - affordablePaymentSatang;
       warnings.push("เงินเหลือเดือนนี้อาจไม่พอสำหรับยอดขั้นต่ำ");
     }
   } else {
@@ -300,12 +305,14 @@ export function simulateDebtPayment(input: DebtSimulationInput): DebtSimulationO
     nextPeriodInterestSatang: nextPeriodInterest,
     estimatedInstallmentsRemaining,
     estimatedPayoffDate,
-    estimatedRemainingInterestSatang: Math.max(0, estimatedRemainingInterest),
+    estimatedRemainingInterestSatang: estimatedRemainingInterest !== null ? Math.max(0, estimatedRemainingInterest) : null,
     interestSavedVsMinimumSatang: interestSavedVsMinimum,
     cashRemainingAfterPaymentSatang: cashRemainingAfterPayment,
     affordabilityStatus,
     warnings,
     assumptions,
     precisionLevel,
+    affordablePaymentSatang,
+    shortfallSatang,
   };
 }

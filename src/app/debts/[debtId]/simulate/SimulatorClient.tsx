@@ -8,7 +8,7 @@ import { formatTHB } from "@/lib/finance/money";
 import { generatePlanOptions } from "@/lib/debt/payment-recommendation";
 import { simulateDebtPayment } from "@/lib/debt/payment-simulator";
 import { formatThaiDate } from "@/lib/debt/payment-formatting";
-import { SIMULATOR_ASSUMPTIONS, LENDER_RISK_WARNING, UNKNOWN_BEHAVIOR_WARNING } from "@/lib/debt/payment-assumptions";
+import { SIMULATOR_ASSUMPTIONS, LENDER_RISK_WARNING, UNKNOWN_BEHAVIOR_WARNING, UNKNOWN_BEHAVIOR_EXPLANATION } from "@/lib/debt/payment-assumptions";
 import type { Debt } from "@/types/domain";
 import type { ExtraPaymentBehavior, AffordabilityStatus } from "@/lib/debt/payment-types";
 
@@ -106,14 +106,22 @@ export function SimulatorClient({
   // Active plan selection state: default to recommended if context exists, otherwise minimum
   const hasContext = parsedContext.plannedIncomeSatang !== undefined;
   const [selectedPlan, setSelectedPlan] = useState<"minimum" | "recommended" | "accelerated" | "custom">(
-    hasContext ? "recommended" : "minimum"
+    hasContext && plans.recommendedAmountSatang !== null ? "recommended" : "minimum"
   );
 
   // Custom payment input state in Baht
   const defaultCustomAmount = () => {
     if (selectedPlan === "minimum") return String(minimumPaymentSatang / 100);
-    if (selectedPlan === "recommended") return String(plans.recommendedAmountSatang / 100);
-    if (selectedPlan === "accelerated") return String(plans.acceleratedAmountSatang / 100);
+    if (selectedPlan === "recommended") {
+      return plans.recommendedAmountSatang !== null
+        ? String(plans.recommendedAmountSatang / 100)
+        : String(minimumPaymentSatang / 100);
+    }
+    if (selectedPlan === "accelerated") {
+      return plans.acceleratedAmountSatang !== null
+        ? String(plans.acceleratedAmountSatang / 100)
+        : String(minimumPaymentSatang / 100);
+    }
     return "";
   };
   const [customAmount, setCustomAmount] = useState<string>(defaultCustomAmount());
@@ -124,9 +132,17 @@ export function SimulatorClient({
     if (plan === "minimum") {
       setCustomAmount(String(minimumPaymentSatang / 100));
     } else if (plan === "recommended") {
-      setCustomAmount(String(plans.recommendedAmountSatang / 100));
+      setCustomAmount(
+        plans.recommendedAmountSatang !== null
+          ? String(plans.recommendedAmountSatang / 100)
+          : String(minimumPaymentSatang / 100)
+      );
     } else if (plan === "accelerated") {
-      setCustomAmount(String(plans.acceleratedAmountSatang / 100));
+      setCustomAmount(
+        plans.acceleratedAmountSatang !== null
+          ? String(plans.acceleratedAmountSatang / 100)
+          : String(minimumPaymentSatang / 100)
+      );
     }
   };
 
@@ -139,8 +155,16 @@ export function SimulatorClient({
   const activePaymentSatang = useMemo(() => {
     if (selectedPlan !== "custom") {
       if (selectedPlan === "minimum") return minimumPaymentSatang;
-      if (selectedPlan === "recommended") return plans.recommendedAmountSatang;
-      if (selectedPlan === "accelerated") return plans.acceleratedAmountSatang;
+      if (selectedPlan === "recommended") {
+        return plans.recommendedAmountSatang !== null
+          ? plans.recommendedAmountSatang
+          : minimumPaymentSatang;
+      }
+      if (selectedPlan === "accelerated") {
+        return plans.acceleratedAmountSatang !== null
+          ? plans.acceleratedAmountSatang
+          : minimumPaymentSatang;
+      }
     }
     const parsed = parseFloat(customAmount.replace(/,/g, ""));
     return isNaN(parsed) || parsed < 0 ? 0 : Math.round(parsed * 100);
@@ -285,12 +309,16 @@ export function SimulatorClient({
           <div>
             <p className="font-bold">เงื่อนไขการตัดยอดชำระส่วนเกิน</p>
             <p className="mt-1 leading-relaxed">{UNKNOWN_BEHAVIOR_WARNING}</p>
+            <p className="mt-1 text-xs opacity-90 leading-relaxed font-medium">{UNKNOWN_BEHAVIOR_EXPLANATION}</p>
           </div>
         </div>
       )}
 
       {/* INTERACTIVE SETTINGS PANEL */}
       <section className="rounded-[20px] border border-border bg-surface shadow-sm overflow-hidden">
+        <div className="bg-primary-soft/10 px-5 py-2 text-[11px] text-text-secondary border-b border-border flex justify-between items-center">
+          <span>💡 ค่าจำลองนี้ใช้สำหรับการคำนวณครั้งนี้ และยังไม่ได้บันทึกเป็นการตั้งค่าหนี้</span>
+        </div>
         <button
           onClick={() => setShowSettings(!showSettings)}
           className="w-full min-h-12 px-5 flex items-center justify-between font-bold text-sm text-text-primary hover:bg-muted/50 transition-colors"
@@ -413,7 +441,7 @@ export function SimulatorClient({
               </div>
               <div className="flex justify-between">
                 <span className="text-text-secondary">ดอกเบี้ยคงเหลือรวม</span>
-                <span className="font-bold tabular">{formatTHB(plans.minimum.estimatedRemainingInterestSatang)}</span>
+                <span className="font-bold tabular">{formatTHB(plans.minimum.estimatedRemainingInterestSatang ?? 0)}</span>
               </div>
               {hasContext && (
                 <div className="flex justify-between">
@@ -433,7 +461,7 @@ export function SimulatorClient({
                 : "border-border shadow-sm hover:border-text-secondary/30"
             }`}
           >
-            {hasContext && (
+            {hasContext && plans.recommendedAmountSatang !== null && (
               <span className="absolute -top-3 left-4 bg-income text-white text-[10px] font-bold px-2 py-0.5 rounded-full tracking-wider shadow">
                 แนะนำสำหรับเดือนนี้
               </span>
@@ -446,14 +474,30 @@ export function SimulatorClient({
                 </span>
                 {renderAffordabilityBadge(plans.recommended.affordabilityStatus)}
               </div>
-              <p className="mt-4 text-[26px] font-extrabold text-income">
-                {formatTHB(plans.recommendedAmountSatang)}
-              </p>
-              <p className="text-xs text-text-secondary mt-1">
-                {plans.recommendedAmountSatang > minimumPaymentSatang
-                  ? `จ่ายเพิ่มจากขั้นต่ำ ${formatTHB(plans.recommendedAmountSatang - minimumPaymentSatang)}`
-                  : "ชำระเท่าขั้นต่ำตามกำลังจ่ายที่ปลอดภัย"}
-              </p>
+              {plans.recommendedAmountSatang !== null ? (
+                <>
+                  <p className="mt-4 text-[26px] font-extrabold text-income">
+                    {formatTHB(plans.recommendedAmountSatang)}
+                  </p>
+                  <p className="text-xs text-text-secondary mt-1">
+                    {plans.recommendedAmountSatang > minimumPaymentSatang
+                      ? `จ่ายเพิ่มจากขั้นต่ำ ${formatTHB(plans.recommendedAmountSatang - minimumPaymentSatang)}`
+                      : "ชำระเท่าขั้นต่ำตามกำลังจ่ายที่ปลอดภัย"}
+                  </p>
+                </>
+              ) : (
+                <div className="mt-3 space-y-1">
+                  <p className="text-sm font-semibold text-overdue">ไม่มีข้อเสนอแนะที่ปลอดภัย</p>
+                  <p className="text-xs text-text-secondary leading-relaxed">
+                    เงินที่คาดว่าเหลืออยู่ไม่เพียงพอสำหรับยอดขั้นต่ำ {formatTHB(minimumPaymentSatang)}
+                  </p>
+                  {plans.minimum.shortfallSatang !== null && plans.minimum.shortfallSatang !== undefined && (
+                    <p className="text-[11px] font-bold text-overdue">
+                      ขาดอยู่ประมาณ {formatTHB(plans.minimum.shortfallSatang)}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
             
             <div className="mt-5 border-t border-border/60 pt-4 space-y-2 text-xs w-full">
@@ -462,6 +506,8 @@ export function SimulatorClient({
                 <span className="font-bold text-income tabular">
                   {plans.recommended.estimatedInstallmentsRemaining
                     ? `${plans.recommended.estimatedInstallmentsRemaining} งวด`
+                    : plans.recommended.estimatedInstallmentsRemaining === null && extraBehavior === "unknown"
+                    ? "ยังประเมินไม่ได้"
                     : "หนี้ไม่ลดลง"}
                   {plans.minimum.estimatedInstallmentsRemaining && plans.recommended.estimatedInstallmentsRemaining && (
                     <span className="text-[10px] font-normal ml-1">
@@ -473,7 +519,9 @@ export function SimulatorClient({
               <div className="flex justify-between">
                 <span className="text-text-secondary">ประหยัดดอกเบี้ย</span>
                 <span className="font-bold text-income tabular">
-                  {formatTHB(plans.recommended.interestSavedVsMinimumSatang)}
+                  {plans.recommended.interestSavedVsMinimumSatang !== null
+                    ? formatTHB(plans.recommended.interestSavedVsMinimumSatang)
+                    : "ยังประเมินไม่ได้"}
                 </span>
               </div>
               {hasContext && (
@@ -501,14 +549,30 @@ export function SimulatorClient({
                 </span>
                 {renderAffordabilityBadge(plans.accelerated.affordabilityStatus)}
               </div>
-              <p className="mt-4 text-[26px] font-extrabold text-overdue">
-                {formatTHB(plans.acceleratedAmountSatang)}
-              </p>
-              <p className="text-xs text-text-secondary mt-1">
-                {plans.acceleratedAmountSatang > minimumPaymentSatang
-                  ? `จ่ายเพิ่มจากขั้นต่ำ ${formatTHB(plans.acceleratedAmountSatang - minimumPaymentSatang)}`
-                  : "ชำระเท่าขั้นต่ำตามความคุ้มครองความปลอดภัย"}
-              </p>
+              {plans.acceleratedAmountSatang !== null ? (
+                <>
+                  <p className="mt-4 text-[26px] font-extrabold text-overdue">
+                    {formatTHB(plans.acceleratedAmountSatang)}
+                  </p>
+                  <p className="text-xs text-text-secondary mt-1">
+                    {plans.acceleratedAmountSatang > minimumPaymentSatang
+                      ? `จ่ายเพิ่มจากขั้นต่ำ ${formatTHB(plans.acceleratedAmountSatang - minimumPaymentSatang)}`
+                      : "ชำระเท่าขั้นต่ำตามความคุ้มครองความปลอดภัย"}
+                  </p>
+                </>
+              ) : (
+                <div className="mt-3 space-y-1">
+                  <p className="text-sm font-semibold text-overdue">ไม่สามารถเร่งปิดได้</p>
+                  <p className="text-xs text-text-secondary leading-relaxed">
+                    เงินที่คาดว่าเหลืออยู่ไม่เพียงพอสำหรับยอดขั้นต่ำ {formatTHB(minimumPaymentSatang)}
+                  </p>
+                  {plans.minimum.shortfallSatang !== null && plans.minimum.shortfallSatang !== undefined && (
+                    <p className="text-[11px] font-bold text-overdue">
+                      ขาดอยู่ประมาณ {formatTHB(plans.minimum.shortfallSatang)}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
             
             <div className="mt-5 border-t border-border/60 pt-4 space-y-2 text-xs w-full">
@@ -517,6 +581,8 @@ export function SimulatorClient({
                 <span className="font-bold text-overdue tabular">
                   {plans.accelerated.estimatedInstallmentsRemaining
                     ? `${plans.accelerated.estimatedInstallmentsRemaining} งวด`
+                    : plans.accelerated.estimatedInstallmentsRemaining === null && extraBehavior === "unknown"
+                    ? "ยังประเมินไม่ได้"
                     : "หนี้ไม่ลดลง"}
                   {plans.minimum.estimatedInstallmentsRemaining && plans.accelerated.estimatedInstallmentsRemaining && (
                     <span className="text-[10px] font-normal ml-1">
@@ -528,7 +594,9 @@ export function SimulatorClient({
               <div className="flex justify-between">
                 <span className="text-text-secondary">ประหยัดดอกเบี้ย</span>
                 <span className="font-bold text-overdue tabular">
-                  {formatTHB(plans.accelerated.interestSavedVsMinimumSatang)}
+                  {plans.accelerated.interestSavedVsMinimumSatang !== null
+                    ? formatTHB(plans.accelerated.interestSavedVsMinimumSatang)
+                    : "ยังประเมินไม่ได้"}
                 </span>
               </div>
               {hasContext && (
@@ -684,7 +752,9 @@ export function SimulatorClient({
           <div className="p-4 rounded-[16px] bg-muted/40">
             <span className="text-xs text-text-secondary font-medium">ประหยัดดอกเบี้ยเทียบขั้นต่ำ</span>
             <p className="tabular mt-1 text-xl font-extrabold text-income">
-              {formatTHB(activeSimulation.interestSavedVsMinimumSatang)}
+              {activeSimulation.interestSavedVsMinimumSatang !== null
+                ? formatTHB(activeSimulation.interestSavedVsMinimumSatang)
+                : "ยังประเมินไม่ได้"}
             </p>
           </div>
 

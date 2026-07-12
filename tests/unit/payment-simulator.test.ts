@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { simulateDebtPayment } from "../../src/lib/debt/payment-simulator";
 import { generatePlanOptions } from "../../src/lib/debt/payment-recommendation";
 import { formatTHB } from "../../src/lib/finance/money";
+import { getBangkokMonthOf, getBangkokDateOf } from "../../src/lib/finance/date";
 
 describe("Debt Payment Simulator Engine", () => {
   const baseInput = {
@@ -51,7 +52,7 @@ describe("Debt Payment Simulator Engine", () => {
     if (resMin.estimatedInstallmentsRemaining && resExtra.estimatedInstallmentsRemaining) {
       expect(resExtra.estimatedInstallmentsRemaining).toBeLessThan(resMin.estimatedInstallmentsRemaining);
     }
-    expect(resExtra.estimatedRemainingInterestSatang).toBeLessThan(resMin.estimatedRemainingInterestSatang);
+    expect(resExtra.estimatedRemainingInterestSatang!).toBeLessThan(resMin.estimatedRemainingInterestSatang!);
   });
 
   // Case 5: Payment below periodic interest produces warning
@@ -271,5 +272,102 @@ describe("Debt Payment Simulator Engine", () => {
     });
     expect(res.estimatedPayoffDate).toBeNull();
     expect(res.estimatedRemainingInterestSatang).toBe(0);
+  });
+
+  // Case 29: unknown lender behavior tests
+  describe("unknown lender behavior projections and warnings", () => {
+    it("does not claim interest saved or accelerated payoff when behavior is unknown", () => {
+      const res = simulateDebtPayment({
+        ...baseInput,
+        extraPaymentBehavior: "unknown",
+        paymentAmountSatang: 200000,
+      });
+      expect(res.interestSavedVsMinimumSatang).toBeNull();
+      expect(res.estimatedInstallmentsRemaining).toBeNull();
+      expect(res.estimatedPayoffDate).toBeNull();
+      expect(res.estimatedRemainingInterestSatang).toBeNull();
+    });
+
+    it("still calculates affordability status and remaining cash correctly for unknown", () => {
+      const res = simulateDebtPayment({
+        ...baseInput,
+        extraPaymentBehavior: "unknown",
+        paymentAmountSatang: 150000, // ฿1,500
+        plannedIncomeSatang: 3000000, // ฿30,000
+        currentMonthSpendingSatang: 1500000, // ฿15,000
+        debtPaymentsThisMonthSatang: 200000, // ฿2,000
+        minimumCashReserveSatang: 500000, // ฿5,000
+        safeBufferSatang: 300000, // ฿3,000
+      });
+      // cash remaining = 30k - 15k - 2k - 1.5k = 11.5k
+      expect(res.cashRemainingAfterPaymentSatang).toBe(1150000);
+      // Remaining is 11.5k which is >= 5k (reserve) + 3k (buffer) = 8k -> safe
+      expect(res.affordabilityStatus).toBe("safe");
+    });
+  });
+
+  // Case 30: shortfall and recommendation formulas
+  describe("shortfall and payment recommendation logic", () => {
+    const context = {
+      plannedIncomeSatang: 2000000, // ฿20,000
+      currentMonthSpendingSatang: 1200000, // ฿12,000
+      debtPaymentsThisMonthSatang: 200000, // ฿2,000
+      minimumCashReserveSatang: 500000, // ฿5,000
+      safeBufferSatang: 300000, // ฿3,000
+    };
+
+    it("recommends plan when affordable cash is above minimum due", () => {
+      const plans = generatePlanOptions({
+        ...baseInput,
+        ...context,
+        plannedIncomeSatang: 3000000, // ฿30,000
+      });
+      expect(plans.recommendedAmountSatang).toBe(800000); // ฿8,000 (available cashRec = 30k - 12k - 2k - 5k - 3k = 8k)
+      expect(plans.recommended.affordabilityStatus).toBe("safe");
+    });
+
+    it("handles zero/negative available cash safely and calculates shortfall", () => {
+      const plans = generatePlanOptions({
+        ...baseInput,
+        ...context,
+        plannedIncomeSatang: 1000000, // ฿10,000
+        currentMonthSpendingSatang: 1200000, // ฿12,000 (negative cash flow)
+      });
+      expect(plans.recommendedAmountSatang).toBeNull();
+      // available cash = 10k - 12k - 2k = -4k
+      // affordable = max(0, -4k - 5k) = 0
+      // shortfall = 1k minimum - 0 affordable = 1k
+      expect(plans.minimum.shortfallSatang).toBe(100000); // ฿1,000 (since affordable payment is 0)
+    });
+
+    it("verifies recommended payment never exceeds affordable cash and never produces negative cash without warning", () => {
+      const plans = generatePlanOptions({
+        ...baseInput,
+        ...context,
+        plannedIncomeSatang: 1600000, // ฿16,000 -> cash before = 16k - 12k - 2k = 2k
+        minimumPaymentSatang: 300000, // ฿3,000
+      });
+      expect(plans.recommendedAmountSatang).toBeNull();
+      expect(plans.minimum.warnings).toContain("เงินเหลือเดือนนี้อาจไม่พอสำหรับยอดขั้นต่ำ");
+    });
+  });
+
+  // Case 31: Bangkok timezone month boundary correctness
+  describe("Bangkok timezone boundary correctness for monthly aggregates", () => {
+    it("correctly buckets dates near Bangkok midnight to their Bangkok local month", () => {
+      // 2026-07-31T18:30:00Z is 2026-08-01T01:30:00+07:00 in Bangkok
+      const instantAug = "2026-07-31T18:30:00Z";
+      expect(getBangkokDateOf(instantAug)).toBe("2026-08-01");
+      expect(getBangkokMonthOf(instantAug)).toBe("2026-08");
+
+      // 2026-08-01T16:59:59Z is 2026-08-01T23:59:59+07:00 in Bangkok
+      const instantAugLate = "2026-08-01T16:59:59Z";
+      expect(getBangkokDateOf(instantAugLate)).toBe("2026-08-01");
+      expect(getBangkokMonthOf(instantAugLate)).toBe("2026-08");
+
+      // 2026-08-01T17:00:00Z is 2026-08-02T00:00:00+07:00 in Bangkok
+      const instantNextDay = "2026-08-01T17:00:00Z";
+      expect(getBangkokDateOf(instantNextDay)).toBe("2026-08-02");
+    });
   });
 });
