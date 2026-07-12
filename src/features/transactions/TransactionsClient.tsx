@@ -13,11 +13,12 @@ import { PageHeader } from "@/components/PageHeader";
 import { TransactionGroup } from "@/components/TransactionGroup";
 import { ManualTransactionForm } from "@/features/transactions/ManualTransactionForm";
 import { shiftMonth } from "@/lib/finance/date";
-import type { Account, Transaction, TransactionType } from "@/types/domain";
+import type { Account, Debt, Transaction, TransactionType } from "@/types/domain";
 
 export function TransactionsClient({
   transactions,
   accounts,
+  debts = [],
   selectedMonth,
   currentMonth,
   monthLabel,
@@ -25,6 +26,7 @@ export function TransactionsClient({
 }: {
   transactions: Transaction[];
   accounts: Account[];
+  debts?: Debt[];
   selectedMonth: string;
   currentMonth: string;
   monthLabel: string;
@@ -173,6 +175,7 @@ export function TransactionsClient({
         <ManualTransactionForm
           transaction={editing}
           accounts={accounts}
+          debts={debts}
           onSaved={() => {
             setOpen(false);
             setEditing(undefined);

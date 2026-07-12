@@ -5,7 +5,11 @@ import { timeAsync } from "@/lib/observability/timing";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { assertMoneySatang } from "@/lib/finance/money-guards";
 import { BUDGET_ERROR_DUPLICATE_TH, BUDGET_ERROR_NOT_FOUND_TH } from "@/lib/finance/budget-guards";
-import { assertInterestRateAnnual } from "@/lib/finance/debt-guards";
+import {
+  assertInterestRateAnnual,
+  assertMinimumNotAboveOutstanding,
+  assertDebtPaymentLinked,
+} from "@/lib/finance/debt-guards";
 import { getDebtCycleWindow, isValidDateKey, isValidMonthQuery } from "@/lib/finance/date";
 import { logSafeError } from "@/lib/observability/safe-diagnostics";
 import type { Debt, Transaction, FinanceDocument, DocumentExtraction, ImportBatch, ImportRow, Account, MonthlyBudget, BudgetCategory } from "@/types/domain";
@@ -134,6 +138,16 @@ function validateDebtInput(input: Partial<DebtInput>, existing?: Debt): void {
 
   assertInterestRateAnnual(input.interestRateAnnual ?? existing?.interestRateAnnual);
   assertOptionalInteger(input.remainingInstallments ?? existing?.remainingInstallments, "remainingInstallments");
+
+  // Locked Phase 1 rule: minimum payment must never exceed outstanding
+  // balance. Checked against the final merged state (patch + existing row
+  // together) so a patch that only changes one of the two fields is still
+  // validated against the other's current value -- e.g. lowering
+  // outstandingBalanceSatang below an already-saved minimumPaymentSatang is
+  // rejected even though this patch never touches minimumPaymentSatang.
+  const mergedMinimumPaymentSatang = input.minimumPaymentSatang ?? existing?.minimumPaymentSatang;
+  const mergedOutstandingBalanceSatang = input.outstandingBalanceSatang ?? existing?.outstandingBalanceSatang;
+  assertMinimumNotAboveOutstanding(mergedMinimumPaymentSatang, mergedOutstandingBalanceSatang);
 }
 
 const TRANSACTION_COLUMNS =
@@ -190,6 +204,7 @@ export async function listAllTransactions(userId: string): Promise<Transaction[]
 
 export async function createTransaction(userId: string, input: TransactionInput): Promise<Transaction> {
   assertMoneySatang(input.amountSatang, input.type === "debt_payment" ? "positive" : "nonnegative", "amountSatang");
+  assertDebtPaymentLinked(input.type, input.debtId);
   if (input.debtId) await assertDebtBelongsToUser(userId, input.debtId);
   if (input.sourceAccountId) await assertAccountBelongsToUser(userId, input.sourceAccountId);
   if (input.destinationAccountId) await assertAccountBelongsToUser(userId, input.destinationAccountId);
@@ -272,11 +287,13 @@ export async function updateTransaction(
     const index = state.transactions.findIndex((transaction) => transaction.id === id);
     if (index < 0) throw new Error("Transaction not found");
     assertOwner(userId, state.transactions[index].userId);
-    // Validate the final merged state (type + amount together), not just
-    // whichever of the two happens to be present in this patch.
+    // Validate the final merged state (type + amount + debtId together),
+    // not just whichever of these happens to be present in this patch.
     const finalType = input.type ?? state.transactions[index].type;
     const finalAmount = input.amountSatang ?? state.transactions[index].amountSatang;
+    const finalDebtId = input.debtId !== undefined ? input.debtId : state.transactions[index].debtId;
     assertMoneySatang(finalAmount, finalType === "debt_payment" ? "positive" : "nonnegative", "amountSatang");
+    assertDebtPaymentLinked(finalType, finalDebtId);
     const previousDebtId = state.transactions[index].debtId;
     state.transactions[index] = { ...state.transactions[index], ...input };
     if (previousDebtId) recalculateMockDebtPaid(userId, previousDebtId);
@@ -291,11 +308,13 @@ export async function updateTransaction(
     .eq("id", id)
     .eq("user_id", userId)
     .maybeSingle();
-  // Validate the final merged state (type + amount together), not just
-  // whichever of the two happens to be present in this patch.
+  // Validate the final merged state (type + amount + debtId together), not
+  // just whichever of these happens to be present in this patch.
   const finalType = input.type ?? previous?.type;
   const finalAmount = input.amountSatang ?? previous?.amount_satang;
+  const finalDebtId = input.debtId !== undefined ? input.debtId : previous?.debt_id;
   assertMoneySatang(finalAmount, finalType === "debt_payment" ? "positive" : "nonnegative", "amountSatang");
+  assertDebtPaymentLinked(finalType, finalDebtId);
   const payload: Record<string, unknown> = {};
   if (input.type !== undefined) payload.type = input.type;
   if (input.amountSatang !== undefined) payload.amount_satang = input.amountSatang;
@@ -392,7 +411,14 @@ export async function listDebts(userId: string, includeClosed = false): Promise<
 }
 
 export async function createDebt(userId: string, input: DebtInput): Promise<Debt> {
-  validateDebtInput(input);
+  // outstandingBalanceSatang defaults to amountDueSatang when not supplied
+  // (see the insert below) -- validate against that same effective value so
+  // the minimum-not-above-outstanding check can't be bypassed by omitting
+  // outstanding balance.
+  validateDebtInput({
+    ...input,
+    outstandingBalanceSatang: input.outstandingBalanceSatang ?? input.amountDueSatang,
+  });
 
   if (isMockAuthEnabled()) {
     const debt: Debt = {

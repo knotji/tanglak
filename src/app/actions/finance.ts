@@ -10,7 +10,6 @@ import {
   deleteTransaction,
   markDebtPaidOff,
   listDebtPaymentHistory,
-  reopenDebt,
   updateDebt,
   updateTransaction,
 } from "@/lib/data/finance-repository";
@@ -22,6 +21,8 @@ import {
   parseDebtOutstandingBalance,
   parseInterestRateAnnual,
   DEBT_ERROR_DUE_DATE_INVALID_TH,
+  DEBT_ERROR_MINIMUM_ABOVE_OUTSTANDING_TH,
+  DEBT_ERROR_UNLINKED_PAYMENT_TH,
 } from "@/lib/finance/debt-guards";
 
 export type FinanceActionState = {
@@ -37,6 +38,7 @@ const transactionSchema = z.object({
   category: z.string().optional(),
   date: z.string().min(1),
   sourceAccountId: z.string().optional(),
+  debtId: z.string().optional(),
 });
 
 const debtSchema = z.object({
@@ -84,6 +86,11 @@ export async function saveTransactionAction(
   const amountResult = parseRequiredMoney(parsed.data.amount, parsed.data.type === "debt_payment" ? "positive" : "nonnegative");
   if (!amountResult.ok) return { ok: false, message: amountResult.error };
 
+  const debtId = parsed.data.debtId || undefined;
+  if (parsed.data.type === "debt_payment" && !debtId) {
+    return { ok: false, message: DEBT_ERROR_UNLINKED_PAYMENT_TH };
+  }
+
   const input = {
     type: parsed.data.type,
     amountSatang: amountResult.satang!,
@@ -91,6 +98,7 @@ export async function saveTransactionAction(
     merchant: parsed.data.label,
     category: parsed.data.category,
     sourceAccountId: parsed.data.sourceAccountId || undefined,
+    debtId,
   };
 
   try {
@@ -136,12 +144,18 @@ export async function saveDebtAction(
   if (!interestRateResult.ok) return { ok: false, message: interestRateResult.error };
 
   const amountDueSatang = amountDueResult.satang!;
+  const effectiveOutstandingSatang = outstandingResult.satang ?? amountDueSatang;
+  const effectiveMinimumSatang = minimumResult.satang ?? amountDueSatang;
+  if (effectiveMinimumSatang > effectiveOutstandingSatang) {
+    return { ok: false, message: DEBT_ERROR_MINIMUM_ABOVE_OUTSTANDING_TH };
+  }
+
   const input = {
     name: parsed.data.name,
     creditor: parsed.data.creditor,
-    outstandingBalanceSatang: outstandingResult.satang ?? amountDueSatang,
+    outstandingBalanceSatang: effectiveOutstandingSatang,
     amountDueSatang,
-    minimumPaymentSatang: minimumResult.satang ?? amountDueSatang,
+    minimumPaymentSatang: effectiveMinimumSatang,
     dueDate: parsed.data.dueDate,
     recurringDueDay: parsed.data.recurringDueDay ? Number(parsed.data.recurringDueDay) : undefined,
     paymentMode: parsed.data.paymentMode,
@@ -233,13 +247,16 @@ export async function markDebtPaidOffAction(id: string): Promise<FinanceActionSt
   }
 }
 
-export async function reopenDebtAction(id: string): Promise<FinanceActionState> {
-  const user = await requireUser();
-  try {
-    await reopenDebt(user.id, id);
-    revalidateFinance();
-    return { ok: true, message: "เปิดหนี้อีกครั้งแล้ว" };
-  } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "เปิดหนี้ไม่สำเร็จ" };
-  }
+/**
+ * Reopening a closed debt is deferred to Phase 2 (locked product decision).
+ * The underlying `reopenDebt` repository primitive is intentionally left
+ * in place -- it may be needed once Phase 2 ships a reviewed reopen flow --
+ * but this server action, the only path any Phase 1 UI can reach it
+ * through, always rejects with a safe message instead of calling it. This
+ * guards the action even if a stale client or a future UI regression tries
+ * to invoke it.
+ */
+export async function reopenDebtAction(_id: string): Promise<FinanceActionState> {
+  await requireUser();
+  return { ok: false, message: "การเปิดหนี้ที่ปิดแล้วยังไม่รองรับในเวอร์ชันนี้" };
 }

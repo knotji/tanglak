@@ -85,6 +85,10 @@ function validateReviewMoneyFields(
   }
 
   if (docType === "debt_statement") {
+    const debtActionType = String(fd.get("debtActionType") || "");
+    if (debtActionType !== "create" && debtActionType !== "update") {
+      return "กรุณาเลือกวิธีบันทึกหนี้นี้";
+    }
     return (
       optionalField("amountDue", "nonnegative") ||
       optionalField("outstandingBalance", "nonnegative") ||
@@ -263,7 +267,11 @@ export function ReviewForm({
     initialDebt.remainingInstallments?.toString() || ""
   );
   const [accountLastFour, setAccountLastFour] = useState(initialDebt.accountLastFour || "");
-  const [debtActionType, setDebtActionType] = useState<"create" | "update">("create");
+  // No default -- the user must explicitly choose "create" or "update" for a
+  // debt-statement document; a silent default risks creating a duplicate
+  // debt account when the user meant to update an existing one (see F-009
+  // in docs/SLIP_DEBT_IMPLEMENTATION_FINDINGS.md).
+  const [debtActionType, setDebtActionType] = useState<"create" | "update" | "">("");
   const [existingDebtId, setExistingDebtId] = useState<string>("");
   const reviewFieldId = (field: string) => `review-${doc.id}-${docType}-${field}`;
 

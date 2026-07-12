@@ -3,12 +3,13 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus } from "lucide-react";
 import { useActionState, useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { saveTransactionAction } from "@/app/actions/finance";
 import { AccountSelector } from "@/features/accounts/AccountSelector";
+import { DEBT_ERROR_UNLINKED_PAYMENT_TH } from "@/lib/finance/debt-guards";
 import { parseRequiredMoney } from "@/lib/finance/money-guards";
-import type { Account, Transaction } from "@/types/domain";
+import type { Account, Debt, Transaction } from "@/types/domain";
 
 const schema = z.object({
   type: z.enum(["income", "expense", "debt_payment", "transfer", "refund"]),
@@ -17,6 +18,7 @@ const schema = z.object({
   category: z.string().optional(),
   date: z.string().min(1),
   sourceAccountId: z.string().optional(),
+  debtId: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -24,15 +26,17 @@ type FormValues = z.infer<typeof schema>;
 export function ManualTransactionForm({
   transaction,
   accounts = [],
+  debts = [],
   onSaved,
 }: {
   transaction?: Transaction;
   accounts?: Account[];
+  debts?: Debt[];
   onSaved?: () => void;
 }) {
   const [state, action, pending] = useActionState(saveTransactionAction, { ok: false });
   const [clientError, setClientError] = useState<string | null>(null);
-  const { register, reset, formState } = useForm<FormValues>({
+  const { register, reset, formState, control } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
       type: transaction?.type ?? "expense",
@@ -41,18 +45,25 @@ export function ManualTransactionForm({
       category: transaction?.category ?? "อาหาร",
       date: transaction?.occurredAt.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
       sourceAccountId: transaction?.sourceAccountId ?? "",
+      debtId: transaction?.debtId ?? "",
     },
   });
+  // Derived from the form's own live "type" field (not a separately
+  // synced useState) so it never needs an effect to stay in sync when the
+  // form is reset from a saved draft or after a successful save.
+  const selectedType = useWatch({ control, name: "type" });
 
   useEffect(() => {
     const saved = window.localStorage.getItem("tanglak.transactionDraft");
-    if (!transaction && saved) reset(JSON.parse(saved) as FormValues);
+    if (!transaction && saved) {
+      reset(JSON.parse(saved) as FormValues);
+    }
   }, [reset, transaction]);
 
   useEffect(() => {
     if (state.ok) {
       window.localStorage.removeItem("tanglak.transactionDraft");
-      reset({ type: "expense", amount: "", label: "", category: "อาหาร", date: new Date().toISOString().slice(0, 10) });
+      reset({ type: "expense", amount: "", label: "", category: "อาหาร", date: new Date().toISOString().slice(0, 10), debtId: "" });
       onSaved?.();
     }
   }, [onSaved, reset, state.ok]);
@@ -69,6 +80,11 @@ export function ManualTransactionForm({
           setClientError(amountResult.error);
           return;
         }
+        if (type === "debt_payment" && !String(formData.get("debtId") || "")) {
+          event.preventDefault();
+          setClientError(DEBT_ERROR_UNLINKED_PAYMENT_TH);
+          return;
+        }
         setClientError(null);
       }}
       onInput={(event) => {
@@ -81,7 +97,11 @@ export function ManualTransactionForm({
       <div className="grid grid-cols-2 gap-3">
         <label className="space-y-1 text-sm">
           <span className="font-medium">ประเภท</span>
-          <select className="min-h-11 w-full rounded-[16px] border border-border bg-white px-3" {...register("type")} name="type">
+          <select
+            className="min-h-11 w-full rounded-[16px] border border-border bg-white px-3"
+            {...register("type")}
+            name="type"
+          >
             <option value="expense">รายจ่าย</option>
             <option value="income">รายรับ</option>
             <option value="debt_payment">ชำระหนี้</option>
@@ -106,6 +126,24 @@ export function ManualTransactionForm({
         <label className="mt-3 block space-y-1 text-sm">
           <span className="font-medium">บัญชี</span>
           <AccountSelector accounts={accounts} name="sourceAccountId" defaultValue={transaction?.sourceAccountId} />
+        </label>
+      ) : null}
+      {selectedType === "debt_payment" ? (
+        <label className="mt-3 block space-y-1 text-sm">
+          <span className="font-medium">หนี้ที่เกี่ยวข้อง</span>
+          <select
+            className="min-h-11 w-full rounded-[16px] border border-border bg-white px-3"
+            {...register("debtId")}
+            name="debtId"
+            required
+          >
+            <option value="">เลือกหนี้</option>
+            {debts.map((debt) => (
+              <option key={debt.id} value={debt.id}>
+                {debt.name}
+              </option>
+            ))}
+          </select>
         </label>
       ) : null}
       <input type="hidden" value="อาหาร" {...register("category")} name="category" />

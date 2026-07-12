@@ -2,7 +2,7 @@ import { TransactionsClient } from "@/features/transactions/TransactionsClient";
 import { requireCompletedOnboarding } from "@/lib/auth/onboarding";
 import { requireUser } from "@/lib/auth/session";
 import { listAccounts } from "@/lib/data/account-repository";
-import { listTransactions } from "@/lib/data/finance-repository";
+import { listDebts, listTransactions } from "@/lib/data/finance-repository";
 import {
   formatBangkokMonthLabel,
   getBangkokMonthString,
@@ -23,16 +23,18 @@ export default async function TransactionsPage({
     const importBatchId =
       typeof resolvedSearchParams?.importBatchId === "string" ? resolvedSearchParams.importBatchId : undefined;
 
-    const [, transactions, accounts] = await Promise.all([
+    const [, transactions, accounts, debts] = await Promise.all([
       requireCompletedOnboarding(user),
       listTransactions(user.id, selectedMonth),
       listAccounts(user.id),
+      listDebts(user.id),
     ]);
 
     return (
       <TransactionsClient
         transactions={transactions}
         accounts={accounts}
+        debts={debts}
         selectedMonth={selectedMonth}
         currentMonth={currentMonth}
         monthLabel={formatBangkokMonthLabel(selectedMonth)}

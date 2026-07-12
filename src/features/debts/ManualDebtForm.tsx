@@ -7,7 +7,12 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { saveDebtAction } from "@/app/actions/finance";
 import { parseOptionalMoney, parseRequiredMoney } from "@/lib/finance/money-guards";
-import { isValidDueDate, parseInterestRateAnnual, DEBT_ERROR_DUE_DATE_INVALID_TH } from "@/lib/finance/debt-guards";
+import {
+  isValidDueDate,
+  parseInterestRateAnnual,
+  DEBT_ERROR_DUE_DATE_INVALID_TH,
+  DEBT_ERROR_MINIMUM_ABOVE_OUTSTANDING_TH,
+} from "@/lib/finance/debt-guards";
 import type { Debt } from "@/types/domain";
 
 const schema = z.object({
@@ -84,6 +89,23 @@ export function ManualDebtForm({
         const minimumResult = parseOptionalMoney(formData.get("minimum"), "nonnegative");
         const interestRateResult = parseInterestRateAnnual(formData.get("interestRateAnnual"));
         const dueDateValid = isValidDueDate(String(formData.get("dueDate") ?? ""));
+
+        // Mirror saveDebtAction's exact effective-value defaulting (both
+        // outstanding and minimum fall back to the required "amount due"
+        // field when left blank) so this client check catches the same
+        // cases the server would reject -- never treated as authoritative
+        // on its own, just fast feedback.
+        const effectiveOutstanding = outstandingResult.ok
+          ? (outstandingResult.satang ?? (amountResult.ok ? amountResult.satang : undefined))
+          : undefined;
+        const effectiveMinimum = minimumResult.ok
+          ? (minimumResult.satang ?? (amountResult.ok ? amountResult.satang : undefined))
+          : undefined;
+        const minimumAboveOutstanding =
+          effectiveOutstanding !== undefined &&
+          effectiveMinimum !== undefined &&
+          effectiveMinimum > effectiveOutstanding;
+
         const firstError = !amountResult.ok
           ? amountResult.error
           : !outstandingResult.ok
@@ -94,7 +116,9 @@ export function ManualDebtForm({
                 ? interestRateResult.error
                 : !dueDateValid
                   ? DEBT_ERROR_DUE_DATE_INVALID_TH
-                  : null;
+                  : minimumAboveOutstanding
+                    ? DEBT_ERROR_MINIMUM_ABOVE_OUTSTANDING_TH
+                    : null;
         if (firstError) {
           event.preventDefault();
           setClientError(firstError);

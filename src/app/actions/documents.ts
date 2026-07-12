@@ -391,6 +391,13 @@ export async function confirmDocumentAction(
       const debtActionType = formData.get("debtActionType") as "create" | "update";
       const existingDebtId = formData.get("existingDebtId") as string;
 
+      // The user must explicitly choose "create" or "update" -- never
+      // silently default to creating a new debt account (F-009 in
+      // docs/SLIP_DEBT_IMPLEMENTATION_FINDINGS.md).
+      if (debtActionType !== "create" && debtActionType !== "update") {
+        return { ok: false, message: "กรุณาเลือกวิธีบันทึกหนี้นี้" };
+      }
+
       if (!dueDate) {
         return { ok: false, message: "ต้องระบุวันครบกำหนดชำระ" };
       }
