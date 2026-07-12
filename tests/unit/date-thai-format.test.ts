@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  bangkokDateTimeLocalToInstant,
   formatThaiDateTimeLabel,
   isLikelyInferredNoonTimestamp,
   parseWallClockComponents,
@@ -50,6 +51,29 @@ describe("formatThaiDateTimeLabel", () => {
   it("returns null for an invalid value instead of throwing", () => {
     expect(formatThaiDateTimeLabel("garbage")).toBeNull();
     expect(formatThaiDateTimeLabel("")).toBeNull();
+  });
+});
+
+describe("bangkokDateTimeLocalToInstant", () => {
+  it("converts a datetime-local value to a fixed +07:00 instant using the exact entered digits", () => {
+    expect(bangkokDateTimeLocalToInstant("2026-07-11T07:26")).toBe("2026-07-11T07:26:00+07:00");
+  });
+
+  it("never shifts the date/time regardless of the runner's own timezone", () => {
+    // No Date() round-trip happens -- the same literal digits go in and
+    // come out, only with a fixed +07:00 suffix appended.
+    expect(bangkokDateTimeLocalToInstant("2026-01-01T00:05")).toBe("2026-01-01T00:05:00+07:00");
+    expect(bangkokDateTimeLocalToInstant("2026-12-31T23:55")).toBe("2026-12-31T23:55:00+07:00");
+  });
+
+  it("pads single-digit month/day/hour/minute correctly", () => {
+    expect(bangkokDateTimeLocalToInstant("2026-01-05T09:05")).toBe("2026-01-05T09:05:00+07:00");
+  });
+
+  it("throws for an invalid value instead of fabricating a fallback instant", () => {
+    expect(() => bangkokDateTimeLocalToInstant("garbage")).toThrow();
+    expect(() => bangkokDateTimeLocalToInstant("")).toThrow();
+    expect(() => bangkokDateTimeLocalToInstant("2026-07-32T07:26")).toThrow();
   });
 });
 

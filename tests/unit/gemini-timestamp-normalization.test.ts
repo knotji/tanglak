@@ -67,7 +67,7 @@ describe("gemini.ts timestamp normalization (end-to-end raw payload -> parsed re
     expect(result.transaction?.occurredAt).toBe("2026-07-11T07:26:00+09:00");
   });
 
-  it("strips an unparseable timestamp candidate and surfaces it as a missing required field, never a current-time guess", async () => {
+  it("strips an unparseable timestamp candidate, marks it as needing review, and never guesses the current time", async () => {
     process.env = { ...originalEnv, GEMINI_API_KEY: "test-key", GEMINI_MODEL: "gemini-test" };
     mockGeminiResponse({
       documentType: "receipt",
@@ -79,18 +79,23 @@ describe("gemini.ts timestamp normalization (end-to-end raw payload -> parsed re
         occurredAt: "not a real timestamp",
         merchant: "Seven-Eleven",
       },
+      receipt: { totalPaid: 189 },
       warnings: [],
       unclearFields: [],
       requiresReview: true,
     });
 
-    await expect(extractFinancialDocument({ mimeType: "image/png", base64: "fake" })).rejects.toMatchObject({
-      code: "incomplete_financial_extraction",
-      missingFields: expect.arrayContaining(["transaction.occurredAt"]),
-    });
+    // A missing/invalid occurredAt no longer fails extraction outright --
+    // it's a draft review issue, and every other field stays usable.
+    const result = await extractFinancialDocument({ mimeType: "image/png", base64: "fake" });
+    expect(result.transaction?.occurredAt).toBeUndefined();
+    expect(result.unclearFields).toContain("transaction.occurredAt");
+    expect(result.transaction?.amount).toBe(189);
+    expect(result.transaction?.type).toBe("expense");
+    expect(result.transaction?.merchant).toBe("Seven-Eleven");
   });
 
-  it("strips a locale-ambiguous numeric date rather than silently guessing an interpretation", async () => {
+  it("strips a locale-ambiguous numeric date, marks it as needing review, rather than silently guessing an interpretation", async () => {
     process.env = { ...originalEnv, GEMINI_API_KEY: "test-key", GEMINI_MODEL: "gemini-test" };
     mockGeminiResponse({
       documentType: "receipt",
@@ -102,18 +107,19 @@ describe("gemini.ts timestamp normalization (end-to-end raw payload -> parsed re
         occurredAt: "07/11/2026",
         merchant: "Seven-Eleven",
       },
+      receipt: { totalPaid: 189 },
       warnings: [],
       unclearFields: [],
       requiresReview: true,
     });
 
-    await expect(extractFinancialDocument({ mimeType: "image/png", base64: "fake" })).rejects.toMatchObject({
-      code: "incomplete_financial_extraction",
-      missingFields: expect.arrayContaining(["transaction.occurredAt"]),
-    });
+    const result = await extractFinancialDocument({ mimeType: "image/png", base64: "fake" });
+    expect(result.transaction?.occurredAt).toBeUndefined();
+    expect(result.unclearFields).toContain("transaction.occurredAt");
+    expect(result.transaction?.amount).toBe(189);
   });
 
-  it("treats an entirely missing occurredAt the same as before (unchanged incomplete-extraction behavior)", async () => {
+  it("routes an entirely missing occurredAt to needing review instead of failing extraction (behavior change from the audit fix)", async () => {
     process.env = { ...originalEnv, GEMINI_API_KEY: "test-key", GEMINI_MODEL: "gemini-test" };
     mockGeminiResponse({
       documentType: "receipt",
@@ -124,15 +130,15 @@ describe("gemini.ts timestamp normalization (end-to-end raw payload -> parsed re
         currency: "THB",
         merchant: "Seven-Eleven",
       },
+      receipt: { totalPaid: 189 },
       warnings: [],
       unclearFields: ["transaction.occurredAt"],
       requiresReview: true,
     });
 
-    await expect(extractFinancialDocument({ mimeType: "image/png", base64: "fake" })).rejects.toMatchObject({
-      code: "incomplete_financial_extraction",
-      missingFields: expect.arrayContaining(["transaction.occurredAt"]),
-    });
+    const result = await extractFinancialDocument({ mimeType: "image/png", base64: "fake" });
+    expect(result.transaction?.occurredAt).toBeUndefined();
+    expect(result.unclearFields).toContain("transaction.occurredAt");
   });
 
   it("still preserves an already-clean ISO timestamp exactly (no regression for the common case)", async () => {

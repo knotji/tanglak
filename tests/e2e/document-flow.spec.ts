@@ -116,6 +116,113 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
     await expect(page.getByText("฿195").first()).toBeVisible();
   });
 
+  test("upload with unclear/missing date opens the review screen (not the failure screen), and confirming with a manually entered date succeeds", async ({ page }) => {
+    await page.goto("/auth");
+    await page.getByLabel("อีเมล").fill(email);
+    await page.getByLabel("รหัสผ่าน", { exact: true }).fill(password);
+    await page.locator("form").getByRole("button", { name: "เข้าสู่ระบบ" }).click();
+    await expect(page).toHaveURL(/\/today/);
+
+    await page.goto("/upload");
+    const fileChooserPromise = page.waitForEvent("filechooser");
+    await page.getByRole("button", { name: "ใบเสร็จ/ค่าอาหาร" }).click();
+    const fileChooser = await fileChooserPromise;
+    await fileChooser.setFiles({
+      name: "missing_date_receipt.png",
+      mimeType: "image/png",
+      buffer: Buffer.from("mock-missing-date-data"),
+    });
+
+    await page.getByRole("button", { name: "วิเคราะห์ด้วย AI" }).click();
+    await expect(page).toHaveURL(/\/upload\/review\//);
+    const reviewUrl = page.url();
+    const docId = reviewUrl.split("/").pop() || "";
+
+    // The review (editing) screen must render, not the terminal failure
+    // screen -- confirmed both by the required review-required banner being
+    // visible and the failure heading being absent.
+    await expect(page.getByText("การอ่านสลิปไม่สำเร็จ")).toHaveCount(0);
+    await expect(page.getByText("อ่านวันที่และเวลาไม่ชัด")).toBeVisible();
+    await expect(page.getByText("กรุณาตรวจสอบหรือกรอกข้อมูลก่อนบันทึก")).toBeVisible();
+
+    // Other extracted fields remain populated even though the date is missing.
+    await expect(page.locator("input[name='merchant']")).toHaveValue("ร้านค้าทดสอบไม่มีวันที่");
+    await expect(page.locator("input[name='totalPaid']")).toHaveValue("250");
+
+    // The date/time input itself must be visible, accessible, and blank
+    // (never prefilled with the current time) with a clear missing-field hint.
+    const occurredAtInput = page.locator("input[name='occurredAt']");
+    await expect(occurredAtInput).toBeVisible();
+    await expect(occurredAtInput).toHaveValue("");
+    const helperId = await occurredAtInput.getAttribute("aria-describedby");
+    await expect(page.locator(`#${helperId}`)).toContainText("กรุณาระบุวันและเวลาที่ทำรายการ");
+
+    // Retry and manual-edit affordances remain available.
+    await expect(page.getByRole("button", { name: "ประมวลผลใหม่" })).toBeVisible();
+
+    // Attempting to confirm without a date is rejected with the exact
+    // required Thai copy, focuses the date field, and does not navigate away.
+    await page.getByRole("button", { name: "ยืนยันความถูกต้อง" }).click();
+    await expect(page.getByText("กรุณาระบุวันที่และเวลาของรายการ")).toBeVisible();
+    await expect(page).toHaveURL(reviewUrl);
+    await expect(occurredAtInput).toBeFocused();
+    // Other fields remain intact after the rejected attempt.
+    await expect(page.locator("input[name='merchant']")).toHaveValue("ร้านค้าทดสอบไม่มีวันที่");
+
+    // User enters the date/time manually; confirmation now succeeds.
+    await occurredAtInput.fill("2026-07-15T09:30");
+    await page.getByRole("button", { name: "ยืนยันความถูกต้อง" }).click();
+    await expect(page).toHaveURL(/\/today/);
+
+    // The resulting transaction carries the manually entered date/time,
+    // converted to the Bangkok-offset instant -- not a fabricated one.
+    await page.goto("/transactions");
+    await expect(page.getByText("ร้านค้าทดสอบไม่มีวันที่")).toBeVisible();
+    await expect(page.getByText("฿250").first()).toBeVisible();
+
+    // Retrying extraction on the same (now-confirmed) document id must not
+    // have created a duplicate document row -- there is exactly one review
+    // page for this id and it reflects the same original file.
+    await page.goto(`/upload/review/${docId}`);
+    await expect(page.locator("input[name='merchant']")).toHaveValue("ร้านค้าทดสอบไม่มีวันที่");
+  });
+
+  test("retrying extraction on a needs_review document reuses the same document (no duplicate)", async ({ page }) => {
+    await page.goto("/auth");
+    await page.getByLabel("อีเมล").fill(email);
+    await page.getByLabel("รหัสผ่าน", { exact: true }).fill(password);
+    await page.locator("form").getByRole("button", { name: "เข้าสู่ระบบ" }).click();
+    await expect(page).toHaveURL(/\/today/);
+
+    await page.goto("/upload");
+    const fileChooserPromise = page.waitForEvent("filechooser");
+    await page.getByRole("button", { name: "ใบเสร็จ/ค่าอาหาร" }).click();
+    const fileChooser = await fileChooserPromise;
+    await fileChooser.setFiles({
+      name: "missing_date_receipt_retry.png",
+      mimeType: "image/png",
+      buffer: Buffer.from("mock-missing-date-retry-data"),
+    });
+
+    await page.getByRole("button", { name: "วิเคราะห์ด้วย AI" }).click();
+    await expect(page).toHaveURL(/\/upload\/review\//);
+    const reviewUrl = page.url();
+
+    const retryDialog = page.waitForEvent("dialog").then((dialog) => {
+      expect(dialog.message()).toContain("เริ่มสแกนเอกสารอีกครั้งแล้ว");
+      return dialog.accept();
+    });
+    await page.getByRole("button", { name: "ประมวลผลใหม่" }).click();
+    await retryDialog;
+
+    // Retry stays on the exact same review URL (same document id) and the
+    // fields are re-populated from the same file -- no second document was
+    // created, no duplicate storage upload occurred.
+    await expect(page).toHaveURL(reviewUrl);
+    await expect(page.locator("input[name='merchant']")).toHaveValue("ร้านค้าทดสอบไม่มีวันที่");
+    await expect(page.locator("input[name='totalPaid']")).toHaveValue("250");
+  });
+
   test("upload debt statement, create debt from review", async ({ page }) => {
     await page.goto("/auth");
     await page.getByLabel("อีเมล").fill(email);
