@@ -140,13 +140,47 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
     await expect(page.locator("input[name='creditor']")).toHaveValue("KTC");
     await expect(page.locator("input[name='amountDue']")).toHaveValue("3200");
 
-    // Verify default choice is "สร้างเป็นบัญชีหนี้ใหม่"
+    // F-009: there is no silent default -- the user must explicitly choose
+    // how to save this debt before confirming. The radio input is styled
+    // with `display: none` (removing it from the accessibility tree), so
+    // click the visible label text and assert checked state via a CSS
+    // locator instead of a role locator.
+    await page.getByText("สร้างเป็นบัญชีหนี้ใหม่").click();
+    await expect(page.locator('input[name="debtActionType"][value="create"]')).toBeChecked();
     await page.getByRole("button", { name: "ยืนยันความถูกต้อง" }).click();
     await expect(page).toHaveURL(/\/today/);
 
     // Check debts page to confirm debt exists
     await page.goto("/debts");
     await expect(page.getByText("KTC")).toBeVisible();
+  });
+
+  test("blocks confirming a debt statement without an explicit create/update choice (F-009)", async ({ page }) => {
+    await page.goto("/auth");
+    await page.getByLabel("อีเมล").fill(email);
+    await page.getByLabel("รหัสผ่าน", { exact: true }).fill(password);
+    await page.locator("form").getByRole("button", { name: "เข้าสู่ระบบ" }).click();
+    await expect(page).toHaveURL(/\/today/);
+
+    await page.goto("/upload");
+    const fileChooserPromise = page.waitForEvent("filechooser");
+    await page.getByRole("button", { name: "สลิปชำระหนี้หรือบัตรเครดิต" }).click();
+    const fileChooser = await fileChooserPromise;
+    await fileChooser.setFiles({
+      name: "ktc_statement_2.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from("mock-debt-data"),
+    });
+
+    await page.getByRole("button", { name: "วิเคราะห์ด้วย AI" }).click();
+    await expect(page).toHaveURL(/\/upload\/review\//);
+
+    await expect(page.locator('input[name="debtActionType"][value="create"]')).not.toBeChecked();
+    await expect(page.locator('input[name="debtActionType"][value="update"]')).not.toBeChecked();
+
+    await page.getByRole("button", { name: "ยืนยันความถูกต้อง" }).click();
+    await expect(page.getByText("กรุณาเลือกวิธีบันทึกหนี้นี้")).toBeVisible();
+    await expect(page).toHaveURL(/\/upload\/review\//);
   });
 
   test("detect possible duplicate and link existing", async ({ page }) => {

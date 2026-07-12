@@ -46,7 +46,7 @@ test.describe.serial("History Statement Import Selection E2E", () => {
     // SCENARIO 1: 1-row statement import flow
     // ============================================
     await page.goto("/settings/data");
-    await page.getByRole("link", { name: "+ นำเข้า Statement ใหม่" }).click();
+    await page.getByRole("link", { name: "การนำเข้ารายการแบบเดิม" }).click();
 
     const buffer1 = await buildCustomStatementPdf(1, 2567, 10000);
     const fileChooserPromise1 = page.waitForEvent("filechooser");
@@ -75,7 +75,7 @@ test.describe.serial("History Statement Import Selection E2E", () => {
     // SCENARIO 2: 20-row statement import with partial selection
     // ============================================
     await page.goto("/settings/data");
-    await page.getByRole("link", { name: "+ นำเข้า Statement ใหม่" }).click();
+    await page.getByRole("link", { name: "การนำเข้ารายการแบบเดิม" }).click();
 
     const buffer2 = await buildCustomStatementPdf(20, 2568, 20000);
     const fileChooserPromise2 = page.waitForEvent("filechooser");
@@ -180,7 +180,7 @@ test.describe.serial("History Statement Import Selection E2E", () => {
     // SCENARIO 3: 200+ row statement import selection stability
     // ============================================
     await page.goto("/settings/data");
-    await page.getByRole("link", { name: "+ นำเข้า Statement ใหม่" }).click();
+    await page.getByRole("link", { name: "การนำเข้ารายการแบบเดิม" }).click();
 
     const buffer3 = await buildCustomStatementPdf(205, 2570, 50000);
     const fileChooserPromise3 = page.waitForEvent("filechooser");
@@ -217,7 +217,7 @@ test.describe.serial("History Statement Import Selection E2E", () => {
     // ============================================
     // We upload the same 1-row statement again to trigger duplicate checking.
     await page.goto("/settings/data");
-    await page.getByRole("link", { name: "+ นำเข้า Statement ใหม่" }).click();
+    await page.getByRole("link", { name: "การนำเข้ารายการแบบเดิม" }).click();
 
     const buffer4 = await buildCustomStatementPdf(1, 2567, 10000);
     const fileChooserPromise4 = page.waitForEvent("filechooser");

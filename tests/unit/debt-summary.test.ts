@@ -127,6 +127,82 @@ describe("buildMonthlyDebtSummary", () => {
     expect(summary.totalOutstandingSatang).toBe(10_000_00);
   });
 
+  it("counts a payment recorded as a UTC 'Z' timestamp that maps into the Bangkok cycle month (F-007)", () => {
+    // 2026-06-30T17:00:00Z is 2026-07-01T00:00:00+07:00 -- the first
+    // instant of the Bangkok cycle month. Under naive lexical string
+    // comparison this would sort before "2026-07-01T00:00:00+07:00" and be
+    // wrongly excluded, even though it is the exact same instant.
+    const d1 = debt({ id: "d1", dueDate: "2026-07-15" });
+    const summary = buildMonthlyDebtSummary(
+      [d1],
+      [payment({ debtId: "d1", amountSatang: 500_00, occurredAt: "2026-06-30T17:00:00Z" })],
+      "2026-07",
+    );
+    expect(summary.totalPaidThisMonthSatang).toBe(500_00);
+  });
+
+  it("includes the Bangkok cycle start instant (inclusive)", () => {
+    const d1 = debt({ id: "d1", dueDate: "2026-07-15" });
+    const summary = buildMonthlyDebtSummary(
+      [d1],
+      [payment({ debtId: "d1", amountSatang: 500_00, occurredAt: "2026-07-01T00:00:00+07:00" })],
+      "2026-07",
+    );
+    expect(summary.totalPaidThisMonthSatang).toBe(500_00);
+  });
+
+  it("includes the last instant of the Bangkok cycle month", () => {
+    const d1 = debt({ id: "d1", dueDate: "2026-07-15" });
+    const summary = buildMonthlyDebtSummary(
+      [d1],
+      [payment({ debtId: "d1", amountSatang: 500_00, occurredAt: "2026-07-31T23:59:59.999+07:00" })],
+      "2026-07",
+    );
+    expect(summary.totalPaidThisMonthSatang).toBe(500_00);
+  });
+
+  it("excludes the first instant of the following Bangkok month (cycle end is exclusive)", () => {
+    const d1 = debt({ id: "d1", dueDate: "2026-07-15" });
+    const summary = buildMonthlyDebtSummary(
+      [d1],
+      [payment({ debtId: "d1", amountSatang: 500_00, occurredAt: "2026-08-01T00:00:00+07:00" })],
+      "2026-07",
+    );
+    expect(summary.totalPaidThisMonthSatang).toBe(0);
+  });
+
+  it("excludes a payment one millisecond before Bangkok midnight on the cycle start day", () => {
+    const d1 = debt({ id: "d1", dueDate: "2026-07-15" });
+    const summary = buildMonthlyDebtSummary(
+      [d1],
+      [payment({ debtId: "d1", amountSatang: 500_00, occurredAt: "2026-06-30T23:59:59.999+07:00" })],
+      "2026-07",
+    );
+    expect(summary.totalPaidThisMonthSatang).toBe(0);
+  });
+
+  it("uses the debt's own cycle window (not the calendar month) when cycle dates are set, comparing by instant", () => {
+    const d1 = debt({
+      id: "d1",
+      dueDate: "2026-07-15",
+      cycleStartDate: "2026-06-20",
+      cycleEndDate: "2026-07-19",
+    });
+    const summary = buildMonthlyDebtSummary(
+      [d1],
+      [
+        // Within the debt's own cycle (2026-06-20..2026-07-19) but outside
+        // the plain calendar month "2026-07" -- proves cycle window wins.
+        payment({ debtId: "d1", amountSatang: 500_00, occurredAt: "2026-06-25T10:00:00+07:00" }),
+        // A UTC 'Z' timestamp landing just after the cycle end's Bangkok
+        // midnight boundary must still be excluded via instant comparison.
+        payment({ id: "tx-2", debtId: "d1", amountSatang: 999_00, occurredAt: "2026-07-19T17:00:00Z" }),
+      ],
+      "2026-07",
+    );
+    expect(summary.totalPaidThisMonthSatang).toBe(500_00);
+  });
+
   it("classifies due-soon and overdue debts for the summary's alert lists", () => {
     const overdue = debt({ id: "d1", dueDate: "2026-06-01" });
     const dueSoon = debt({ id: "d2", dueDate: "2026-07-01" });

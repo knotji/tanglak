@@ -63,12 +63,19 @@ describe("repository-level financial value guards (last line of defense)", () =>
     expect(getMockState().transactions).toHaveLength(0);
   });
 
-  it("createTransaction accepts a positive amount for a debt_payment", async () => {
+  it("createTransaction accepts a positive amount for a debt_payment linked to an owned debt", async () => {
+    const debt = await createDebt("user-a", {
+      name: "บัตรเครดิต A",
+      amountDueSatang: 5000,
+      minimumPaymentSatang: 1000,
+      dueDate: "2026-07-20",
+    });
     const transaction = await createTransaction("user-a", {
       type: "debt_payment",
       amountSatang: 500,
       occurredAt: "2026-07-10T12:00:00+07:00",
       merchant: "A",
+      debtId: debt.id,
     });
     expect(transaction.amountSatang).toBe(500);
   });
@@ -106,11 +113,18 @@ describe("repository-level financial value guards (last line of defense)", () =>
   });
 
   it("updateTransaction validates the final merged state when only the amount changes", async () => {
+    const debt = await createDebt("user-a", {
+      name: "บัตรเครดิต A",
+      amountDueSatang: 5000,
+      minimumPaymentSatang: 1000,
+      dueDate: "2026-07-20",
+    });
     const transaction = await createTransaction("user-a", {
       type: "debt_payment",
       amountSatang: 1000,
       occurredAt: "2026-07-10T12:00:00+07:00",
       merchant: "A",
+      debtId: debt.id,
     });
     await expect(updateTransaction("user-a", transaction.id, { amountSatang: -50 })).rejects.toThrow(
       MONEY_ERROR_POSITIVE_TH,

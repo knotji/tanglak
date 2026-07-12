@@ -47,8 +47,8 @@ test.describe.serial("History Statement Import Flow", () => {
     await page.getByText("ข้อมูลและการนำเข้า").click();
     await expect(page).toHaveURL(/\/settings\/data/);
 
-    // 2. Go to history-import
-    await page.getByRole("link", { name: "+ นำเข้า Statement ใหม่" }).click();
+    // 2. Go to history-import via the demoted legacy-import link (F-011)
+    await page.getByRole("link", { name: "การนำเข้ารายการแบบเดิม" }).click();
     await expect(page).toHaveURL(/\/history-import/);
 
     // 3. Upload a real, deterministically-generated 30-row bank statement PDF

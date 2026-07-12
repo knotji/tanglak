@@ -72,6 +72,33 @@ test.describe("slip-first upload and debt planning pivot", () => {
     await expect(page.getByText("เหมาะสำหรับข้อมูลจำนวนมากและต้องตรวจสอบหลายรายการ")).toBeVisible();
   });
 
+  test("settings/data page leads with slip upload and manual entry, not statement import (F-011)", async ({ page }) => {
+    await signUp(page, "ผู้ใช้ข้อมูลและการนำเข้า");
+    await page.goto("/settings/data");
+
+    const uploadSlip = page.getByRole("link", { name: "อัปโหลดสลิป" });
+    const manualEntry = page.getByRole("link", { name: "เพิ่มรายการเอง" });
+    const legacyImport = page.getByRole("link", { name: "การนำเข้ารายการแบบเดิม" });
+
+    await expect(uploadSlip).toBeVisible();
+    await expect(manualEntry).toBeVisible();
+    await expect(legacyImport).toBeVisible();
+    await expect(page.getByText("เหมาะสำหรับข้อมูลจำนวนมากและต้องตรวจสอบหลายรายการ")).toBeVisible();
+
+    // Slip upload and manual entry must appear before the legacy import
+    // link in document order -- the legacy route stays reachable, but is no
+    // longer the recommended/primary path on this page.
+    const uploadBox = await uploadSlip.boundingBox();
+    const legacyBox = await legacyImport.boundingBox();
+    expect(uploadBox).not.toBeNull();
+    expect(legacyBox).not.toBeNull();
+    expect(uploadBox!.y).toBeLessThan(legacyBox!.y);
+
+    // No primary-styled "+ Statement" style CTA should promote statement
+    // import as if it were a normal top-level action anymore.
+    await expect(page.getByText("+ นำเข้า Statement ใหม่")).toHaveCount(0);
+  });
+
   test("create a debt with outstanding balance, amount due, minimum payment, annual interest, and due date", async ({ page }) => {
     await signUp(page, "ผู้ใช้สร้างหนี้");
     await page.goto("/debts");
@@ -118,6 +145,83 @@ test.describe("slip-first upload and debt planning pivot", () => {
     await page.getByRole("button", { name: "เพิ่มหนี้", exact: true }).click();
 
     await expect(page.getByText("อัตราดอกเบี้ยไม่ถูกต้อง")).toBeVisible();
+  });
+
+  test("rejects a minimum payment above the outstanding balance with the exact required Thai message (F-002)", async ({ page }) => {
+    await signUp(page, "ผู้ใช้ขั้นต่ำเกินยอด");
+    await page.goto("/debts");
+    await page.getByRole("button", { name: "+ เพิ่มหนี้" }).click();
+
+    await page.getByLabel("ชื่อหนี้").fill("หนี้ขั้นต่ำเกินยอด");
+    await page.getByLabel("ยอดคงเหลือ").fill("1000");
+    await page.getByLabel("ยอดเดือนนี้").fill("1000");
+    await page.getByLabel("ขั้นต่ำ").fill("2000");
+    await page.getByLabel("ครบกำหนด", { exact: true }).fill("2026-08-05");
+    await page.getByRole("button", { name: "เพิ่มหนี้", exact: true }).click();
+
+    await expect(page.getByText("ยอดขั้นต่ำต้องไม่มากกว่ายอดหนี้ทั้งหมด")).toBeVisible();
+    // Entered values must be preserved, not wiped, after a validation failure.
+    await expect(page.getByLabel("ชื่อหนี้")).toHaveValue("หนี้ขั้นต่ำเกินยอด");
+    await expect(page.getByLabel("ขั้นต่ำ")).toHaveValue("2000");
+  });
+
+  test("closing a debt removes any reopen affordance and preserves its history (F-001)", async ({ page }) => {
+    await signUp(page, "ผู้ใช้ปิดหนี้");
+    await page.goto("/debts");
+    await page.getByRole("button", { name: "+ เพิ่มหนี้" }).click();
+    await page.getByLabel("ชื่อหนี้").fill("หนี้ที่จะปิด");
+    await page.getByLabel("ยอดเดือนนี้").fill("1000");
+    await page.getByLabel("ครบกำหนด", { exact: true }).fill("2026-08-05");
+    await page.getByRole("button", { name: "เพิ่มหนี้", exact: true }).click();
+    await expect(page.getByText("หนี้ที่จะปิด")).toBeVisible();
+
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: "ปิดหนี้ หนี้ที่จะปิด" }).click();
+    // "ปิดหนี้แล้ว" appears both in the transient success toast and in the
+    // closed debt's static status badge -- assert the badge specifically via
+    // its adjacent, unambiguous supporting text.
+    await expect(page.getByText("ข้อมูลและประวัติการชำระยังคงเก็บไว้")).toBeVisible();
+
+    // No reopen affordance anywhere on the page.
+    await expect(page.getByText("เปิดใหม่")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /เปิด/ })).toHaveCount(0);
+
+    // History remains reachable for the closed debt.
+    await expect(page.getByRole("link", { name: "ดูประวัติหนี้ หนี้ที่จะปิด" })).toBeVisible();
+  });
+
+  test("debts page separates lifetime outstanding total from this-month scoped totals (F-004)", async ({ page }) => {
+    await signUp(page, "ผู้ใช้แยกสโคปสรุปหนี้");
+    await page.goto("/debts");
+
+    await page.getByRole("button", { name: "+ เพิ่มหนี้" }).click();
+    await page.getByLabel("ชื่อหนี้").fill("หนี้เดือนนี้");
+    await page.getByLabel("ยอดคงเหลือ").fill("50000");
+    await page.getByLabel("ยอดเดือนนี้").fill("2000");
+    await page.getByLabel("ขั้นต่ำ").fill("500");
+    await page.getByLabel("ครบกำหนด", { exact: true }).fill("2026-08-05");
+    await page.getByRole("button", { name: "เพิ่มหนี้", exact: true }).click();
+    await expect(page.getByText("หนี้เดือนนี้")).toBeVisible();
+
+    await page.getByRole("button", { name: "+ เพิ่มหนี้" }).click();
+    await page.getByLabel("ชื่อหนี้").fill("หนี้เดือนหน้า");
+    await page.getByLabel("ยอดคงเหลือ").fill("30000");
+    await page.getByLabel("ยอดเดือนนี้").fill("1000");
+    await page.getByLabel("ขั้นต่ำ").fill("300");
+    await page.getByLabel("ครบกำหนด", { exact: true }).fill("2027-06-15");
+    await page.getByRole("button", { name: "เพิ่มหนี้", exact: true }).click();
+    await expect(page.getByText("หนี้เดือนหน้า")).toBeVisible();
+
+    // "ยอดหนี้ทั้งหมด" is the lifetime total across every debt (50000 + 30000).
+    const totalSection = page.getByRole("region", { name: "ยอดหนี้ทั้งหมด" }).or(
+      page.locator('section[aria-label="ยอดหนี้ทั้งหมด"]'),
+    );
+    await expect(totalSection).toContainText("80,000");
+
+    // The this-month box only reflects the debt due within the current
+    // target month, and is clearly labeled/scoped separately.
+    await expect(page.getByText("สรุปเดือนนี้")).toBeVisible();
+    await expect(page.getByText("ไม่ใช่ยอดสะสมตลอดอายุหนี้")).toBeVisible();
   });
 
   test("debts page shows a monthly obligation summary including เหลือขั้นต่ำเดือนนี้", async ({ page }) => {

@@ -19,6 +19,7 @@ import {
   updateTransaction,
 } from "@/lib/data/finance-repository";
 import { getMockState } from "@/lib/data/mock-store";
+import { DEBT_ERROR_UNLINKED_PAYMENT_TH } from "@/lib/finance/debt-guards";
 
 vi.mock("@/lib/auth/session", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/auth/session")>();
@@ -154,7 +155,7 @@ describe("mocked Supabase repository isolation and debt recalculation", () => {
     expect(updatedDebt?.amountPaidThisCycleSatang).toBe(90000);
   });
 
-  it("does not count unlinked debt_payment transactions toward any debt", async () => {
+  it("rejects an unlinked debt_payment transaction outright (F-003) -- it can never exist to count toward any debt", async () => {
     const debt = await createDebt("user-a", {
       name: "KTC",
       amountDueSatang: 320000,
@@ -163,13 +164,15 @@ describe("mocked Supabase repository isolation and debt recalculation", () => {
       cycleStartDate: "2026-07-01",
       cycleEndDate: "2026-07-31",
     });
-    await createTransaction("user-a", {
-      type: "debt_payment",
-      amountSatang: 125000,
-      occurredAt: "2026-07-15T12:00:00+07:00",
-    });
-    await recalculateDebtPaidThisCycle("user-a", debt.id, new Date("2026-07-12T12:00:00+07:00"));
+    await expect(
+      createTransaction("user-a", {
+        type: "debt_payment",
+        amountSatang: 125000,
+        occurredAt: "2026-07-15T12:00:00+07:00",
+      }),
+    ).rejects.toThrow(DEBT_ERROR_UNLINKED_PAYMENT_TH);
 
+    await recalculateDebtPaidThisCycle("user-a", debt.id, new Date("2026-07-12T12:00:00+07:00"));
     const [updatedDebt] = await listDebts("user-a");
     expect(updatedDebt?.amountPaidThisCycleSatang).toBe(0);
   });

@@ -63,9 +63,11 @@ test("add transaction, delete with confirmation, add debt and payment, persist a
     await dialog.accept();
   });
   await page.getByRole("button", { name: "ปิดหนี้" }).first().click();
-  await expect(page.getByText("เปิดใหม่")).toBeVisible();
-  await page.getByRole("button", { name: "เปิดใหม่" }).first().click();
-  await expect(page.getByRole("button", { name: /ปิดหนี้/ }).first()).toBeVisible();
+  // Reopening a closed debt is deferred to Phase 2 (F-001) -- closing shows
+  // a static "closed" state with history still reachable, never a reopen
+  // control.
+  await expect(page.getByText("ข้อมูลและประวัติการชำระยังคงเก็บไว้")).toBeVisible();
+  await expect(page.getByRole("button", { name: /เปิดใหม่/ })).toHaveCount(0);
 
   await page.reload();
   await expect(page.getByText("KTC Test")).toBeVisible();

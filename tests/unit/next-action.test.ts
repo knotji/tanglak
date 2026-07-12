@@ -35,6 +35,36 @@ describe("determineNextAction — single highest-priority action", () => {
     expect(action.title).toContain("เลยกำหนด");
   });
 
+  it("prioritizes a debt due today above a debt due within 3 days", () => {
+    const dueToday = debt({ id: "debt-today", dueDate: "2026-07-15" }); // same day as TODAY
+    const dueSoon = debt({ id: "debt-soon", dueDate: "2026-07-17" }); // 2 days after TODAY
+    const action = determineNextAction(
+      {
+        debts: [dueSoon, dueToday],
+        hasBudget: false,
+        hasAnyTransaction: true,
+      },
+      TODAY,
+    );
+    expect(action.title).toBe("ครบกำหนดชำระวันนี้");
+    expect(action.body).toContain(dueToday.name);
+    expect(action.body).toContain("และมีหนี้ใกล้ครบกำหนดอีก 1 รายการ");
+  });
+
+  it("does not render a due-today debt as 'due in 0 days' merged into the due-soon bucket", () => {
+    const dueToday = debt({ dueDate: "2026-07-15" }); // same day as TODAY
+    const action = determineNextAction(
+      {
+        debts: [dueToday],
+        hasBudget: false,
+        hasAnyTransaction: true,
+      },
+      TODAY,
+    );
+    expect(action.title).not.toContain("0 วัน");
+    expect(action.title).toBe("ครบกำหนดชำระวันนี้");
+  });
+
   it("prioritizes a debt due within 3 days over a missing budget", () => {
     const dueSoon = debt({ dueDate: "2026-07-17" }); // 2 days after TODAY
     const action = determineNextAction(
@@ -46,7 +76,8 @@ describe("determineNextAction — single highest-priority action", () => {
       TODAY,
     );
     expect(action.tone).toBe("debt");
-    expect(action.title).toContain("ครบกำหนดใน 2 วัน");
+    expect(action.title).toBe("ใกล้ครบกำหนดชำระ");
+    expect(action.body).toContain("ครบกำหนดใน 2 วัน");
   });
 
   it("does not treat a debt due more than 3 days out as urgent", () => {
