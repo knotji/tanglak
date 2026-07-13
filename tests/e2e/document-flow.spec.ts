@@ -72,7 +72,7 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
     await expect(page.getByText("฿38,920").first()).toBeVisible();
   });
 
-  test("upload delivery screenshot, edit extracted amount before confirmation", async ({ page }) => {
+  test("upload delivery screenshot -- AI Financial Autopilot auto-saves the confident slip instead of forcing manual review", async ({ page }) => {
     // Reuse session
     await page.goto("/auth");
     await page.getByLabel("อีเมล").fill(email);
@@ -91,29 +91,16 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
     });
 
     await page.getByRole("button", { name: "วิเคราะห์ด้วย AI" }).click();
-    await expect(page).toHaveURL(/\/upload\/review\//);
 
-    // Verify extracted delivery slip fields
-    await expect(page.locator("input[name='merchant']")).toHaveValue("GrabFood");
-    await expect(page.locator("input[name='totalPaid']")).toHaveValue("185");
+    // High extraction confidence (0.88) -- the AI Financial Autopilot
+    // decision policy skips the manual review form entirely and shows the
+    // lightweight result screen instead (see autopilot-slip-integration.ts).
+    await expect(page).toHaveURL(/\/upload\/result\//);
+    await expect(page.getByText("TangLak จัดการให้แล้ว")).toBeVisible();
 
-    // Unambiguous Thai date/time helper next to the datetime-local input,
-    // regardless of the browser's own locale-dependent rendering of the
-    // native input itself.
-    const occurredAtInput = page.locator("input[name='occurredAt']");
-    const helperId = await occurredAtInput.getAttribute("aria-describedby");
-    expect(helperId).toBeTruthy();
-    await expect(page.locator(`#${helperId}`)).toContainText("10 ก.ค. 2026 เวลา 12:30");
-    await expect(page.locator(`#${helperId}`)).toContainText("อ่านจากเอกสาร");
-
-    // Edit amount before saving
-    await page.locator("input[name='totalPaid']").fill("195");
-    await page.getByRole("button", { name: "ยืนยันความถูกต้อง" }).click();
-
-    await expect(page).toHaveURL(/\/today/);
     await page.goto("/transactions");
     await expect(page.getByText("GrabFood")).toBeVisible();
-    await expect(page.getByText("฿195").first()).toBeVisible();
+    await expect(page.getByText("฿185").first()).toBeVisible();
   });
 
   test("upload with unclear/missing date opens the review screen (not the failure screen), and confirming with a manually entered date succeeds", async ({ page }) => {
@@ -329,12 +316,17 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
     await page.getByRole("button", { name: "วิเคราะห์ด้วย AI" }).click();
     await expect(page).toHaveURL(/\/upload\/review\//);
 
-    // Check that duplicate warning matches
+    // Check that duplicate warning matches. The account may also contain
+    // other unrelated transactions from earlier tests in this run (e.g.
+    // an AI Financial Autopilot auto-saved slip) that happen to score as
+    // weaker duplicate candidates too -- scope to the specific "KTC Test"
+    // candidate card rather than asserting on the page as a whole.
     await expect(page.getByText("ตรวจพบรายการที่อาจซ้ำซ้อนกัน")).toBeVisible();
-    await expect(page.getByText("ความคล้าย:")).toBeVisible();
+    const ktcCandidateCard = page.getByTestId("duplicate-candidate-card").filter({ hasText: "KTC Test" });
+    await expect(ktcCandidateCard.getByText("ความคล้าย:")).toBeVisible();
 
     // Choose to merge / link existing
-    await page.getByRole("button", { name: "เชื่อมโยงหลักฐาน" }).click();
+    await ktcCandidateCard.getByRole("button", { name: "เชื่อมโยงหลักฐาน" }).click();
     await expect(page).toHaveURL(/\/today/);
   });
 
@@ -525,10 +517,15 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
     const fileChooserPromise = page.waitForEvent("filechooser");
     await page.getByRole("button", { name: "ใบเสร็จ/ค่าอาหาร" }).click();
     const fileChooser = await fileChooserPromise;
+    // A missing-date mock is used here (rather than a confident delivery
+    // slip) specifically so this upload is deferred to the manual review
+    // form instead of being auto-saved by the AI Financial Autopilot --
+    // this test is about the review page's mobile layout, not the
+    // autopilot decision itself.
     await fileChooser.setFiles({
-      name: "delivery_grab_mobile.jpg",
+      name: "missing_date_receipt_mobile.jpg",
       mimeType: "image/jpeg",
-      buffer: Buffer.from("mock-delivery-data"),
+      buffer: Buffer.from("mock-missing-date-data"),
     });
     await page.getByRole("button", { name: "วิเคราะห์ด้วย AI" }).click();
     await expect(page).toHaveURL(/\/upload\/review\//);

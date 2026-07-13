@@ -82,7 +82,7 @@ test.describe.serial("Supabase config hydration", () => {
     await page.getByRole("button", { name: "ใบเสร็จ/ค่าอาหาร" }).click();
     const fileChooser = await fileChooserPromise;
     await fileChooser.setFiles({
-      name: "config_hydration_receipt.png",
+      name: "config_hydration_receipt_forcereview.png",
       mimeType: "image/png",
       buffer: Buffer.from("mock-config-hydration-data"),
     });
