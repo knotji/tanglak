@@ -21,6 +21,9 @@ function normalizeSatang(satang: number): number {
 }
 
 export function formatTHB(satang: number, options: { showPositiveSign?: boolean } = {}): string {
+  if (!Number.isFinite(satang)) {
+    throw new Error("Invalid satang amount");
+  }
   const normalized = normalizeSatang(satang);
   const sign = normalized < 0 ? "-" : options.showPositiveSign && normalized > 0 ? "+" : "";
   const amount = new Intl.NumberFormat("th-TH", {
