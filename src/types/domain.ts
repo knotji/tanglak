@@ -109,6 +109,11 @@ export type Transaction = {
   importBatchId?: string;
   importRowId?: string;
   isHistorical?: boolean;
+  /** Category provenance (AI Financial Autopilot) -- see src/lib/autopilot/autopilot-types.ts CategorySource. Undefined for rows predating this feature. */
+  categorySource?: string;
+  categoryConfidence?: number;
+  /** DB-maintained (trigger), exposed so undo can detect a manual edit after auto-creation. Undefined only if the repository call site didn't select it. */
+  updatedAt?: string;
 };
 
 export type Debt = {

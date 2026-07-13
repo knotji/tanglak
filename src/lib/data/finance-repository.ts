@@ -151,7 +151,7 @@ function validateDebtInput(input: Partial<DebtInput>, existing?: Debt): void {
 }
 
 const TRANSACTION_COLUMNS =
-  "id, user_id, type, status, amount_satang, currency, occurred_at, merchant, category_label, source_account_id, destination_account_id, debt_id, document_id, reference_number, payment_method, account_last_four, destination_account_last_four, bank, source, confidence, note, import_batch_id, import_row_id, is_historical";
+  "id, user_id, type, status, amount_satang, currency, occurred_at, merchant, category_label, category_source, category_confidence, source_account_id, destination_account_id, debt_id, document_id, reference_number, payment_method, account_last_four, destination_account_last_four, bank, source, confidence, note, import_batch_id, import_row_id, is_historical, updated_at";
 
 const DEBT_COLUMNS =
   "id, user_id, name, creditor, debt_type, payment_mode, original_amount_satang, outstanding_balance_satang, statement_balance_satang, amount_due_satang, minimum_payment_satang, amount_paid_this_cycle_satang, due_date, recurring_due_day, statement_date, cycle_start_date, cycle_end_date, interest_rate_annual, remaining_installments, credit_limit_satang, status, notes";
@@ -200,6 +200,24 @@ export async function listAllTransactions(userId: string): Promise<Transaction[]
   }, { userId });
   if (error) throw new Error(error.message);
   return (data ?? []).map(mapTransaction);
+}
+
+/** Single-transaction fetch by id, scoped to the owning user. Used by the autopilot undo path to re-check current state before reversing an auto-created transaction. */
+export async function getTransactionById(userId: string, id: string): Promise<Transaction | null> {
+  if (isMockAuthEnabled()) {
+    const transaction = getMockState().transactions.find((item) => item.id === id && item.userId === userId);
+    return transaction ?? null;
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("transactions")
+    .select(TRANSACTION_COLUMNS)
+    .eq("id", id)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? mapTransaction(data) : null;
 }
 
 export async function createTransaction(userId: string, input: TransactionInput): Promise<Transaction> {
