@@ -1,4 +1,5 @@
 import type { Account, Debt, FinanceDocument, DocumentExtraction, Transaction, ImportBatch, ImportRow, MonthlyBudget, BudgetCategory } from "@/types/domain";
+import type { AutopilotActionRecord } from "@/lib/autopilot/autopilot-types";
 import { createHash } from "node:crypto";
 
 type MockState = {
@@ -13,6 +14,7 @@ type MockState = {
   accounts: Account[];
   monthlyBudgets: MonthlyBudget[];
   budgetCategories: BudgetCategory[];
+  autopilotActions: AutopilotActionRecord[];
 };
 
 const globalForMock = globalThis as typeof globalThis & {
@@ -32,6 +34,7 @@ export function getMockState(): MockState {
     accounts: [],
     monthlyBudgets: [],
     budgetCategories: [],
+    autopilotActions: [],
   };
   return globalForMock.__tanglakMockState;
 }

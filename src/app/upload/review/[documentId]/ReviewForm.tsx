@@ -595,6 +595,7 @@ export function ReviewForm({
                     {duplicateTransactions.map((dup) => (
                       <div
                         key={dup.id}
+                        data-testid="duplicate-candidate-card"
                         className="rounded-[12px] border border-border bg-white p-4 shadow-sm"
                       >
                         <div className="flex justify-between items-start">

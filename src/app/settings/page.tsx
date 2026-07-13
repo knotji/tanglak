@@ -59,6 +59,7 @@ export default async function SettingsPage() {
       </SettingsSection>
 
       <SettingsSection title="ข้อมูล">
+        <SettingsLink href="/settings/autopilot-activity" label="สิ่งที่ TangLak จัดการให้" detail="รายการที่ระบบสร้างอัตโนมัติ" />
         <SettingsLink href="/settings/data" label="ข้อมูลและการนำเข้า" detail="ประวัติและการจัดการข้อมูล" />
         <SettingsLink href="/upload" label="ประวัติอัปโหลดเอกสาร" detail="เอกสารส่วนตัวใน Storage" />
         <div className="px-4 py-3 text-sm leading-6 text-text-secondary">

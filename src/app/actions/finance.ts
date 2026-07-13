@@ -14,6 +14,7 @@ import {
   updateTransaction,
 } from "@/lib/data/finance-repository";
 import { parseRequiredMoney } from "@/lib/finance/money-guards";
+import { setTransactionCategoryProvenance } from "@/lib/autopilot/autopilot-provenance";
 import {
   isValidDueDate,
   parseDebtAmountDue,
@@ -102,8 +103,17 @@ export async function saveTransactionAction(
   };
 
   try {
-    if (parsed.data.id) await updateTransaction(user.id, parsed.data.id, input);
-    else await createTransaction(user.id, input);
+    let transactionId = parsed.data.id;
+    if (transactionId) await updateTransaction(user.id, transactionId, input);
+    else transactionId = (await createTransaction(user.id, input)).id;
+
+    // A user who explicitly picked/typed a category in this form is making
+    // a manual decision -- record it as "manual" provenance so autopilot
+    // (see autopilot-provenance.ts) never overwrites it on reprocessing.
+    if (parsed.data.category) {
+      await setTransactionCategoryProvenance(user.id, transactionId, "manual", undefined);
+    }
+
     revalidateFinance();
     return { ok: true, message: "บันทึกแล้ว" };
   } catch (error) {

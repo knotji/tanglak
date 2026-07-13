@@ -10,6 +10,8 @@ type TransactionRow = {
   occurred_at: string;
   merchant: string | null;
   category_label?: string | null;
+  category_source?: string | null;
+  category_confidence?: number | string | null;
   source_account_id: string | null;
   destination_account_id: string | null;
   debt_id: string | null;
@@ -25,6 +27,7 @@ type TransactionRow = {
   import_batch_id: string | null;
   import_row_id: string | null;
   is_historical: boolean;
+  updated_at?: string;
 };
 
 type DebtRow = {
@@ -68,6 +71,8 @@ export function mapTransaction(row: TransactionRow): Transaction {
     occurredAt: row.occurred_at,
     merchant: row.merchant ?? undefined,
     category: row.category_label ?? undefined,
+    categorySource: row.category_source ?? undefined,
+    categoryConfidence: toNumber(row.category_confidence),
     sourceAccountId: row.source_account_id ?? undefined,
     destinationAccountId: row.destination_account_id ?? undefined,
     debtId: row.debt_id ?? undefined,
@@ -83,6 +88,7 @@ export function mapTransaction(row: TransactionRow): Transaction {
     importBatchId: row.import_batch_id ?? undefined,
     importRowId: row.import_row_id ?? undefined,
     isHistorical: row.is_historical,
+    updatedAt: row.updated_at ?? undefined,
   };
 }
 
