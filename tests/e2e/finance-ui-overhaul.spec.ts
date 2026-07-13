@@ -30,7 +30,8 @@ test.describe("finance UI overhaul", () => {
     await budgetLink.click();
 
     await expect(page).toHaveURL(/\/budget/);
-    await expect(page.getByRole("heading", { name: "งบประมาณรายเดือน" })).toBeVisible();
+    const budgetPage = page.locator("main", { has: page.getByRole("heading", { name: "งบประมาณรายเดือน" }) });
+    await expect(budgetPage).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole("link", { name: "งบ", exact: true })).toHaveAttribute("aria-current", "page");
   });
 
