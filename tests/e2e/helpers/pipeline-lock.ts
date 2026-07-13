@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 
 const LOCK_DIR = join(tmpdir(), "tanglak-e2e-pipeline.lock");
 const STALE_AFTER_MS = 120_000;
+const DEFAULT_TIMEOUT_MS = STALE_AFTER_MS + 60_000;
 
 type PipelineLockOptions = {
   label?: string;
@@ -19,7 +20,10 @@ type PipelineLockOwner = {
 export async function acquirePipelineLock(options: PipelineLockOptions = {}) {
   const startedAt = Date.now();
   const label = options.label ?? "unnamed";
-  const timeoutMs = options.timeoutMs ?? 60_000;
+  // The timeout must be longer than stale-lock cleanup; otherwise a worker
+  // can fail before it is allowed to remove a dead owner left by another
+  // Playwright worker.
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   while (true) {
     try {

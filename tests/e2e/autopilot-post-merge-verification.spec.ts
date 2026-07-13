@@ -50,7 +50,7 @@ test.describe.serial("post-merge production verification surface", () => {
   test.beforeAll(async () => {
     releasePipelineLock = await acquirePipelineLock({
       label: "autopilot-post-merge-verification",
-      timeoutMs: 30_000,
+      timeoutMs: 180_000,
     });
   });
 
