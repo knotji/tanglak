@@ -24,8 +24,8 @@ async function signUpAndOnboard(page: import("@playwright/test").Page) {
 test.describe.serial("AI Financial Autopilot -- Slip Import vertical slice", () => {
   let releasePipelineLock: (() => Promise<void>) | undefined;
 
-  test.beforeEach(async () => {
-    releasePipelineLock = await acquirePipelineLock();
+  test.beforeEach(async ({}, testInfo) => {
+    releasePipelineLock = await acquirePipelineLock({ label: testInfo.title });
   });
 
   test.afterEach(async () => {

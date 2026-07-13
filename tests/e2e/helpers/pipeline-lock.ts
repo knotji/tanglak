@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -76,20 +76,35 @@ function formatOwner(owner: PipelineLockOwner | undefined) {
 }
 
 async function removeStaleLock() {
+  const owner = await readCurrentOwner();
+  if (!owner) {
+    return;
+  }
+
+  const isExpired =
+    typeof owner.acquiredAt === "number" && Date.now() - owner.acquiredAt > STALE_AFTER_MS;
+  if (!isExpired) {
+    return;
+  }
+
+  // A slow E2E worker can legitimately hold the lock for longer than the
+  // stale threshold while the owning Playwright process is still alive. Only
+  // clean up an expired lock when the recorded owner process has gone away;
+  // otherwise let waiters time out with the owner details instead of masking a
+  // real pipeline deadlock.
+  if (typeof owner.pid !== "number" || isProcessAlive(owner.pid)) {
+    return;
+  }
+
+  await rm(LOCK_DIR, { recursive: true, force: true });
+}
+
+function isProcessAlive(pid: number) {
   try {
-    const raw = await readFile(join(LOCK_DIR, "owner.json"), "utf8");
-    const owner = JSON.parse(raw) as { acquiredAt?: number };
-    if (typeof owner.acquiredAt === "number" && Date.now() - owner.acquiredAt > STALE_AFTER_MS) {
-      await rm(LOCK_DIR, { recursive: true, force: true });
-    }
-  } catch {
-    try {
-      const lockStats = await stat(LOCK_DIR);
-      if (Date.now() - lockStats.mtimeMs > STALE_AFTER_MS) {
-        await rm(LOCK_DIR, { recursive: true, force: true });
-      }
-    } catch {
-      // Lock disappeared between attempts.
-    }
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    return code === "EPERM";
   }
 }
