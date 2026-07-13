@@ -157,3 +157,13 @@ Autopilot introduces no second aggregation layer.
   slips, transfer slips, and debt statements remain fully manual.
 - No cross-account transfer-matching, recurring-bill prediction, or
   budget/debt autonomy -- explicitly out of scope for this phase.
+- Undo's read-then-write status transition is not a DB-level atomic
+  compare-and-swap. Two concurrent undo requests for the same action could
+  both pass the "not already undone" check before either writes back. This
+  is safe in practice because both side effects it performs --
+  `deleteTransaction` and the audit finalize -- are themselves idempotent
+  (deleting an already-deleted transaction is a no-op; re-writing the same
+  "undone" status/timestamp is harmless), so the worst case is a harmless
+  duplicate write, never a double-delete or corrupted audit state. A
+  Phase 2 hardening would add a conditional `update ... where status =
+  'executed'` (checking rows-affected) for a true atomic transition.

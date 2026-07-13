@@ -96,7 +96,30 @@ export async function executeAutopilotAction(input: ExecuteAutopilotActionInput)
     // Phase 1 implements create_transaction end-to-end from Slip Import.
     // The other allowlisted action types have validated schemas and a
     // reserved contract here, but no caller wires them to execution yet
-    // -- see docs/AUTOPILOT_FOUNDATION.md "Known limitations".
+    // -- see docs/AUTOPILOT_FOUNDATION.md "Known limitations". This must
+    // still fail closed (never silently "succeed") AND leave an explicit
+    // rejected audit record -- a thrown error with no audit trail would
+    // satisfy "fail closed" but not "every outcome is audited".
+    const unsupportedAuditRecord = await createAutopilotActionRecord({
+      userId,
+      actionType: proposal.type,
+      source: proposal.source,
+      confidence: input.coreConfidence,
+      risk: "low",
+      proposalPayload: proposal,
+    });
+    const unsupportedExplanation = buildDeterministicExplanation({
+      decision: "reject",
+      evidence: [{ reasonCode: "action_not_allowlisted", detail: "No executor implementation for this action type in Phase 1" }],
+    });
+    await finalizeAutopilotActionRecord({
+      userId,
+      id: unsupportedAuditRecord.id,
+      status: "rejected",
+      decision: "reject",
+      explanation: unsupportedExplanation,
+      validationErrors: ["action_not_allowlisted"],
+    });
     throw new Error(`Action type "${proposal.type}" has a schema but no executor implementation yet`);
   }
 
