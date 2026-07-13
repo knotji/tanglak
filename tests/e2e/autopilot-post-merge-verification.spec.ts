@@ -2,7 +2,8 @@ import { expect, test, type Page } from "@playwright/test";
 import { acquirePipelineLock } from "./helpers/pipeline-lock";
 
 const password = "password123";
-const forbiddenFinancialText = /-à¸¿0|\+à¸¿0|à¸¿-0|NaN|Infinity|âˆž|Invalid Date/;
+const forbiddenFinancialText = /-\u0e3f0|\+\u0e3f0|\u0e3f-0|NaN|Infinity|\u221e|Invalid Date/;
+const fixedMockTransactionMonth = "2026-07";
 const unsafeDiagnosticText = /data:image|base64|stack trace|expected number|received undefined|Gemini quota|API key/i;
 
 async function signUpAndOnboard(page: Page) {
@@ -46,11 +47,14 @@ async function expectNoHorizontalOverflow(page: Page, width: number) {
 test.describe.serial("post-merge production verification surface", () => {
   let releasePipelineLock: (() => Promise<void>) | undefined;
 
-  test.beforeEach(async () => {
-    releasePipelineLock = await acquirePipelineLock();
+  test.beforeAll(async () => {
+    releasePipelineLock = await acquirePipelineLock({
+      label: "autopilot-post-merge-verification",
+      timeoutMs: 30_000,
+    });
   });
 
-  test.afterEach(async () => {
+  test.afterAll(async () => {
     await releasePipelineLock?.();
     releasePipelineLock = undefined;
   });
@@ -72,7 +76,7 @@ test.describe.serial("post-merge production verification surface", () => {
     await expectNoUnsafeFinancialText(page);
     await page.reload();
 
-    await page.goto("/transactions");
+    await page.goto(`/transactions?month=${fixedMockTransactionMonth}`);
     await expect(page.getByText("GrabFood")).toHaveCount(1);
     await expect(page.locator("body")).toContainText("185");
     await expectNoUnsafeFinancialText(page);
@@ -86,7 +90,7 @@ test.describe.serial("post-merge production verification surface", () => {
     await expect(page.getByText("GrabFood")).toHaveCount(0);
     await expectNoUnsafeFinancialText(page);
 
-    await page.goto("/budget");
+    await page.goto(`/budget?month=${fixedMockTransactionMonth}`);
     await expect(page.locator("body")).toContainText("185");
     await expect(page.locator("body")).toContainText("30,000");
     await expectNoUnsafeFinancialText(page);
@@ -98,10 +102,14 @@ test.describe.serial("post-merge production verification surface", () => {
       await expectNoHorizontalOverflow(page, width);
     }
 
-    await page.locator("li", { hasText: "GrabFood" }).locator("button").click();
-    await expect(page.locator("li", { hasText: "GrabFood" })).not.toHaveCount(0);
+    const auditRow = page.locator("li", { hasText: "GrabFood" });
+    await auditRow.locator("button").click();
+    await expect(auditRow).toContainText("ยกเลิกแล้ว");
+    await expect(auditRow.locator("button")).toHaveCount(0);
+    await page.reload();
+    await expect(page.locator("li", { hasText: "GrabFood" })).toContainText("ยกเลิกแล้ว");
 
-    await page.goto("/transactions");
+    await page.goto(`/transactions?month=${fixedMockTransactionMonth}`);
     await expect(page.getByText("GrabFood")).toHaveCount(0);
     await page.goto("/overview");
     await expect(page.locator("body")).not.toContainText("185");
@@ -128,7 +136,7 @@ test.describe.serial("post-merge production verification surface", () => {
     await page.locator("form button").last().click();
     await expect(page).toHaveURL(/\/today/);
 
-    await page.goto("/transactions");
+    await page.goto(`/transactions?month=${fixedMockTransactionMonth}`);
     await expect(page.locator("body")).toContainText("250");
     await expect(page.locator("body")).not.toContainText("TangLak");
   });
