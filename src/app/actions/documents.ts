@@ -31,11 +31,15 @@ import { getMockState } from "@/lib/data/mock-store";
 import { logSafeError } from "@/lib/observability/safe-diagnostics";
 import { resolveExpenseCategoryLabel } from "@/lib/finance/category-fallback";
 import { getCategoryById } from "@/lib/finance/categories";
+import { runSlipImportAutopilot } from "@/lib/autopilot/autopilot-slip-integration";
 
 export type DocumentActionState = {
   ok: boolean;
   message?: string;
   documentId?: string;
+  /** Set when the AI Financial Autopilot already created the transaction for this slip -- the client should show the lightweight result screen instead of the manual review form. */
+  autopilotHandled?: boolean;
+  autopilotTransactionId?: string;
 };
 
 // Supported file validation helpers
@@ -131,8 +135,27 @@ export async function uploadAndExtractAction(
 
     // Start extraction asynchronously or synchronously for UX
     // We will do it synchronously here to return status and redirect instantly
+    let autopilotHandled = false;
+    let autopilotTransactionId: string | undefined;
     try {
-      await processAndExtractDocument(user.id, documentId);
+      const extraction = await processAndExtractDocument(user.id, documentId);
+      try {
+        const outcome = await runSlipImportAutopilot(user.id, documentId, extraction);
+        if (outcome.kind === "executed") {
+          autopilotHandled = true;
+          autopilotTransactionId = outcome.transaction.id;
+        }
+      } catch (autopilotError) {
+        // The slip is still extracted and reviewable manually even if the
+        // autopilot pipeline itself fails -- never let this block the
+        // existing upload/extract/review flow.
+        logSafeError("Autopilot slip execution failed", {
+          operation: "document.uploadAndExtract",
+          stage: "autopilot",
+          documentId,
+          error: autopilotError,
+        });
+      }
     } catch (extractError) {
       const isExpectedMockFailure =
         extractError instanceof Error && extractError.cause instanceof Error && extractError.cause.message.includes("Mocked Gemini Failure");
@@ -151,7 +174,13 @@ export async function uploadAndExtractAction(
     }
 
     revalidatePath("/transactions");
-    return { ok: true, message: "อัปโหลดและประมวลผลสำเร็จ", documentId };
+    return {
+      ok: true,
+      message: "อัปโหลดและประมวลผลสำเร็จ",
+      documentId,
+      autopilotHandled,
+      autopilotTransactionId,
+    };
   } catch (error) {
     logSafeError("Upload failed before document creation", {
       operation: "document.uploadAndExtract",

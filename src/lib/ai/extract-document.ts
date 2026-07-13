@@ -188,6 +188,39 @@ function getMockExtraction(
     });
   }
 
+  // 1b. Force-review mock (filename contains "forcereview"): identical
+  // transaction data to the Delivery Receipt Mock below (185 baht,
+  // GrabFood), but with confidence deliberately below the AI Financial
+  // Autopilot's auto-execute/execute-with-notice thresholds (see
+  // autopilot-confidence.ts) so the upload always lands on the manual
+  // review form. Lets tests exercise the review FORM itself (e.g. its own
+  // client-side money-amount validation) with realistic values, without
+  // the autopilot vertical slice intercepting the upload first.
+  if (nameLower.includes("forcereview")) {
+    return extractedFinancialDocumentSchema.parse({
+      documentType: "delivery_receipt",
+      confidence: 0.5,
+      transaction: {
+        type: "expense",
+        amount: 185,
+        currency: "THB",
+        occurredAt: "2026-07-10T12:30:00+07:00",
+        merchant: "GrabFood",
+      },
+      receipt: {
+        subtotal: 220,
+        deliveryFee: 25,
+        serviceFee: 0,
+        discount: 60,
+        totalPaid: 185,
+        items: [{ name: "Katsu Don", quantity: 1, amount: 220 }],
+      },
+      warnings: [],
+      unclearFields: [],
+      requiresReview: true,
+    });
+  }
+
   // 2. Delivery Receipt Mock
   if (
     nameLower.includes("delivery") ||

@@ -98,8 +98,13 @@ export function UploadClient() {
       setProgressStep("checking_data");
       if (res.ok && res.documentId) {
         setProgressStep("ready_to_confirm");
-        // Successful extraction redirect to review
-        window.location.href = `/upload/review/${res.documentId}`;
+        if (res.autopilotHandled && res.autopilotTransactionId) {
+          // TangLak already created the transaction -- show the lightweight
+          // result screen instead of the manual review form.
+          window.location.href = `/upload/result/${res.documentId}?tx=${res.autopilotTransactionId}`;
+        } else {
+          window.location.href = `/upload/review/${res.documentId}`;
+        }
       } else {
         setErrorMessage(res.message || "เกิดข้อผิดพลาดในการวิเคราะห์ข้อมูล");
         setIsProcessing(false);
