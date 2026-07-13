@@ -103,11 +103,30 @@ create table public.reconciliation_candidates (
 
 -- Idempotency, DB-enforced (in addition to the application-level
 -- pre-check in reconciliation-candidates-repository.ts): the same user
--- can never have two rows with the same idempotency key, so a retried or
--- concurrently overlapping scan can race to insert but can never
--- succeed twice for the same logical candidate.
-create unique index reconciliation_candidates_user_idempotency_key_idx
-  on public.reconciliation_candidates (user_id, idempotency_key);
+-- can never have two *active* (non-invalidated) rows with the same
+-- idempotency key, so a retried or concurrently overlapping scan can
+-- race to insert but can never succeed twice for the same logical
+-- candidate.
+--
+-- Deliberately scoped to `where status <> 'invalidated'` rather than an
+-- unconditional unique index: the idempotency key is a pure function of
+-- (user_id, candidate_type, source_transaction_ids, related_debt_ids)
+-- and never changes for the lifetime of those ids, but a candidate's
+-- *evidence* can go stale (see reconciliation-invalidation.ts) and get
+-- marked `invalidated` while the underlying transactions still exist.
+-- An unconditional unique index would then permanently block ever
+-- creating a fresh active candidate for that same id pair -- a rescan
+-- after invalidation would keep returning the stale invalidated row
+-- forever. Scoping the index to active statuses lets a new row reuse
+-- the same idempotency key once every prior row for that key has been
+-- invalidated, while still preventing two active rows (and therefore
+-- two duplicate concurrent scans) for the same key. Historical
+-- invalidated rows are never deleted and keep their original key, so
+-- the full lineage for a given transaction pair stays auditable via
+-- `idempotency_key`.
+create unique index reconciliation_candidates_user_idempotency_key_active_idx
+  on public.reconciliation_candidates (user_id, idempotency_key)
+  where status <> 'invalidated';
 
 create index reconciliation_candidates_user_status_idx
   on public.reconciliation_candidates (user_id, status);

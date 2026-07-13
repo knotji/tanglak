@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getMockState } from "@/lib/data/mock-store";
 import {
   createReconciliationCandidate,
+  findActiveReconciliationCandidateByIdempotencyKey,
   findReconciliationCandidateByIdempotencyKey,
   invalidateReconciliationCandidate,
   listReconciliationCandidates,
@@ -115,5 +116,141 @@ describe("reconciliation candidates repository", () => {
     await expect(
       invalidateReconciliationCandidate({ userId: OTHER_USER_ID, id: record.id, reason: "transaction_modified" }),
     ).rejects.toThrow();
+  });
+});
+
+describe("candidate lifecycle after invalidation (regeneration)", () => {
+  beforeEach(() => {
+    getMockState().reconciliationCandidates = [];
+  });
+
+  it("1. an unchanged repeated scan remains idempotent (no invalidation involved)", async () => {
+    const input = { draft: draft(), policyOutcome: "suggest_with_notice" as const, requiresReview: true };
+
+    const first = await createReconciliationCandidate(input);
+    const second = await createReconciliationCandidate(input);
+    const third = await createReconciliationCandidate(input);
+
+    expect(second.created).toBe(false);
+    expect(third.created).toBe(false);
+    expect(second.record.id).toBe(first.record.id);
+    expect(third.record.id).toBe(first.record.id);
+    expect(getMockState().reconciliationCandidates).toHaveLength(1);
+  });
+
+  it("2. create -> invalidate -> source data changes -> rescan creates a new active candidate", async () => {
+    const original = await createReconciliationCandidate({
+      draft: draft({ evidence: [{ reasonCode: "opposite_direction" }], confidence: "low" }),
+      policyOutcome: "require_confirmation",
+      requiresReview: true,
+    });
+
+    await invalidateReconciliationCandidate({ userId: USER_ID, id: original.record.id, reason: "transaction_modified" });
+
+    // The transaction pair still exists (same sourceTransactionIds -> same
+    // idempotency key), but recomputed evidence now reflects the changed
+    // source data (e.g. an account-hint match that wasn't there before).
+    const rescanned = await createReconciliationCandidate({
+      draft: draft({
+        evidence: [{ reasonCode: "opposite_direction" }, { reasonCode: "reference_match" }],
+        confidence: "high",
+      }),
+      policyOutcome: "auto_match_safe",
+      requiresReview: false,
+    });
+
+    expect(rescanned.created).toBe(true);
+    expect(rescanned.record.id).not.toBe(original.record.id);
+    expect(rescanned.record.status).not.toBe("invalidated");
+    expect(rescanned.record.idempotencyKey).toBe(original.record.idempotencyKey); // same logical id pair
+  });
+
+  it("3. the old invalidated candidate remains preserved after a new active one is created", async () => {
+    const original = await createReconciliationCandidate({
+      draft: draft(),
+      policyOutcome: "require_confirmation",
+      requiresReview: true,
+    });
+    await invalidateReconciliationCandidate({ userId: USER_ID, id: original.record.id, reason: "transaction_modified" });
+
+    await createReconciliationCandidate({
+      draft: draft({ confidence: "high" }),
+      policyOutcome: "suggest_with_notice",
+      requiresReview: true,
+    });
+
+    expect(getMockState().reconciliationCandidates).toHaveLength(2);
+    const preserved = getMockState().reconciliationCandidates.find((row) => row.id === original.record.id);
+    expect(preserved).toBeDefined();
+    expect(preserved?.status).toBe("invalidated");
+    expect(preserved?.invalidationReason).toBe("transaction_modified");
+  });
+
+  it("4. concurrent/repeated rescans after invalidation never create more than one new active candidate", async () => {
+    const original = await createReconciliationCandidate({
+      draft: draft(),
+      policyOutcome: "require_confirmation",
+      requiresReview: true,
+    });
+    await invalidateReconciliationCandidate({ userId: USER_ID, id: original.record.id, reason: "transaction_modified" });
+
+    const rescanDraft = { draft: draft({ confidence: "high" as const }), policyOutcome: "suggest_with_notice" as const, requiresReview: true };
+    const [a, b, c] = await Promise.all([
+      createReconciliationCandidate(rescanDraft),
+      createReconciliationCandidate(rescanDraft),
+      createReconciliationCandidate(rescanDraft),
+    ]);
+
+    const createdCount = [a, b, c].filter((result) => result.created).length;
+    expect(createdCount).toBe(1);
+    expect(a.record.id).toBe(b.record.id);
+    expect(b.record.id).toBe(c.record.id);
+
+    const activeRows = getMockState().reconciliationCandidates.filter(
+      (row) => row.idempotencyKey === original.record.idempotencyKey && row.status !== "invalidated",
+    );
+    expect(activeRows).toHaveLength(1);
+
+    const totalRowsForKey = getMockState().reconciliationCandidates.filter(
+      (row) => row.idempotencyKey === original.record.idempotencyKey,
+    );
+    expect(totalRowsForKey).toHaveLength(2); // 1 invalidated (history) + 1 active
+  });
+
+  it("5. the new active candidate carries refreshed evidence, confidence, and policy outcome", async () => {
+    const original = await createReconciliationCandidate({
+      draft: draft({ evidence: [{ reasonCode: "opposite_direction" }], confidence: "low" }),
+      policyOutcome: "require_confirmation",
+      requiresReview: true,
+    });
+    await invalidateReconciliationCandidate({ userId: USER_ID, id: original.record.id, reason: "transaction_modified" });
+
+    const refreshed = await createReconciliationCandidate({
+      draft: draft({
+        evidence: [{ reasonCode: "opposite_direction" }, { reasonCode: "account_hint_match" }, { reasonCode: "reference_match" }],
+        confidence: "high",
+      }),
+      policyOutcome: "auto_match_safe",
+      requiresReview: false,
+    });
+
+    expect(refreshed.record.confidence).toBe("high");
+    expect(refreshed.record.policyOutcome).toBe("auto_match_safe");
+    expect(refreshed.record.evidence.map((item) => item.reasonCode)).toEqual(
+      expect.arrayContaining(["account_hint_match", "reference_match"]),
+    );
+    // The stale, invalidated original keeps its own original evidence untouched.
+    expect(original.record.evidence).toEqual([{ reasonCode: "opposite_direction" }]);
+  });
+
+  it("findActiveReconciliationCandidateByIdempotencyKey ignores invalidated rows but finds the active one", async () => {
+    const original = await createReconciliationCandidate({ draft: draft(), policyOutcome: "require_confirmation", requiresReview: true });
+    await invalidateReconciliationCandidate({ userId: USER_ID, id: original.record.id, reason: "transaction_modified" });
+
+    expect(await findActiveReconciliationCandidateByIdempotencyKey(USER_ID, original.record.idempotencyKey)).toBeNull();
+
+    const rescanned = await createReconciliationCandidate({ draft: draft({ confidence: "high" }), policyOutcome: "suggest_with_notice", requiresReview: true });
+    const active = await findActiveReconciliationCandidateByIdempotencyKey(USER_ID, original.record.idempotencyKey);
+    expect(active?.id).toBe(rescanned.record.id);
   });
 });

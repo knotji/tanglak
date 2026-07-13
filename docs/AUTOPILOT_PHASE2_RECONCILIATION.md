@@ -141,8 +141,14 @@ proposed -> needs_review -> confirmed | rejected
 - `invalidated`: written only by
   `invalidateReconciliationCandidate`/`invalidateStaleReconciliationCandidates`
   when a source transaction was edited or deleted after generation.
-  Terminal, but not a delete -- the row (and its evidence) stays for
-  audit purposes.
+  Terminal for that row, but not a delete -- the row (and its evidence)
+  stays for audit purposes. **It is not terminal for the underlying
+  transaction pair/debt link**: a later rescan can generate a brand new
+  active (`proposed`/`needs_review`) row referencing the exact same
+  `source_transaction_ids`/`related_debt_ids` (and therefore the same
+  idempotency key), with freshly recomputed evidence/confidence/policy.
+  See Idempotency below for how uniqueness allows this without ever
+  permitting two active rows for the same key at once.
 
 Rows are never hard-deleted (no delete RLS policy at all -- see
 Schema/RLS below), mirroring the `autopilot_actions` append-only
@@ -294,8 +300,10 @@ dedicated table keeps each audit trail's semantics unambiguous.
 
 ### Indexes
 
-- Unique `(user_id, idempotency_key)` -- the DB-enforced half of
-  idempotency.
+- Partial unique index on `(user_id, idempotency_key) where status <>
+  'invalidated'` -- the DB-enforced half of idempotency, scoped to
+  active rows only so a candidate can be regenerated after invalidation
+  (see Idempotency below for the full rationale).
 - `(user_id, status)`, `(user_id, candidate_type)`,
   `(user_id, created_at desc)` -- the query shapes a Review Inbox
   (PR B) will need.
@@ -316,28 +324,87 @@ manual review.
 ## Idempotency
 
 Two layers, mirroring the history-import/autopilot conventions already
-in this codebase:
+in this codebase -- **plus a lifecycle-aware scoping rule** added after
+an initial-review finding that the first version of this design could
+never regenerate a candidate once invalidated (see "Design revision"
+below):
 
 1. **Application-level**: `computeReconciliationIdempotencyKey`
    (`reconciliation-idempotency.ts`) sorts `sourceTransactionIds` (and
    `relatedDebtIds`) before hashing, so a pair generated as `[A, B]` on
    one scan and `[B, A]` on another (e.g. a different query row order)
-   produces the exact same key. `createReconciliationCandidate`
-   pre-checks for an existing row with that key before inserting.
-2. **Database-level**: a unique index on `(user_id, idempotency_key)`.
-   On a `23505` unique-violation (a genuine concurrent-insert race), the
-   repository re-reads and returns the row that won, rather than
-   erroring the whole scan out -- exactly mirroring
-   `createAutopilotActionRecord`'s pattern.
+   produces the exact same key. This key is a pure function of the *ids
+   involved*, not of their evidence -- it never changes for the lifetime
+   of that transaction pair/debt link, even across many
+   invalidate-then-regenerate cycles.
+   `createReconciliationCandidate` pre-checks for an existing **active**
+   (non-invalidated) row with that key via
+   `findActiveReconciliationCandidateByIdempotencyKey` before inserting
+   -- an invalidated row with the same key is not treated as a conflict.
+2. **Database-level**: a **partial** unique index,
+   `reconciliation_candidates_user_idempotency_key_active_idx`, on
+   `(user_id, idempotency_key) where status <> 'invalidated'`. On a
+   `23505` unique-violation (a genuine concurrent-insert race against
+   another *active* row), the repository re-reads the active row via the
+   same active-only lookup and returns it, rather than erroring the
+   whole scan out -- exactly mirroring `createAutopilotActionRecord`'s
+   pattern.
+
+### Design revision: why the unique index is scoped to active rows
+
+The first version of this table used an **unconditional** unique index
+on `(user_id, idempotency_key)`. Since the idempotency key never changes
+for a given id pair, that meant: once a candidate for a pair was
+invalidated, *no row could ever be inserted again for that same key* --
+the unconditional index would reject it as a duplicate, and the
+application's own idempotency pre-check (which looked up "any row with
+this key", regardless of status) would find the stale invalidated row
+and hand it back as if it were current. A rescan after a genuine source
+change could therefore never produce a fresh, correctly re-evaluated
+active candidate -- it would silently keep returning stale, invalidated
+evidence forever.
+
+The fix scopes uniqueness to **active (non-invalidated) rows only**
+(the "enforce uniqueness only for active candidate states" option from
+this feature's own design guidance, chosen over versioning the
+idempotency key itself with a revision counter):
+
+- A given `(user_id, idempotency_key)` pair may have **any number of
+  invalidated historical rows**, preserved forever for audit/lineage,
+  plus **at most one active row at a time** (`proposed`/`needs_review`).
+- `createReconciliationCandidate`'s pre-check, its mock-path race-check,
+  and its `23505` fallback all now look up the *active* row for a key
+  (`findActiveReconciliationCandidateByIdempotencyKey`), never "any row".
+- `findReconciliationCandidateByIdempotencyKey` (any status, most recent
+  match) is kept as a separate, general-purpose lookup for callers that
+  want the full history rather than "the current active row" -- it is no
+  longer used by the create path's uniqueness check.
+
+**Trade-off accepted**: an idempotency key is no longer 1:1 with a
+single row over the table's full history -- it identifies a *logical
+candidate slot* that can be re-occupied by a new row after the previous
+occupant is invalidated. Callers that need "the current answer for this
+id pair" must use the active-only lookup (or filter by
+`status <> 'invalidated'`), not assume uniqueness across the whole
+table. This is judged acceptable because every consumer of this table so
+far (`reconciliation-scan.ts`, the (future) Review Inbox) only ever
+cares about active candidates; the versioned-key alternative (embedding
+a revision number in the key itself) was rejected because it would
+require the repository to track "what revision am I on" state across
+scans, adding complexity without a corresponding benefit over letting
+the DB's partial index be the single source of truth for "is there
+already an active row".
 
 ## Concurrency
 
 - Two overlapping/concurrent calls to `scanForReconciliationCandidates`
   for the same user can both compute the same candidate and race to
-  insert it; the DB unique index guarantees only one row is ever
-  created, and the loser's repository call transparently returns the
-  winner's row (see `reconciliation-scan.test.ts`'s concurrent-scan
-  test).
+  insert it; the partial unique index guarantees only one *active* row
+  is ever created for a given key, and the loser's repository call
+  transparently returns the winner's row (see
+  `reconciliation-scan.test.ts`'s concurrent-scan test, and
+  `reconciliation-candidates-repository.test.ts`'s
+  "concurrent/repeated rescans after invalidation" test).
 - **Documented limitation**: the mock-auth path's "pre-check, then
   insert" is not atomic the way a real Postgres unique index is -- two
   mock-mode calls racing between the pre-check and the write could, in

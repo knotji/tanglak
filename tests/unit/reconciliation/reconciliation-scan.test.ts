@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getMockState } from "@/lib/data/mock-store";
 import { scanForReconciliationCandidates } from "@/lib/reconciliation/reconciliation-scan";
+import { invalidateReconciliationCandidate } from "@/lib/reconciliation/reconciliation-candidates-repository";
 import { tx, debt, USER_ID, OTHER_USER_ID, resetReconciliationFixtureIds } from "./fixtures";
 
 vi.mock("@/lib/auth/session", async (importOriginal) => {
@@ -101,6 +102,51 @@ describe("scanForReconciliationCandidates (integration seam)", () => {
       for (const id of candidate.sourceTransactionIds) {
         expect(txIds.has(id)).toBe(true);
       }
+    }
+  });
+
+  it("regenerates an active candidate after the prior one was invalidated and the source evidence changed", async () => {
+    const state = getMockState();
+    const out = tx({ type: "expense", amountSatang: 100_000, occurredAt: "2026-07-10T10:00:00+07:00" });
+    const inc = tx({ type: "income", amountSatang: 100_000, occurredAt: "2026-07-10T10:01:00+07:00" });
+    state.transactions = [out, inc];
+
+    const firstScan = await scanForReconciliationCandidates(USER_ID);
+    expect(firstScan.created).toBeGreaterThan(0);
+    const originalCandidates = [...getMockState().reconciliationCandidates];
+
+    // Simulate the source-change invalidation this PR's known limitation
+    // documents as not yet auto-wired: mark every candidate for this pair
+    // invalidated, matching what `invalidateStaleReconciliationCandidates`
+    // would do once a caller wires it into the transaction write path.
+    for (const candidate of originalCandidates) {
+      await invalidateReconciliationCandidate({ userId: USER_ID, id: candidate.id, reason: "transaction_modified" });
+    }
+    expect(getMockState().reconciliationCandidates.every((c) => c.status === "invalidated")).toBe(true);
+
+    // The source data changed in a way that strengthens the evidence
+    // (a shared reference number appears on both sides) -- same
+    // transaction ids, so the same idempotency key, but a rescan must
+    // still be able to create a fresh active candidate.
+    state.transactions = [
+      { ...out, referenceNumber: "REF-CHANGED" },
+      { ...inc, referenceNumber: "REF-CHANGED" },
+    ];
+
+    const secondScan = await scanForReconciliationCandidates(USER_ID);
+    expect(secondScan.created).toBeGreaterThan(0);
+
+    const allRows = getMockState().reconciliationCandidates;
+    // Every idempotency key that had an invalidated row now also has
+    // exactly one active row -- never zero (regeneration works), never
+    // more than one (no duplicate active candidates).
+    const keysWithInvalidatedRows = new Set(originalCandidates.map((c) => c.idempotencyKey));
+    for (const key of keysWithInvalidatedRows) {
+      const rowsForKey = allRows.filter((row) => row.idempotencyKey === key);
+      const activeRowsForKey = rowsForKey.filter((row) => row.status !== "invalidated");
+      const invalidatedRowsForKey = rowsForKey.filter((row) => row.status === "invalidated");
+      expect(activeRowsForKey).toHaveLength(1);
+      expect(invalidatedRowsForKey.length).toBeGreaterThanOrEqual(1); // old row(s) preserved, never deleted
     }
   });
 });
