@@ -183,7 +183,17 @@ test.describe("monthly budget engine", () => {
     await page.getByRole("button", { name: /เดือนถัดไป/ }).click();
     await expect(page).toHaveURL(/month=2026-08/);
 
+    // MonthSelector's prev/next handlers compute the next month from the
+    // `selectedMonth` prop closed over at render time, and each click
+    // triggers an async client-side router.push navigation. Firing the
+    // second click before the first navigation's re-render lands would
+    // make it read the same stale selectedMonth and double-jump instead
+    // of advancing one more month -- so each URL transition must finish
+    // (and the button must reflect it) before the next click, per
+    // Playwright's guidance on not racing ahead of async navigation.
     await page.getByRole("button", { name: /เดือนก่อนหน้า/ }).click();
+    await expect(page).toHaveURL(/month=2026-07/);
+
     await page.getByRole("button", { name: /เดือนก่อนหน้า/ }).click();
     await expect(page).toHaveURL(/month=2026-06/);
   });
