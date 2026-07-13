@@ -10,7 +10,7 @@ import {
   assertMinimumNotAboveOutstanding,
   assertDebtPaymentLinked,
 } from "@/lib/finance/debt-guards";
-import { getDebtCycleWindow, isValidDateKey, isValidMonthQuery } from "@/lib/finance/date";
+import { getBangkokMonthOf, getDebtCycleWindow, isValidDateKey, isValidMonthQuery } from "@/lib/finance/date";
 import { logSafeError } from "@/lib/observability/safe-diagnostics";
 import type { Debt, Transaction, FinanceDocument, DocumentExtraction, ImportBatch, ImportRow, Account, MonthlyBudget, BudgetCategory } from "@/types/domain";
 
@@ -165,7 +165,7 @@ const IMPORT_BATCH_LIST_COLUMNS =
 export async function listTransactions(userId: string, month: string): Promise<Transaction[]> {
   if (isMockAuthEnabled()) {
     return getMockState().transactions
-      .filter((transaction) => transaction.userId === userId && transaction.occurredAt.startsWith(month))
+      .filter((transaction) => transaction.userId === userId && getBangkokMonthOf(transaction.occurredAt) === month)
       .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
   }
 
