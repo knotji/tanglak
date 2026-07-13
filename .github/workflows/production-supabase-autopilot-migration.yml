@@ -1,0 +1,143 @@
+name: Production Supabase Autopilot Migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Run a dry-run preflight or apply the pinned migration"
+        required: true
+        default: dry-run
+        type: choice
+        options:
+          - dry-run
+          - apply
+      confirm_migration_id:
+        description: "Required for apply mode: enter 202607130001"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-supabase-autopilot-migration
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Guarded production migration
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      MIGRATION_ID: "202607130001"
+      MIGRATION_FILE: supabase/migrations/202607130001_autopilot_action_audit_log.sql
+      VERIFY_SQL: .github/workflows/sql/verify-autopilot-migration.sql
+      PGSSLMODE: require
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+
+      - name: Validate manual inputs and secret
+        env:
+          MODE: ${{ inputs.mode }}
+          CONFIRM_MIGRATION_ID: ${{ inputs.confirm_migration_id }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SUPABASE_DB_URL}" ]; then
+            echo "SUPABASE_DB_URL GitHub Actions secret is required." >&2
+            exit 1
+          fi
+
+          case "${MODE}" in
+            dry-run)
+              echo "Running dry-run/preflight mode only. No production SQL will be applied."
+              ;;
+            apply)
+              if [ "${CONFIRM_MIGRATION_ID}" != "${MIGRATION_ID}" ]; then
+                echo "Apply mode requires confirm_migration_id=${MIGRATION_ID}." >&2
+                exit 1
+              fi
+              echo "Apply mode approved for pinned migration ${MIGRATION_ID}."
+              ;;
+            *)
+              echo "Unsupported mode: ${MODE}" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Check whether pinned migration is already recorded
+        id: migration_status
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+
+          applied="$({
+            psql "${SUPABASE_DB_URL}" --no-align --tuples-only --set ON_ERROR_STOP=1 <<SQL
+          select exists (
+            select 1
+            from supabase_migrations.schema_migrations
+            where version = '${MIGRATION_ID}'
+          );
+          SQL
+          } | tr -d '[:space:]')"
+
+          echo "applied=${applied}" >> "${GITHUB_OUTPUT}"
+          if [ "${applied}" = "t" ]; then
+            echo "Migration ${MIGRATION_ID} is already recorded in supabase_migrations.schema_migrations."
+          else
+            echo "Migration ${MIGRATION_ID} is not recorded yet."
+          fi
+
+      - name: Preflight verify existing production schema
+        if: ${{ steps.migration_status.outputs.applied == 't' || inputs.mode == 'dry-run' }}
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          psql "${SUPABASE_DB_URL}" --set ON_ERROR_STOP=1 --file "${VERIFY_SQL}"
+
+      - name: Stop after dry-run
+        if: ${{ inputs.mode == 'dry-run' }}
+        run: |
+          echo "Dry-run/preflight finished. No migration SQL was applied."
+
+      - name: Apply pinned migration only
+        if: ${{ inputs.mode == 'apply' && steps.migration_status.outputs.applied != 't' }}
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+
+          if [ ! -f "${MIGRATION_FILE}" ]; then
+            echo "Pinned migration file not found: ${MIGRATION_FILE}" >&2
+            exit 1
+          fi
+
+          psql "${SUPABASE_DB_URL}" --set ON_ERROR_STOP=1 --file "${MIGRATION_FILE}"
+          psql "${SUPABASE_DB_URL}" --set ON_ERROR_STOP=1 <<SQL
+          insert into supabase_migrations.schema_migrations(version, statements, name)
+          values ('${MIGRATION_ID}', array['${MIGRATION_FILE}'], 'autopilot_action_audit_log')
+          on conflict (version) do nothing;
+          SQL
+
+      - name: Skip apply when already applied
+        if: ${{ inputs.mode == 'apply' && steps.migration_status.outputs.applied == 't' }}
+        run: |
+          echo "Migration ${MIGRATION_ID} is already applied; skipping migration execution."
+
+      - name: Post-apply verification
+        if: ${{ inputs.mode == 'apply' }}
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          psql "${SUPABASE_DB_URL}" --set ON_ERROR_STOP=1 --file "${VERIFY_SQL}"
