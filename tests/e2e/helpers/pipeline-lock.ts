@@ -5,6 +5,11 @@ import { tmpdir } from "node:os";
 const LOCK_DIR = join(tmpdir(), "tanglak-e2e-pipeline.lock");
 const STALE_AFTER_MS = 120_000;
 const DEFAULT_TIMEOUT_MS = STALE_AFTER_MS + 60_000;
+const DEFAULT_TEST_BODY_TIMEOUT_MS = 30_000;
+
+export const PIPELINE_LOCK_TIMEOUT_MS = DEFAULT_TIMEOUT_MS;
+export const PIPELINE_LOCKED_TEST_TIMEOUT_MS =
+  PIPELINE_LOCK_TIMEOUT_MS + DEFAULT_TEST_BODY_TIMEOUT_MS;
 
 type PipelineLockOptions = {
   label?: string;
@@ -76,20 +81,49 @@ function formatOwner(owner: PipelineLockOwner | undefined) {
 }
 
 async function removeStaleLock() {
-  try {
-    const raw = await readFile(join(LOCK_DIR, "owner.json"), "utf8");
-    const owner = JSON.parse(raw) as { acquiredAt?: number };
-    if (typeof owner.acquiredAt === "number" && Date.now() - owner.acquiredAt > STALE_AFTER_MS) {
-      await rm(LOCK_DIR, { recursive: true, force: true });
-    }
-  } catch {
+  const owner = await readCurrentOwner();
+  if (!owner) {
     try {
       const lockStats = await stat(LOCK_DIR);
       if (Date.now() - lockStats.mtimeMs > STALE_AFTER_MS) {
         await rm(LOCK_DIR, { recursive: true, force: true });
       }
     } catch {
-      // Lock disappeared between attempts.
+      // The lock may disappear between a failed mkdir and the fallback stat.
     }
+    return;
+  }
+
+  const isExpired =
+    typeof owner.acquiredAt === "number" && Date.now() - owner.acquiredAt > STALE_AFTER_MS;
+  if (!isExpired) {
+    return;
+  }
+
+  // A slow E2E worker can legitimately hold the lock for longer than the
+  // stale threshold while the owning Playwright process is still alive. Only
+  // clean up an expired lock when the recorded owner process has gone away;
+  // otherwise let waiters time out with the owner details instead of masking a
+  // real pipeline deadlock.
+  if (typeof owner.pid !== "number" || isProcessAlive(owner.pid)) {
+    return;
+  }
+
+  await rm(LOCK_DIR, { recursive: true, force: true });
+}
+
+function isProcessAlive(pid: number) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    return code === "EPERM";
   }
 }
+
+export const __pipelineLockTestHooks = {
+  LOCK_DIR,
+  STALE_AFTER_MS,
+  removeStaleLock,
+};

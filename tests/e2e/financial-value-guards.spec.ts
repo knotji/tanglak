@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { acquirePipelineLock } from "./helpers/pipeline-lock";
+import { acquirePipelineLock, PIPELINE_LOCKED_TEST_TIMEOUT_MS } from "./helpers/pipeline-lock";
 
 const password = "password123";
 
@@ -89,10 +89,12 @@ test.describe("financial value guards", () => {
   });
 
   test.describe.serial("document review negative-field rejection", () => {
+    test.describe.configure({ timeout: PIPELINE_LOCKED_TEST_TIMEOUT_MS });
+
     let releasePipelineLock: (() => Promise<void>) | undefined;
 
-    test.beforeEach(async () => {
-      releasePipelineLock = await acquirePipelineLock();
+    test.beforeEach(async ({}, testInfo) => {
+      releasePipelineLock = await acquirePipelineLock({ label: testInfo.title });
     });
 
     test.afterEach(async () => {
