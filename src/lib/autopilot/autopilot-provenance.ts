@@ -9,6 +9,7 @@
 
 import { isMockAuthEnabled } from "@/lib/auth/session";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { handlePostgrestError } from "@/lib/supabase/error-guards";
 import { getMockState } from "@/lib/data/mock-store";
 import type { CategorySource } from "./autopilot-types";
 
@@ -56,7 +57,7 @@ export async function setTransactionCategoryProvenance(
     .eq("id", transactionId)
     .eq("user_id", userId)
     .maybeSingle();
-  if (fetchError) throw new Error(fetchError.message);
+  if (fetchError) handlePostgrestError(fetchError);
   if (!existing) return { applied: false, reason: "not_found" };
 
   const current = existing.category_source as CategorySource | null;
@@ -69,7 +70,7 @@ export async function setTransactionCategoryProvenance(
     .update({ category_source: source, category_confidence: confidence ?? null })
     .eq("id", transactionId)
     .eq("user_id", userId);
-  if (error) throw new Error(error.message);
+  if (error) handlePostgrestError(error);
   return { applied: true };
 }
 

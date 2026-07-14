@@ -3,6 +3,7 @@ import { getMockState } from "@/lib/data/mock-store";
 import { mapDebt, mapTransaction, mapDocument, mapDocumentExtraction, mapImportBatch, mapImportRow, mapMonthlyBudget, mapBudgetCategory } from "@/lib/data/mappers";
 import { timeAsync } from "@/lib/observability/timing";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { handlePostgrestError } from "@/lib/supabase/error-guards";
 import { assertMoneySatang } from "@/lib/finance/money-guards";
 import { BUDGET_ERROR_DUPLICATE_TH, BUDGET_ERROR_NOT_FOUND_TH } from "@/lib/finance/budget-guards";
 import {
@@ -183,7 +184,7 @@ export async function listTransactions(userId: string, month: string): Promise<T
       .lt("occurred_at", nextMonthStart(month))
       .order("occurred_at", { ascending: false });
   }, { userId });
-  if (error) throw new Error(error.message);
+  if (error) handlePostgrestError(error);
   return (data ?? []).map(mapTransaction);
 }
 
@@ -202,7 +203,7 @@ export async function listAllTransactions(userId: string): Promise<Transaction[]
       .eq("user_id", userId)
       .order("occurred_at", { ascending: false });
   }, { userId });
-  if (error) throw new Error(error.message);
+  if (error) handlePostgrestError(error);
   return (data ?? []).map(mapTransaction);
 }
 
@@ -220,7 +221,7 @@ export async function getTransactionById(userId: string, id: string): Promise<Tr
     .eq("id", id)
     .eq("user_id", userId)
     .maybeSingle();
-  if (error) throw new Error(error.message);
+  if (error) handlePostgrestError(error);
   return data ? mapTransaction(data) : null;
 }
 
@@ -289,7 +290,7 @@ export async function createTransaction(userId: string, input: TransactionInput)
     })
     .select("*")
     .single();
-  if (error) throw new Error(error.message);
+  if (error) handlePostgrestError(error);
   const transaction = mapTransaction(data);
   if (transaction.debtId) await recalculateDebtPaidThisCycle(userId, transaction.debtId);
   return transaction;
@@ -370,7 +371,7 @@ export async function updateTransaction(
     .eq("user_id", userId)
     .select("*")
     .single();
-  if (error) throw new Error(error.message);
+  if (error) handlePostgrestError(error);
   const transaction = mapTransaction(data);
   if (previous.debt_id) await recalculateDebtPaidThisCycle(userId, previous.debt_id);
   if (transaction.debtId) await recalculateDebtPaidThisCycle(userId, transaction.debtId);
@@ -399,7 +400,7 @@ export async function listDebtPaymentHistory(userId: string, debtId: string): Pr
     .eq("type", "debt_payment")
     .eq("status", "confirmed")
     .order("occurred_at", { ascending: false });
-  if (error) throw new Error(error.message);
+  if (error) handlePostgrestError(error);
   return (data ?? []).map(mapTransaction);
 }
 
@@ -1188,7 +1189,7 @@ export async function listRecentConfirmedTransactions(userId: string): Promise<T
     .eq("status", "confirmed")
     .order("occurred_at", { ascending: false })
     .limit(100);
-  if (error) throw new Error(error.message);
+  if (error) handlePostgrestError(error);
   return (data ?? []).map(mapTransaction);
 }
 
@@ -1225,7 +1226,7 @@ export async function listDuplicateCandidates(
   }
 
   const { data, error } = await query;
-  if (error) throw new Error(error.message);
+  if (error) handlePostgrestError(error);
   return (data ?? []).map(mapTransaction);
 }
 
