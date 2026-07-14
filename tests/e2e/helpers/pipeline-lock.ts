@@ -3,9 +3,13 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 const LOCK_DIR = join(tmpdir(), "tanglak-e2e-pipeline.lock");
+// How long a valid owner may hold the lock before a waiter can consider it stale.
 const STALE_AFTER_MS = 120_000;
-const DEFAULT_TIMEOUT_MS = STALE_AFTER_MS + 60_000;
+// The CI suite can queue several locked specs behind healthy holders at --workers=6.
+// Keep this bounded so real deadlocks still fail with owner details.
+const DEFAULT_TIMEOUT_MS = 10 * 60_000;
 const DEFAULT_TEST_BODY_TIMEOUT_MS = 30_000;
+const PROGRESS_LOG_INTERVAL_MS = 15_000;
 
 export const PIPELINE_LOCK_TIMEOUT_MS = DEFAULT_TIMEOUT_MS;
 export const PIPELINE_LOCKED_TEST_TIMEOUT_MS =
@@ -25,10 +29,8 @@ type PipelineLockOwner = {
 export async function acquirePipelineLock(options: PipelineLockOptions = {}) {
   const startedAt = Date.now();
   const label = options.label ?? "unnamed";
-  // The timeout must be longer than stale-lock cleanup; otherwise a worker
-  // can fail before it is allowed to remove a dead owner left by another
-  // Playwright worker.
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  let lastProgressLogAt = startedAt;
 
   while (true) {
     try {
@@ -42,8 +44,20 @@ export async function acquirePipelineLock(options: PipelineLockOptions = {}) {
         await rm(LOCK_DIR, { recursive: true, force: true });
       };
     } catch {
-      await removeStaleLock();
-      if (Date.now() - startedAt > timeoutMs) {
+      const reclaimed = await removeStaleLock();
+      const now = Date.now();
+
+      if (reclaimed) {
+        console.warn(`[pipeline-lock] reclaimed an abandoned lock while ${label} was waiting.`);
+      } else if (now - lastProgressLogAt > PROGRESS_LOG_INTERVAL_MS) {
+        const owner = await readCurrentOwner();
+        console.warn(
+          `[pipeline-lock] ${label} has been waiting ${now - startedAt}ms. Current owner: ${formatOwner(owner)}`,
+        );
+        lastProgressLogAt = now;
+      }
+
+      if (now - startedAt > timeoutMs) {
         const owner = await readCurrentOwner();
         throw new Error(
           `Timed out after ${timeoutMs}ms acquiring TangLak E2E pipeline lock for ${label}. `
@@ -80,24 +94,25 @@ function formatOwner(owner: PipelineLockOwner | undefined) {
   });
 }
 
-async function removeStaleLock() {
+async function removeStaleLock(): Promise<boolean> {
   const owner = await readCurrentOwner();
   if (!owner) {
     try {
       const lockStats = await stat(LOCK_DIR);
       if (Date.now() - lockStats.mtimeMs > STALE_AFTER_MS) {
         await rm(LOCK_DIR, { recursive: true, force: true });
+        return true;
       }
     } catch {
       // The lock may disappear between a failed mkdir and the fallback stat.
     }
-    return;
+    return false;
   }
 
   const isExpired =
     typeof owner.acquiredAt === "number" && Date.now() - owner.acquiredAt > STALE_AFTER_MS;
   if (!isExpired) {
-    return;
+    return false;
   }
 
   // A slow E2E worker can legitimately hold the lock for longer than the
@@ -106,10 +121,11 @@ async function removeStaleLock() {
   // otherwise let waiters time out with the owner details instead of masking a
   // real pipeline deadlock.
   if (typeof owner.pid !== "number" || isProcessAlive(owner.pid)) {
-    return;
+    return false;
   }
 
   await rm(LOCK_DIR, { recursive: true, force: true });
+  return true;
 }
 
 function isProcessAlive(pid: number) {
