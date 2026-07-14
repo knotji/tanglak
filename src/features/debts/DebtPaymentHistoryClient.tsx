@@ -14,11 +14,17 @@ import { PageHeader } from "@/components/PageHeader";
 import { ProgressBar } from "@/components/ProgressBar";
 import { formatTHB } from "@/lib/finance/money";
 import { parseRequiredMoney } from "@/lib/finance/money-guards";
+import { formatThaiDateFull } from "@/lib/finance/date";
 import type { Debt, Transaction } from "@/types/domain";
 
 function monthLabel(key: string) {
-  const date = new Date(`${key}-01T00:00:00+07:00`);
-  return new Intl.DateTimeFormat("th-TH", { month: "long", year: "numeric" }).format(date);
+  const [year, month] = key.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, 1));
+  return new Intl.DateTimeFormat("th-TH-u-ca-gregory", {
+    timeZone: "Asia/Bangkok",
+    month: "long",
+    year: "numeric",
+  }).format(date);
 }
 
 function PaymentEditForm({
@@ -183,7 +189,7 @@ export function DebtPaymentHistoryClient({
                 <div key={payment.id} className="rounded-[16px] border border-border bg-surface p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="font-bold">{new Date(payment.occurredAt).toLocaleDateString("th-TH")}</p>
+                      <p className="font-bold">{formatThaiDateFull(payment.occurredAt)}</p>
                       <p className="text-sm text-text-secondary">
                         {payment.sourceAccountId ? `บัญชี ${payment.sourceAccountId}` : "ไม่ระบุบัญชี"}
                         {payment.documentId ? " · มีเอกสารแนบ" : ""}
@@ -195,14 +201,14 @@ export function DebtPaymentHistoryClient({
                   <div className="mt-3 grid grid-cols-2 gap-2">
                     <button
                       onClick={() => setEditing(payment)}
-                      aria-label={`แก้ไขการชำระ ${new Date(payment.occurredAt).toLocaleDateString("th-TH")} ${formatTHB(payment.amountSatang)}`}
+                      aria-label={`แก้ไขการชำระ ${formatThaiDateFull(payment.occurredAt)} ${formatTHB(payment.amountSatang)}`}
                       className="min-h-11 rounded-[16px] bg-muted text-sm font-bold text-primary"
                     >
                       แก้ไข
                     </button>
                     <button
                       onClick={() => setDeleting(payment)}
-                      aria-label={`ลบการชำระ ${new Date(payment.occurredAt).toLocaleDateString("th-TH")} ${formatTHB(payment.amountSatang)}`}
+                      aria-label={`ลบการชำระ ${formatThaiDateFull(payment.occurredAt)} ${formatTHB(payment.amountSatang)}`}
                       className="min-h-11 rounded-[16px] bg-muted text-sm font-bold text-overdue"
                     >
                       ลบ

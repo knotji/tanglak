@@ -1,4 +1,5 @@
 import { MoneyAmount } from "@/components/MoneyAmount";
+import { formatThaiDateTime } from "@/lib/finance/date";
 import type { Transaction } from "@/types/domain";
 
 export function TransactionTimeline({
@@ -24,10 +25,7 @@ export function TransactionTimeline({
         >
           <div>
             <p className="text-sm text-foreground/50">
-              {new Intl.DateTimeFormat("th-TH", {
-                hour: "2-digit",
-                minute: "2-digit",
-              }).format(new Date(transaction.occurredAt))}
+              {formatThaiDateTime(transaction.occurredAt).split(" เวลา ")[1]}
             </p>
             <p className="font-medium text-foreground">
               {transaction.merchant ?? transaction.note ?? "รายการ"}

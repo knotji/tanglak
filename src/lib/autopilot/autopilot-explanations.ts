@@ -57,7 +57,7 @@ export function buildDeterministicExplanation(context: ExplanationContext): stri
       return `บันทึกรายการแล้ว และจัดหมวดเป็น${categoryText}โดยอัตโนมัติ`;
     case "require_confirmation": {
       if (context.evidence.some((item) => item.reasonCode === "possible_internal_transfer")) {
-        return "TangLak ยังไม่แน่ใจว่ารายการนี้เป็นค่าใช้จ่ายหรือเงินโอน กรุณาตรวจเฉพาะจุดนี้";
+        return "TangLak ยังไม่แน่ใจว่ารายการนี้เป็นรายจ่ายหรือเงินโอน กรุณาตรวจเฉพาะจุดนี้";
       }
       if (context.evidence.some((item) => item.reasonCode === "possible_duplicate")) {
         return "TangLak พบรายการที่คล้ายกันอยู่แล้ว กรุณาตรวจสอบก่อนบันทึก";

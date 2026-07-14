@@ -3,6 +3,7 @@
 import React, { useState, useTransition, useMemo, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { confirmBatchAction, deleteBatchAction } from "@/app/actions/history-import";
+import { formatThaiDateCompact, formatThaiDateTime } from "@/lib/finance/date";
 import type { ImportBatch, ImportRow, Debt } from "@/types/domain";
 
 interface ReviewBoardClientProps {
@@ -630,9 +631,9 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
             const isExpanded = expandedRowId === row.id;
             const fieldIdBase = `import-row-${row.id}`;
             const isExcluded = excludedRowIds.has(row.id);
-            const dateObj = new Date(row.occurredAt);
-            const displayTime = dateObj.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
-            const displayDate = dateObj.toLocaleDateString("th-TH", { day: "2-digit", month: "short" });
+            const dateTimeLabel = formatThaiDateTime(row.occurredAt);
+            const displayTime = dateTimeLabel.split(" เวลา ")[1];
+            const displayDate = formatThaiDateCompact(row.occurredAt);
 
             return (
               <div

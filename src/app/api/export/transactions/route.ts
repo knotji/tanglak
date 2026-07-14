@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { listTransactions } from "@/lib/data/finance-repository";
 import { formatTHB } from "@/lib/finance/money";
-import { getBangkokMonthString } from "@/lib/finance/date";
+import { getBangkokMonthString, formatThaiDateTime } from "@/lib/finance/date";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -23,10 +23,10 @@ export async function GET() {
     "สถานะ",
   ];
   const rows = transactions.map((transaction) => {
-    const date = new Date(transaction.occurredAt);
+    const timeStr = formatThaiDateTime(transaction.occurredAt).split(" เวลา ")[1];
     return [
       transaction.occurredAt.slice(0, 10),
-      date.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }),
+      timeStr,
       transaction.type,
       transaction.merchant ?? "",
       transaction.category ?? "",
