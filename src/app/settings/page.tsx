@@ -5,6 +5,8 @@ import { PageHeader } from "@/components/PageHeader";
 import { requireCompletedOnboarding } from "@/lib/auth/onboarding";
 import { requireUser } from "@/lib/auth/session";
 import { timePage } from "@/lib/observability/timing";
+import { getReleaseMetadata } from "@/lib/metadata/release";
+import { formatThaiDateLabel } from "@/lib/finance/date";
 
 function SettingsSection({
   title,
@@ -46,11 +48,13 @@ export default async function SettingsPage() {
     const user = await requireUser();
     await requireCompletedOnboarding(user);
 
-    return (
-    <AppShell>
-      <PageHeader title="ตั้งค่า" subtitle={user.email ?? "บัญชีตั้งหลัก"} />
+    const { version, releaseDate } = getReleaseMetadata();
 
-      <SettingsSection title="โปรไฟล์">
+    return (
+      <AppShell>
+        <PageHeader title="ตั้งค่า" subtitle={user.email ?? "บัญชีตั้งหลัก"} />
+
+        <SettingsSection title="โปรไฟล์">
         <SettingsLink href="/onboarding?edit=1" label="แก้ไขโปรไฟล์และการเริ่มต้น" detail="ชื่อ สกุลเงิน เวลา เตือน" />
       </SettingsSection>
 
@@ -90,6 +94,11 @@ export default async function SettingsPage() {
           ออกจากระบบ
         </button>
       </form>
+
+      <section className="mt-8 flex flex-col items-center gap-1 text-[11px] text-text-secondary/60">
+        <p>TangLak v{version}</p>
+        <p>อัปเดตล่าสุดเมื่อ {formatThaiDateLabel(releaseDate)}</p>
+      </section>
     </AppShell>
     );
   });

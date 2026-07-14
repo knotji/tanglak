@@ -80,3 +80,11 @@ failure is a flake only if: (a) the change did not touch the failing
 area at all, and (b) an unmodified re-run of the exact same commit
 passes. Anything else is treated as a real, deterministic failure that
 must be fixed — do not merge past it and do not weaken the test.
+
+## App Release Process
+
+To bump the app version and update the "Latest Update" date shown in Settings:
+
+1.  Update the `"version"` field in `package.json`.
+2.  Update the `"releaseDate"` field in `src/lib/metadata/release-date.json` using the `YYYY-MM-DD` format.
+3.  Include these changes in your pull request.

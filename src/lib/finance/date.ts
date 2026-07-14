@@ -236,14 +236,27 @@ export function parseWallClockComponents(value: string): WallClockParts | null {
 export function formatThaiDateTimeLabel(value: string): string | null {
   const parts = parseWallClockComponents(value);
   if (!parts) return null;
-  const dateLabel = new Intl.DateTimeFormat("th-TH-u-ca-gregory", {
+  const dateLabel = formatThaiDateLabel(`${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`);
+  const timeLabel = `${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")}`;
+  return `${dateLabel} เวลา ${timeLabel}`;
+}
+
+/**
+ * Formats a `YYYY-MM-DD` date key into an unambiguous Thai date label,
+ * e.g. "15 พ.ค. 2025". This is used for displaying release dates and other
+ * date-only values in Thai.
+ */
+export function formatThaiDateLabel(dateKey: string): string {
+  if (!isValidDateKey(dateKey)) {
+    throw new Error("Invalid date");
+  }
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Intl.DateTimeFormat("th-TH-u-ca-gregory", {
     timeZone: "UTC",
     day: "numeric",
     month: "short",
     year: "numeric",
-  }).format(new Date(Date.UTC(parts.year, parts.month - 1, parts.day)));
-  const timeLabel = `${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")}`;
-  return `${dateLabel} เวลา ${timeLabel}`;
+  }).format(new Date(Date.UTC(year, month - 1, day)));
 }
 
 /**
