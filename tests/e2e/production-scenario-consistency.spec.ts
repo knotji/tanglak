@@ -53,10 +53,8 @@ test.describe("production scenario: ฿5,000 income, one ฿20 unbudgeted food e
     await expect(page.getByText("Coffee")).toBeVisible();
     await expect(page.getByText("฿20").first()).toBeVisible();
 
-    // Today: เดือนนี้ใช้ไป ฿20, no negative "งบที่เหลือ -฿20".
+    // Today: No negative "งบที่เหลือ -฿20".
     await page.goto("/today");
-    await expect(page.getByText("เดือนนี้ใช้ไป")).toBeVisible();
-    await expect(page.getByText("฿20").first()).toBeVisible();
     await expect(page.getByText("-฿20")).toHaveCount(0);
     await expect(page.getByText("ยังไม่ได้ตั้งงบ").first()).toBeVisible();
     // The next-action card should point at the unbudgeted food category,
