@@ -4,14 +4,10 @@ import type { Transaction } from "@/types/domain";
 
 export function TransactionRow({
   transaction,
-  onEdit,
-  onDelete,
-  busy,
+  onClick,
 }: {
   transaction: Transaction;
-  onEdit?: (transaction: Transaction) => void;
-  onDelete?: (transaction: Transaction) => void;
-  busy?: boolean;
+  onClick?: (transaction: Transaction) => void;
 }) {
   const isIncoming = transaction.type === "income" || transaction.type === "refund";
   const isTransfer = transaction.type === "transfer";
@@ -33,7 +29,12 @@ export function TransactionRow({
   const actionContext = transaction.merchant ?? transaction.note ?? "รายการ";
 
   return (
-    <div className="flex items-center gap-3 py-3">
+    <button
+      type="button"
+      onClick={() => onClick?.(transaction)}
+      className="flex w-full items-center gap-3 py-3 text-left transition-colors hover:bg-muted/30 focus-visible:bg-muted/50 focus-visible:outline-none"
+      aria-label={`เปิดรายละเอียดรายการ ${actionContext}`}
+    >
       <CategoryIcon category={transaction.category} type={transaction.type} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-bold text-foreground">
@@ -44,30 +45,12 @@ export function TransactionRow({
           {transaction.type === "debt_payment" ? " · จ่ายหนี้" : ""}
         </p>
       </div>
-      <MoneyAmount satang={signedSatang} tone={tone} showSign={isIncoming} className="text-sm font-bold" />
-      {(onEdit || onDelete) && (
-        <div className="flex gap-1 rounded-[14px] bg-muted p-1">
-          {onEdit ? (
-            <button
-              className="min-h-11 rounded-[12px] bg-surface px-3 text-xs font-bold text-primary"
-              aria-label={`แก้ไขรายการ ${actionContext}`}
-              onClick={() => onEdit(transaction)}
-            >
-              แก้
-            </button>
-          ) : null}
-          {onDelete ? (
-            <button
-              disabled={busy}
-              className="min-h-11 rounded-[12px] px-3 text-xs font-bold text-overdue disabled:opacity-60"
-              aria-label={`ลบรายการ ${actionContext}`}
-              onClick={() => onDelete(transaction)}
-            >
-              {busy ? "กำลังลบ" : "ลบรายการนี้"}
-            </button>
-          ) : null}
-        </div>
-      )}
-    </div>
+      <MoneyAmount
+        satang={signedSatang}
+        tone={tone}
+        showSign={isIncoming}
+        className="shrink-0 text-sm font-bold"
+      />
+    </button>
   );
 }
