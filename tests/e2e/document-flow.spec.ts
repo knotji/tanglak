@@ -385,8 +385,10 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
     // debt payment or transaction is written, exactly like every other
     // confirmation path (not bypassed via the debt_payment branch).
     await occurredAtInput.fill("");
+    await expect(page.getByRole("button", { name: "บันทึกเป็นการชำระหนี้" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "ยืนยันความถูกต้อง" })).toHaveCount(0);
     await expect(async () => {
-      await page.getByRole("button", { name: "ยืนยันความถูกต้อง" }).click();
+      await page.getByRole("button", { name: "บันทึกเป็นการชำระหนี้" }).click();
       await expect(page.getByText("กรุณาระบุวันที่และเวลาของรายการ")).toBeVisible({ timeout: 2000 });
     }).toPass({ timeout: 15000 });
     await expect(page).toHaveURL(reviewUrl);
