@@ -1,3 +1,5 @@
+import type { CategorySummary } from "@/lib/finance/budget-calculations";
+import type { Transaction } from "@/types/domain";
 import { AppShell } from "@/components/AppShell";
 import { CompactStat } from "@/components/CompactStat";
 import { FloatingActionButton } from "@/components/FloatingActionButton";
@@ -41,17 +43,17 @@ export default async function TodayPage() {
     // Bangkok-local date comparison, not a naive string prefix -- see
     // getBangkokDateOf in date.ts.
     const todayTransactions = transactions
-      .filter((transaction: any) => getBangkokDateOf(transaction.occurredAt) === todayKey)
-      .sort((a: any, b: any) => b.occurredAt.localeCompare(a.occurredAt));
+      .filter((transaction: Transaction) => getBangkokDateOf(transaction.occurredAt) === todayKey)
+      .sort((a: Transaction, b: Transaction) => b.occurredAt.localeCompare(a.occurredAt));
     const spentToday = todayTransactions
-      .filter((transaction: any) => transaction.type === "expense")
-      .reduce((sum: number, transaction: any) => sum + transaction.amountSatang, 0);
+      .filter((transaction: Transaction) => transaction.type === "expense")
+      .reduce((sum: number, transaction: Transaction) => sum + transaction.amountSatang, 0);
 
-    const overspentCategory = budgetSummary.categories.find((c: any) => c.status === "overspent");
+    const overspentCategory = budgetSummary.categories.find((c: CategorySummary) => c.status === "overspent");
     const unbudgetedCategory = budgetSummary.categories.find(
       (c) => c.status === "no_budget" && c.unbudgetedSpentSatang > 0,
     );
-    const nearLimitCategory = budgetSummary.categories.find((c: any) => c.status === "near_limit");
+    const nearLimitCategory = budgetSummary.categories.find((c: CategorySummary) => c.status === "near_limit");
 
     const nextAction = determineNextAction({
       debts,
@@ -107,7 +109,7 @@ export default async function TodayPage() {
           <h2 className="py-3 text-sm font-bold text-foreground">รายการวันนี้</h2>
           {todayTransactions.length ? (
             <div>
-              {todayTransactions.map((transaction: any) => (
+              {todayTransactions.map((transaction: Transaction) => (
                 <CompactTransactionRow key={transaction.id} transaction={transaction} />
               ))}
             </div>
