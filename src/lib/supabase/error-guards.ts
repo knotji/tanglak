@@ -6,9 +6,14 @@
  */
 export function handlePostgrestError(error: { code: string; message: string }): never {
   const isUndefinedColumn = error.code === "42703";
-  const isTransactionTable = error.message.includes('"transactions"');
+  const message = error.message || "";
+
+  // PostgREST/PostgreSQL error format for missing columns usually looks like:
+  // "column \"category_source\" of relation \"transactions\" does not exist"
+  // We check for both the column name AND the specific relation name.
+  const isTransactionTable = message.includes('"transactions"');
   const isAutopilotColumn =
-    error.message.includes("category_source") || error.message.includes("category_confidence");
+    message.includes("category_source") || message.includes("category_confidence");
 
   if (isUndefinedColumn && isTransactionTable && isAutopilotColumn) {
     throw new Error(
@@ -16,5 +21,5 @@ export function handlePostgrestError(error: { code: string; message: string }): 
     );
   }
 
-  throw new Error(error.message);
+  throw new Error(message);
 }

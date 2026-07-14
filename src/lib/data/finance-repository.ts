@@ -423,7 +423,7 @@ export async function deleteTransaction(userId: string, id: string) {
     .eq("user_id", userId)
     .maybeSingle();
   const { error } = await supabase.from("transactions").delete().eq("id", id).eq("user_id", userId);
-  if (error) throw new Error(error.message);
+  if (error) handlePostgrestError(error);
   if (existing?.debt_id) await recalculateDebtPaidThisCycle(userId, existing.debt_id);
 }
 
@@ -746,7 +746,7 @@ export async function recalculateDebtPaidThisCycle(userId: string, debtId: strin
     .eq("status", "confirmed")
     .gte("occurred_at", cycle.startInstant)
     .lt("occurred_at", cycle.endExclusiveInstant);
-  if (error) throw new Error(error.message);
+  if (error) handlePostgrestError(error);
   const total = (data ?? []).reduce((sum, row) => sum + Number(row.amount_satang), 0);
   const { error: updateError } = await supabase
     .from("debts")

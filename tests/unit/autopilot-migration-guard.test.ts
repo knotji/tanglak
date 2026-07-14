@@ -34,6 +34,7 @@ describe("handlePostgrestError", () => {
   });
 
   it("does not rewrite 42703 errors for other relations", () => {
+    // Regression test for requested negative case
     const error = {
       code: "42703",
       message: 'column "category_source" of relation "other_table" does not exist',
