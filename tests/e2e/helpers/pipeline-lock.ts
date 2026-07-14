@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -78,6 +78,14 @@ function formatOwner(owner: PipelineLockOwner | undefined) {
 async function removeStaleLock() {
   const owner = await readCurrentOwner();
   if (!owner) {
+    try {
+      const lockStats = await stat(LOCK_DIR);
+      if (Date.now() - lockStats.mtimeMs > STALE_AFTER_MS) {
+        await rm(LOCK_DIR, { recursive: true, force: true });
+      }
+    } catch {
+      // The lock may disappear between a failed mkdir and the fallback stat.
+    }
     return;
   }
 
@@ -108,3 +116,9 @@ function isProcessAlive(pid: number) {
     return code === "EPERM";
   }
 }
+
+export const __pipelineLockTestHooks = {
+  LOCK_DIR,
+  STALE_AFTER_MS,
+  removeStaleLock,
+};
