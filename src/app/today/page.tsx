@@ -41,17 +41,17 @@ export default async function TodayPage() {
     // Bangkok-local date comparison, not a naive string prefix -- see
     // getBangkokDateOf in date.ts.
     const todayTransactions = transactions
-      .filter((transaction) => getBangkokDateOf(transaction.occurredAt) === todayKey)
-      .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
+      .filter((transaction: any) => getBangkokDateOf(transaction.occurredAt) === todayKey)
+      .sort((a: any, b: any) => b.occurredAt.localeCompare(a.occurredAt));
     const spentToday = todayTransactions
-      .filter((transaction) => transaction.type === "expense")
-      .reduce((sum, transaction) => sum + transaction.amountSatang, 0);
+      .filter((transaction: any) => transaction.type === "expense")
+      .reduce((sum: number, transaction: any) => sum + transaction.amountSatang, 0);
 
-    const overspentCategory = budgetSummary.categories.find((c) => c.status === "overspent");
+    const overspentCategory = budgetSummary.categories.find((c: any) => c.status === "overspent");
     const unbudgetedCategory = budgetSummary.categories.find(
       (c) => c.status === "no_budget" && c.unbudgetedSpentSatang > 0,
     );
-    const nearLimitCategory = budgetSummary.categories.find((c) => c.status === "near_limit");
+    const nearLimitCategory = budgetSummary.categories.find((c: any) => c.status === "near_limit");
 
     const nextAction = determineNextAction({
       debts,
@@ -107,7 +107,7 @@ export default async function TodayPage() {
           <h2 className="py-3 text-sm font-bold text-foreground">รายการวันนี้</h2>
           {todayTransactions.length ? (
             <div>
-              {todayTransactions.map((transaction) => (
+              {todayTransactions.map((transaction: any) => (
                 <CompactTransactionRow key={transaction.id} transaction={transaction} />
               ))}
             </div>
