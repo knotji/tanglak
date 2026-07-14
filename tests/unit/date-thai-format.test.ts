@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   bangkokDateTimeLocalToInstant,
+  formatThaiDateLabel,
   formatThaiDateTimeLabel,
   isLikelyInferredNoonTimestamp,
   parseWallClockComponents,
@@ -65,6 +66,17 @@ describe("parseWallClockComponents", () => {
 
   it("rejects an out-of-range time (e.g. hour 25)", () => {
     expect(parseWallClockComponents("2026-07-11T25:00")).toBeNull();
+  });
+});
+
+describe("formatThaiDateLabel", () => {
+  it('formats "2026-07-14" as "14 ก.ค. 2026"', () => {
+    expect(formatThaiDateLabel("2026-07-14")).toBe("14 ก.ค. 2026");
+  });
+
+  it("throws for invalid date keys", () => {
+    expect(() => formatThaiDateLabel("not-a-date")).toThrow();
+    expect(() => formatThaiDateLabel("2025-02-30")).toThrow();
   });
 });
 
