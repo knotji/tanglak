@@ -37,11 +37,9 @@ test("add transaction, delete with confirmation, add debt and payment, persist a
   await saveButton.click();
   await expect(page.getByText("GrabFood Test")).toBeVisible();
 
-  page.once("dialog", async (dialog) => {
-    expect(dialog.message()).toContain("ลบรายการ");
-    await dialog.dismiss();
-  });
-  await page.getByRole("button", { name: "ลบ" }).first().click();
+  await page.getByRole("button", { name: "ลบรายการ GrabFood Test" }).click();
+  await expect(page.getByText("รายการนี้จะถูกลบออกจากเดือนนี้")).toBeVisible();
+  await page.getByRole("button", { name: "ยกเลิก" }).click();
   await expect(page.getByText("GrabFood Test")).toBeVisible();
 
   await page.goto("/debts");
@@ -58,11 +56,9 @@ test("add transaction, delete with confirmation, add debt and payment, persist a
   await page.getByRole("button", { name: "บันทึกการชำระ" }).click();
   await expect(page.getByText("฿1,500 จาก ฿3,200")).toBeVisible();
 
-  page.once("dialog", async (dialog) => {
-    expect(dialog.message()).toContain("ปิดหนี้");
-    await dialog.accept();
-  });
   await page.getByRole("button", { name: "ปิดหนี้" }).first().click();
+  await expect(page.getByText("ปิดหนี้เป็นชำระครบแล้ว")).toBeVisible();
+  await page.getByRole("button", { name: "ปิดหนี้เป็นชำระครบแล้ว" }).click();
   // Reopening a closed debt is deferred to Phase 2 (F-001) -- closing shows
   // a static "closed" state with history still reachable, never a reopen
   // control.

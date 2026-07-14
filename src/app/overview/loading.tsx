@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/PageHeader";
 
 export default function OverviewLoading() {
   return (
-    <AppShell>
+    <AppShell contentElement="div">
       <PageHeader title="ภาพรวม" subtitle="กำลังโหลดเดือนนี้" />
       <DelayedLoadingMessage message="กำลังสรุปภาพรวม..." />
       <div className="rounded-[16px] border border-border bg-surface p-5">

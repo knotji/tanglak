@@ -114,7 +114,7 @@ test.describe("financial value guards", () => {
         mimeType: "image/jpeg",
         buffer: Buffer.from("mock-delivery-data"),
       });
-      await page.getByRole("button", { name: "วิเคราะห์ด้วย AI" }).click();
+      await page.getByRole("button", { name: "อ่านสลิป" }).click();
       await expect(page).toHaveURL(/\/upload\/review\//);
 
       await expect(page.locator("input[name='totalPaid']")).toBeVisible();
@@ -139,7 +139,7 @@ test.describe("financial value guards", () => {
         mimeType: "image/jpeg",
         buffer: Buffer.from("mock-delivery-data"),
       });
-      await page.getByRole("button", { name: "วิเคราะห์ด้วย AI" }).click();
+      await page.getByRole("button", { name: "อ่านสลิป" }).click();
       await expect(page).toHaveURL(/\/upload\/review\//);
 
       await expect(page.locator("input[name='totalPaid']")).toHaveValue("185");

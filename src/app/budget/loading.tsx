@@ -12,7 +12,7 @@ import { PageHeader } from "@/components/PageHeader";
 // sibling tabs so the bottom navigation never disappears during the wait.
 export default function BudgetLoading() {
   return (
-    <AppShell>
+    <AppShell contentElement="div">
       <PageHeader title="งบประมาณรายเดือน" subtitle="กำลังโหลดงบประมาณ" />
       <DelayedLoadingMessage message="กำลังสรุปงบเดือนนี้..." />
       <div aria-hidden="true" className="h-11 rounded-[16px] bg-muted" />

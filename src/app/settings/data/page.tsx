@@ -35,8 +35,8 @@ export default async function HistoryImportSettingsPage() {
     <AppShell>
       <div className="flex flex-col gap-4">
         <PageHeader
-          title="ข้อมูลและการนำเข้า"
-          subtitle="ประวัติการนำเข้าไฟล์ข้อมูลการเงินย้อนหลัง (Statements)"
+          title="ข้อมูลที่เคยบันทึก"
+          subtitle="ประวัติชุดข้อมูลเดิมที่ยังต้องตรวจสอบหรือย้อนกลับได้"
         />
 
         <Link
@@ -61,20 +61,8 @@ export default async function HistoryImportSettingsPage() {
           </Link>
         </div>
 
-        <div className="rounded-[16px] border border-border bg-muted p-3">
-          <Link
-            href="/history-import"
-            className="text-sm font-bold text-text-secondary hover:underline"
-          >
-            การนำเข้ารายการแบบเดิม
-          </Link>
-          <p className="mt-1 text-xs leading-5 text-text-secondary">
-            เหมาะสำหรับข้อมูลจำนวนมากและต้องตรวจสอบหลายรายการ
-          </p>
-        </div>
-
         <div className="flex flex-col gap-3">
-          <h3 className="text-sm font-bold text-foreground">ประวัติชุดข้อมูลที่อัปโหลด</h3>
+          <h3 className="text-sm font-bold text-foreground">ประวัติชุดข้อมูลเดิม</h3>
           {batches.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border bg-surface p-8 text-center text-sm text-text-secondary">
               ยังไม่มีประวัติการนำเข้าย้อนหลัง

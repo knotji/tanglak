@@ -30,7 +30,7 @@ export default async function HistoryImportReviewPage({ params }: ReviewPageProp
     <AppShell>
       <PageHeader
         title="ตรวจสอบชุดข้อมูล"
-        subtitle="ตรวจรายการที่ถูกดึงมาจาก Statement เลือกวิธีนำเข้าหรือจัดกลุ่มก่อนบันทึกจริง"
+        subtitle="ตรวจรายการจากชุดข้อมูลเดิม เลือกวิธีจัดการก่อนบันทึกจริง"
       />
       
       <ReviewBoardClient batch={batch} initialRows={rows} debts={debts} />

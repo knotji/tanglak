@@ -6,6 +6,7 @@ import { useActionState, useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { saveTransactionAction } from "@/app/actions/finance";
+import { LoadingButton } from "@/components/feedback/LoadingButton";
 import { AccountSelector } from "@/features/accounts/AccountSelector";
 import { DEBT_ERROR_UNLINKED_PAYMENT_TH } from "@/lib/finance/debt-guards";
 import { parseRequiredMoney } from "@/lib/finance/money-guards";
@@ -224,13 +225,10 @@ export function ManualTransactionForm({
       ) : state.message && !state.ok ? (
         <p className="mt-3 text-sm text-overdue">{state.message}</p>
       ) : null}
-      <button
-        disabled={pending}
-        className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-[16px] bg-primary px-4 font-bold text-white disabled:opacity-60"
-      >
+      <LoadingButton pending={pending} pendingLabel="กำลังบันทึกรายการ..." className="mt-4 w-full">
         <Plus size={18} aria-hidden />
-        {pending ? "กำลังบันทึก..." : transaction ? "บันทึกการแก้ไข" : "เพิ่มรายการ"}
-      </button>
+        {transaction ? "บันทึกการแก้ไข" : "เพิ่มรายการ"}
+      </LoadingButton>
     </form>
   );
 }

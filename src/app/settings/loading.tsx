@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/PageHeader";
 
 export default function SettingsLoading() {
   return (
-    <AppShell>
+    <AppShell contentElement="div">
       <PageHeader title="ตั้งค่า" subtitle="กำลังโหลด" />
       <RouteSkeleton rows={4} />
     </AppShell>

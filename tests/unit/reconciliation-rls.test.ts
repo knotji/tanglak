@@ -6,7 +6,7 @@ describe("reconciliation_candidates RLS migration", () => {
   const migration = readFileSync(
     join(process.cwd(), "supabase/migrations/202607130002_reconciliation_candidates.sql"),
     "utf8",
-  );
+  ).replace(/\r\n/g, "\n");
   const sqlOnly = migration
     .split("\n")
     .filter((line) => !line.trim().startsWith("--"))

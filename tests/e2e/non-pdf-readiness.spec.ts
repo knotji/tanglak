@@ -90,6 +90,6 @@ test("debt payment history persists and warns before delete", async ({ page }) =
   await expect(page.getByText("ประวัติการชำระหนี้")).toBeVisible();
   await page.reload();
   await expect(page.getByText("ประวัติการชำระหนี้")).toBeVisible();
-  await page.getByRole("button", { name: "ลบ" }).first().click();
+  await page.getByRole("button", { name: /ลบการชำระ/ }).first().click();
   await expect(page.getByText("ยอดจ่ายแล้วของหนี้รอบนี้จะถูกคำนวณใหม่ทันที")).toBeVisible();
 });

@@ -21,6 +21,19 @@ async function createReadyUser(page: import("@playwright/test").Page) {
   await expect(page).toHaveURL(/\/today/);
 }
 
+async function expectSingleMainLandmark(page: import("@playwright/test").Page) {
+  await expect(page.locator("main")).toHaveCount(1);
+  await expect(page.locator("#main-content")).toHaveCount(1);
+  await expect(page.locator("main#main-content")).toBeVisible();
+  await expect(page.locator('a[href="#main-content"]')).toHaveCount(1);
+
+  const skipTargetTag = await page.locator('a[href="#main-content"]').evaluate((link) => {
+    const targetId = link.getAttribute("href")?.slice(1);
+    return targetId ? document.getElementById(targetId)?.tagName.toLowerCase() : null;
+  });
+  expect(skipTargetTag).toBe("main");
+}
+
 test.describe("loading and navigation UX", () => {
   test.beforeEach(async ({ page }) => {
     await createReadyUser(page);
@@ -42,7 +55,7 @@ test.describe("loading and navigation UX", () => {
 
       for (const route of ["/today", "/transactions", "/debts", "/overview", "/budget", "/upload", "/history-import"]) {
         await page.goto(route);
-        await expect(page.locator("main")).toBeVisible();
+        await expectSingleMainLandmark(page);
         const hasOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
         expect(hasOverflow, `${route} overflowed at ${width}px`).toBe(false);
       }

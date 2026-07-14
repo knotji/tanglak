@@ -694,7 +694,7 @@ export function ReviewForm({
                     <option value="receipt">ใบเสร็จ (Receipt)</option>
                     <option value="delivery_receipt">ค่าอาหาร/เดลิเวอรี (Delivery Slip)</option>
                     <option value="transfer_slip">สลิปโอนเงิน (Bank Transfer Slip)</option>
-                    <option value="debt_statement">ใบแจ้งหนี้บัตรเครดิต/หนี้สิน (Debt Statement)</option>
+                    <option value="debt_statement">ใบแจ้งหนี้บัตรเครดิต/หนี้สิน</option>
                     <option value="other">อื่น ๆ (Other)</option>
                   </select>
                 </div>
@@ -1196,7 +1196,7 @@ export function ReviewForm({
                   </div>
                 )}
 
-                {/* Form Fields: DEBT STATEMENT */}
+                {/* Debt notice fields */}
                 {docType === "debt_statement" && (
                   <div className="flex flex-col gap-3 border-t border-border pt-4">
                     <h3 className="font-bold text-primary text-sm">ข้อมูลใบแจ้งหนี้บัตรเครดิต / เงินกู้</h3>

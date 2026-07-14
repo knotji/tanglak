@@ -52,19 +52,17 @@ describe("accessibility release blockers", () => {
     cleanup(root, container);
   });
 
-  it("keeps visible review and history-import labels associated with controls", () => {
+  it("keeps visible review labels associated with controls and removes the old import form", () => {
     const reviewForm = readProjectFile("src/app/upload/review/[documentId]/ReviewForm.tsx");
-    const historyImport = readProjectFile("src/app/history-import/HistoryImportClient.tsx");
+    const historyImportPage = readProjectFile("src/app/history-import/page.tsx");
 
     expect(reviewForm).toContain('htmlFor={reviewFieldId("employer")}');
     expect(reviewForm).toContain('id={reviewFieldId("employer")}');
     expect(reviewForm).toContain('htmlFor={reviewFieldId("subtotal")}');
     expect(reviewForm).toContain('id={reviewFieldId("subtotal")}');
     expect(reviewForm).not.toContain('<label className="block');
-    expect(historyImport).toContain('htmlFor="history-import-source-type"');
-    expect(historyImport).toContain('id="history-import-source-type"');
-    expect(historyImport).toContain('htmlFor="history-import-file"');
-    expect(historyImport).toContain('aria-describedby={errorMsg ? "history-import-file-help history-import-error" : "history-import-file-help"}');
+    expect(historyImportPage).not.toContain("HistoryImportClient");
+    expect(historyImportPage).not.toContain("input[type='file']");
   });
 
   it("adds contextual action names and practical mobile touch target classes", () => {
@@ -74,7 +72,8 @@ describe("accessibility release blockers", () => {
 
     expect(transactionRow).toContain("aria-label={`แก้ไขรายการ ${actionContext}`}");
     expect(transactionRow).toContain("aria-label={`ลบรายการ ${actionContext}`}");
-    expect(transactionRow).toContain("min-h-11 rounded-[12px] bg-muted px-3");
+    expect(transactionRow).toContain("flex gap-1 rounded-[14px] bg-muted p-1");
+    expect(transactionRow).toContain("min-h-11 rounded-[12px] bg-surface px-3");
     expect(debtsClient).toContain("aria-label={`ดูประวัติหนี้ ${debt.name}`}");
     expect(settingsData).toContain("aria-label={`ย้อนกลับ (Rollback) ชุดนำเข้า ${batchContext}`}");
     expect(settingsData).toContain("min-h-11");

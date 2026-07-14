@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/PageHeader";
 
 export default function TodayLoading() {
   return (
-    <AppShell>
+    <AppShell contentElement="div">
       <PageHeader title="วันนี้" subtitle="กำลังโหลดข้อมูลวันนี้" />
       <DelayedLoadingMessage message="กำลังโหลดข้อมูล..." />
 

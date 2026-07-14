@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/PageHeader";
 
 export default function AccountsLoading() {
   return (
-    <AppShell>
+    <AppShell contentElement="div">
       <PageHeader title="บัญชีและกระเป๋าเงิน" subtitle="กำลังโหลด" />
       <RouteSkeleton rows={3} />
     </AppShell>

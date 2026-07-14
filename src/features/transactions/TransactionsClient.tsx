@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { deleteTransactionAction } from "@/app/actions/finance";
 import { AppShell } from "@/components/AppShell";
 import { EmptyState } from "@/components/EmptyState";
+import { ConfirmDialog } from "@/components/feedback/ConfirmDialog";
+import { useToast } from "@/components/feedback/ToastProvider";
 import { FilterChips } from "@/components/FilterChips";
 import { LocalImportReview } from "@/components/LocalImportReview";
 import { MobileBottomSheet } from "@/components/MobileBottomSheet";
@@ -33,6 +35,7 @@ export function TransactionsClient({
   importContext?: boolean;
 }) {
   const router = useRouter();
+  const { showToast } = useToast();
   const [filter, setFilter] = useState("all");
   const [isFilterPending, startFilterTransition] = useTransition();
   const [isMonthPending, startMonthTransition] = useTransition();
@@ -40,6 +43,7 @@ export function TransactionsClient({
   const [editing, setEditing] = useState<Transaction | undefined>();
   const [message, setMessage] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Transaction | null>(null);
   const filtered = transactions.filter((transaction) => {
     if (filter === "all") return true;
     return transaction.type === filter;
@@ -63,17 +67,16 @@ export function TransactionsClient({
     });
   }
 
-  async function confirmDelete(transaction: Transaction) {
-    const warning =
-      transaction.type === "debt_payment"
-        ? "รายการนี้เป็นการชำระหนี้ ถ้าลบ ยอดจ่ายแล้วของหนี้จะถูกคำนวณใหม่"
-        : "ลบรายการนี้ใช่ไหม?";
-    if (!window.confirm(warning)) return;
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    const transaction = deleteTarget;
     setDeletingId(transaction.id);
     const result = await deleteTransactionAction(transaction.id);
     setDeletingId(null);
+    if (result.ok) setDeleteTarget(null);
     setMessage(result.message ?? (result.ok ? "ลบรายการแล้ว" : "ลบรายการไม่สำเร็จ"));
-    router.refresh();
+    showToast(result.message ?? (result.ok ? "ลบรายการแล้ว" : "ลบรายการไม่สำเร็จ"), result.ok ? "success" : "error");
+    if (result.ok) router.refresh();
   }
 
   return (
@@ -122,7 +125,7 @@ export function TransactionsClient({
       {importContext ? (
         <div className="rounded-[16px] border border-primary/20 bg-primary-soft px-4 py-3 text-sm text-primary">
           <p className="font-bold">กำลังแสดงรายการเดือน{monthLabel}</p>
-          <p className="text-xs font-semibold">นำเข้าจาก Statement ชุดล่าสุด</p>
+          <p className="text-xs font-semibold">มาจากชุดข้อมูลเดิมล่าสุด</p>
         </div>
       ) : null}
 
@@ -153,7 +156,7 @@ export function TransactionsClient({
                 setEditing(transaction);
                 setOpen(true);
               }}
-              onDelete={confirmDelete}
+              onDelete={setDeleteTarget}
               busyId={deletingId}
             />
           ))}
@@ -188,6 +191,22 @@ export function TransactionsClient({
           }}
         />
       </MobileBottomSheet>
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="ลบรายการนี้?"
+        body={
+          deleteTarget?.type === "debt_payment"
+            ? "รายการนี้เป็นการชำระหนี้ ถ้าลบ ยอดจ่ายแล้วของหนี้รอบนี้จะถูกคำนวณใหม่ แต่ข้อมูลหนี้เดิมจะไม่ถูกลบ"
+            : "รายการนี้จะถูกลบออกจากเดือนนี้ ข้อมูลหนี้ บัญชี และรายการอื่นจะไม่ถูกเปลี่ยน"
+        }
+        confirmLabel="ลบรายการนี้"
+        pendingLabel="กำลังลบ..."
+        confirmPending={Boolean(deletingId)}
+        onCancel={() => {
+          if (!deletingId) setDeleteTarget(null);
+        }}
+        onConfirm={confirmDelete}
+      />
     </AppShell>
   );
 }

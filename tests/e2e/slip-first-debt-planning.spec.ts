@@ -51,25 +51,22 @@ test.describe("slip-first upload and debt planning pivot", () => {
     await signUp(page, "ผู้ใช้เข้าลิงก์เดิม");
     await page.goto("/history-import");
 
-    await expect(page.getByText("การนำเข้ารายการจำนวนมากถูกพักไว้ชั่วคราว")).toBeVisible();
-    await expect(page.getByText(/แนะนำให้อัปโหลดสลิปหรือเพิ่มรายการทีละรายการ/)).toBeVisible();
+    await expect(page.getByText("การนำเข้ารายการย้อนหลังถูกนำออกจากหน้าผลิตภัณฑ์แล้ว")).toBeVisible();
+    await expect(page.getByText(/ตั้งหลักตอนนี้เน้นการสแกนสลิป/)).toBeVisible();
     await expect(page.getByRole("link", { name: "อัปโหลดสลิป" })).toBeVisible();
     await expect(page.getByRole("link", { name: "เพิ่มรายการเอง" })).toBeVisible();
     await expect(page.getByRole("link", { name: "กลับหน้าวันนี้" })).toBeVisible();
 
-    // The route remains technically functional -- it is hidden/demoted,
-    // not deleted -- so the underlying import UI still renders below the
-    // notice for users who bookmarked this page or already have history.
-    await expect(page.getByText(/นำเข้า/).first()).toBeVisible();
+    await expect(page.locator('input[type="file"]')).toHaveCount(0);
   });
 
-  test("bank statement import is demoted to an advanced settings section, not the primary settings list", async ({ page }) => {
+  test("settings keeps only old dataset history, not the legacy import shortcut", async ({ page }) => {
     await signUp(page, "ผู้ใช้ตั้งค่า");
     await page.goto("/settings");
 
     await expect(page.getByText("ขั้นสูง")).toBeVisible();
-    await expect(page.getByRole("link", { name: "การนำเข้ารายการแบบเดิม" })).toBeVisible();
-    await expect(page.getByText("เหมาะสำหรับข้อมูลจำนวนมากและต้องตรวจสอบหลายรายการ")).toBeVisible();
+    await expect(page.getByRole("link", { name: "การนำเข้ารายการแบบเดิม" })).toHaveCount(0);
+    await expect(page.getByText(/พื้นที่นี้เก็บประวัติชุดข้อมูลเดิม/)).toBeVisible();
   });
 
   test("settings/data page leads with slip upload and manual entry, not statement import (F-011)", async ({ page }) => {
@@ -82,17 +79,9 @@ test.describe("slip-first upload and debt planning pivot", () => {
 
     await expect(uploadSlip).toBeVisible();
     await expect(manualEntry).toBeVisible();
-    await expect(legacyImport).toBeVisible();
-    await expect(page.getByText("เหมาะสำหรับข้อมูลจำนวนมากและต้องตรวจสอบหลายรายการ")).toBeVisible();
-
-    // Slip upload and manual entry must appear before the legacy import
-    // link in document order -- the legacy route stays reachable, but is no
-    // longer the recommended/primary path on this page.
-    const uploadBox = await uploadSlip.boundingBox();
-    const legacyBox = await legacyImport.boundingBox();
-    expect(uploadBox).not.toBeNull();
-    expect(legacyBox).not.toBeNull();
-    expect(uploadBox!.y).toBeLessThan(legacyBox!.y);
+    await expect(legacyImport).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "ประวัติชุดข้อมูลเดิม" })).toBeVisible();
+    await expect(page.getByText(/ยังไม่มีประวัติการนำเข้าย้อนหลัง/)).toBeVisible();
 
     // No primary-styled "+ Statement" style CTA should promote statement
     // import as if it were a normal top-level action anymore.
@@ -175,8 +164,9 @@ test.describe("slip-first upload and debt planning pivot", () => {
     await page.getByRole("button", { name: "เพิ่มหนี้", exact: true }).click();
     await expect(page.getByText("หนี้ที่จะปิด")).toBeVisible();
 
-    page.once("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "ปิดหนี้ หนี้ที่จะปิด" }).click();
+    await expect(page.getByText("ปิดหนี้เป็นชำระครบแล้ว")).toBeVisible();
+    await page.getByRole("button", { name: "ปิดหนี้เป็นชำระครบแล้ว" }).click();
     // "ปิดหนี้แล้ว" appears both in the transient success toast and in the
     // closed debt's static status badge -- assert the badge specifically via
     // its adjacent, unambiguous supporting text.

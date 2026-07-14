@@ -123,7 +123,7 @@ export default async function HistoryImportSummaryPage({ params }: SummaryPagePr
           {/* Rollback Options Form */}
           <div className="mt-4 border-t border-border pt-4 flex flex-col gap-2">
             <div className="text-[10px] text-text-secondary text-center leading-4">
-              นำเข้าผิดพลาดหรืออัปโหลดไฟล์ซ้ำ? คุณสามารถย้อนคืนธุรกรรมทั้งหมดที่ถูกนำเข้าจาก Statement ชุดนี้ได้ทุกเมื่อ
+              หากชุดข้อมูลเดิมนี้ผิดพลาดหรืออัปโหลดซ้ำ คุณสามารถย้อนคืนธุรกรรมทั้งหมดจากชุดนี้ได้ทุกเมื่อ
             </div>
             <form action={handleRollback}>
               <button

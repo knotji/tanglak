@@ -138,8 +138,10 @@ test.describe.serial("post-merge production verification surface", () => {
     await expect(page.locator("input[name='totalPaid']")).toHaveValue("250");
     await expectNoUnsafeFinancialText(page);
 
-    await page.locator("input[name='occurredAt']").fill("2026-07-15T09:30");
-    await page.locator("form button").last().click();
+    const occurredAtInput = page.locator("input[name='occurredAt']");
+    await occurredAtInput.fill("2026-07-15T09:30");
+    await expect(occurredAtInput).toHaveValue("2026-07-15T09:30");
+    await page.getByRole("button", { name: "ยืนยันความถูกต้อง" }).click();
     await expect(page).toHaveURL(/\/today/);
 
     await page.goto(`/transactions?month=${fixedMockTransactionMonth}`);

@@ -7,6 +7,7 @@ import {
   addDebtPayment,
   createDebt,
   createTransaction,
+  deleteDebt,
   deleteTransaction,
   markDebtPaidOff,
   listDebtPaymentHistory,
@@ -129,6 +130,24 @@ export async function deleteTransactionAction(id: string): Promise<FinanceAction
     return { ok: true, message: "ลบรายการแล้ว" };
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : "ลบรายการไม่สำเร็จ" };
+  }
+}
+
+export async function deleteDebtAction(id: string): Promise<FinanceActionState> {
+  const user = await requireUser();
+  try {
+    await deleteDebt(user.id, id);
+    revalidateFinance();
+    revalidatePath(`/debts/${id}`);
+    return { ok: true, message: "ลบหนี้เรียบร้อย รายการจ่ายที่เคยบันทึกไว้ยังอยู่เหมือนเดิม" };
+  } catch (error) {
+    console.error("deleteDebtAction failed", {
+      operation: "finance.deleteDebt",
+      debtId: id,
+      userId: user.id,
+      error: error instanceof Error ? error.name : typeof error,
+    });
+    return { ok: false, message: "ลบหนี้ไม่สำเร็จ ข้อมูลของคุณยังไม่ถูกเปลี่ยน" };
   }
 }
 

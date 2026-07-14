@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { deleteDebtPaymentAction, updateDebtPaymentAction } from "@/app/actions/finance";
+import { deleteDebtAction, deleteDebtPaymentAction, updateDebtPaymentAction } from "@/app/actions/finance";
 import { AppShell } from "@/components/AppShell";
 import { ConfirmDialog } from "@/components/feedback/ConfirmDialog";
 import { InlineError } from "@/components/feedback/InlineError";
@@ -103,6 +103,8 @@ export function DebtPaymentHistoryClient({
   const { showToast } = useToast();
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [deleting, setDeleting] = useState<Transaction | null>(null);
+  const [deleteDebtOpen, setDeleteDebtOpen] = useState(false);
+  const [deleteDebtPending, setDeleteDebtPending] = useState(false);
   const grouped = useMemo(() => {
     return payments.reduce<Record<string, Transaction[]>>((acc, payment) => {
       const key = payment.occurredAt.slice(0, 7);
@@ -123,9 +125,33 @@ export function DebtPaymentHistoryClient({
     if (result.ok) router.refresh();
   }
 
+  async function deleteCurrentDebt() {
+    setDeleteDebtPending(true);
+    const result = await deleteDebtAction(debt.id);
+    setDeleteDebtPending(false);
+    showToast(result.message ?? (result.ok ? "ลบหนี้เรียบร้อย" : "ลบหนี้ไม่สำเร็จ"), result.ok ? "success" : "error");
+    if (result.ok) {
+      setDeleteDebtOpen(false);
+      router.push("/debts");
+    }
+  }
+
   return (
     <AppShell>
       <PageHeader title={debt.name} subtitle="ประวัติการชำระหนี้" />
+      <section className="rounded-[16px] border border-overdue/20 bg-overdue/5 p-4">
+        <p className="text-sm font-bold text-overdue">หนี้นี้ถูกเพิ่มผิด?</p>
+        <p className="mt-1 text-xs leading-5 text-text-secondary">
+          ลบหนี้ออกจากรายการได้ โดยไม่ลบธุรกรรมหรือรายการจ่ายที่เคยบันทึกไว้
+        </p>
+        <button
+          type="button"
+          onClick={() => setDeleteDebtOpen(true)}
+          className="mt-3 min-h-11 w-full rounded-[16px] border border-overdue/30 bg-surface px-4 text-sm font-bold text-overdue"
+        >
+          ลบหนี้
+        </button>
+      </section>
       <section className="rounded-[16px] border border-border bg-surface p-4">
         <p className="text-sm font-semibold text-text-secondary">รอบปัจจุบัน</p>
         <p className="mt-2 text-2xl font-bold">
@@ -216,6 +242,18 @@ export function DebtPaymentHistoryClient({
         confirmLabel="ลบ"
         onCancel={() => setDeleting(null)}
         onConfirm={deletePayment}
+      />
+      <ConfirmDialog
+        open={deleteDebtOpen}
+        title={`ลบหนี้ "${debt.name}"?`}
+        body="ข้อมูลหนี้นี้จะถูกนำออกจากรายการและยอดรวมหนี้ของคุณ รายการรายจ่ายหรือธุรกรรมที่เคยบันทึกไว้จะไม่ถูกลบ และประวัติการชำระเดิมยังเก็บความเชื่อมโยงไว้"
+        confirmLabel="ลบหนี้"
+        pendingLabel="กำลังลบ..."
+        confirmPending={deleteDebtPending}
+        onCancel={() => {
+          if (!deleteDebtPending) setDeleteDebtOpen(false);
+        }}
+        onConfirm={deleteCurrentDebt}
       />
     </AppShell>
   );

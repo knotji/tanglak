@@ -6,6 +6,7 @@ import { useActionState, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { saveDebtAction } from "@/app/actions/finance";
+import { LoadingButton } from "@/components/feedback/LoadingButton";
 import { parseOptionalMoney, parseRequiredMoney } from "@/lib/finance/money-guards";
 import {
   isValidDueDate,
@@ -201,13 +202,10 @@ export function ManualDebtForm({
       ) : state.message ? (
         <p className="mt-3 text-sm text-overdue">{state.message}</p>
       ) : null}
-      <button
-        disabled={pending}
-        className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-[16px] bg-primary px-4 font-bold text-white disabled:opacity-60"
-      >
+      <LoadingButton pending={pending} pendingLabel={debt ? "กำลังบันทึกการแก้ไข..." : "กำลังเพิ่มหนี้..."} className="mt-4 w-full">
         <Plus size={18} aria-hidden />
-        {pending ? "กำลังบันทึก..." : debt ? "บันทึกการแก้ไข" : "เพิ่มหนี้"}
-      </button>
+        {debt ? "บันทึกการแก้ไข" : "เพิ่มหนี้"}
+      </LoadingButton>
     </form>
   );
 }
