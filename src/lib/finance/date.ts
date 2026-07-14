@@ -286,3 +286,23 @@ export function isLikelyInferredNoonTimestamp(occurredAt: string | undefined): b
   if (!occurredAt) return false;
   return /T12:00:00(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$/.test(occurredAt);
 }
+
+/**
+ * Formats an ISO instant or wall-clock string as standard DD/MM/YYYY HH:mm
+ */
+export function formatStandardDateTime(value: string | undefined): string {
+  if (!value) return "ไม่ระบุวันเวลา";
+  const date = new Date(value);
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Bangkok",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+
+  const get = (type: string) => parts.find((p) => p.type === type)?.value || "";
+  return `${get("day")}/${get("month")}/${get("year")} ${get("hour")}:${get("minute")}`;
+}

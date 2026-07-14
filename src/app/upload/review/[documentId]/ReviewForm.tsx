@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
+import { NextActionCard } from "@/components/NextActionCard";
 import {
   confirmDocumentAction,
   deleteDocumentAction,
@@ -23,6 +24,8 @@ import {
   formatThaiDateTimeLabel,
   isLikelyInferredNoonTimestamp,
   TRANSACTION_OCCURRED_AT_REQUIRED_TH,
+  formatStandardDateTime,
+  bangkokDateTimeLocalToInstant,
 } from "@/lib/finance/date";
 import {
   AlertTriangle,
@@ -311,6 +314,7 @@ export function ReviewForm({
   const [items, setItems] = useState<Array<{ name: string; quantity?: number; amount?: number }>>(
     initialReceipt.items || []
   );
+  const [note, setNote] = useState(initialTx.note || "");
 
   // 3. Transfer slip fields
   const [transferAmount, setTransferAmount] = useState(initialTx.amount?.toString() || "");
@@ -497,32 +501,32 @@ export function ReviewForm({
         return {
           merchant: employer || "ไม่ระบุชื่อบริษัท",
           amount: netIncome ? formatTHB(Number(netIncome) * 100) : "฿0.00",
-          date: paymentDate ? formatThaiDateTimeLabel(paymentDate) : "ไม่ระบุวันที่",
+          date: paymentDate ? formatStandardDateTime(paymentDate) : "ไม่ระบุวันที่",
         };
       case "receipt":
       case "delivery_receipt":
         return {
           merchant: merchant || "ไม่ระบุร้านค้า",
           amount: totalPaid ? formatTHB(Number(totalPaid) * 100) : "฿0.00",
-          date: occurredAt ? formatThaiDateTimeLabel(occurredAt) : "ไม่ระบุวันที่",
+          date: occurredAt ? formatStandardDateTime(occurredAt) : "ไม่ระบุวันที่",
         };
       case "transfer_slip":
         return {
           merchant: destinationName || "ไม่ระบุผู้รับ",
           amount: transferAmount ? formatTHB(Number(transferAmount) * 100) : "฿0.00",
-          date: transferDate ? formatThaiDateTimeLabel(transferDate) : "ไม่ระบุวันที่",
+          date: transferDate ? formatStandardDateTime(transferDate) : "ไม่ระบุวันที่",
         };
       case "debt_statement":
         return {
           merchant: creditor || "ไม่ระบุเจ้าหนี้",
           amount: amountDue ? formatTHB(Number(amountDue) * 100) : "฿0.00",
-          date: dueDate ? formatThaiDateTimeLabel(dueDate) : "ไม่ระบุวันที่",
+          date: dueDate ? formatStandardDateTime(dueDate) : "ไม่ระบุวันที่",
         };
       default:
         return {
           merchant: merchant || "ไม่ระบุรายการ",
           amount: totalPaid ? formatTHB(Number(totalPaid) * 100) : "฿0.00",
-          date: occurredAt ? formatThaiDateTimeLabel(occurredAt) : "ไม่ระบุวันที่",
+          date: occurredAt ? formatStandardDateTime(occurredAt) : "ไม่ระบุวันที่",
         };
     }
   };
@@ -802,36 +806,7 @@ export function ReviewForm({
                   <div className="flex flex-col gap-3 border-t border-border pt-4">
                     <h3 className="font-bold text-primary text-sm">ข้อมูลสลิปเงินเดือน</h3>
 
-                    <div>
-                      <label htmlFor={reviewFieldId("employer")} className="block text-xs text-text-secondary font-semibold mb-1">
-                        นายจ้าง / บริษัท
-                      </label>
-                      <input
-                        id={reviewFieldId("employer")}
-                        type="text"
-                        name="employer"
-                        className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
-                        value={employer}
-                        onChange={(e) => setEmployer(e.target.value)}
-                        required
-                      />
-                    </div>
-
                     <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label htmlFor={reviewFieldId("payPeriod")} className="block text-xs text-text-secondary font-semibold mb-1">
-                          งวดเงินเดือน (เช่น 07/2026)
-                        </label>
-                        <input
-                          id={reviewFieldId("payPeriod")}
-                          type="text"
-                          name="payPeriod"
-                          className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
-                          value={payPeriod}
-                          onChange={(e) => setPayPeriod(e.target.value)}
-                          placeholder="MM/YYYY"
-                        />
-                      </div>
                       <div>
                         <label htmlFor={reviewFieldId("paymentDate")} className="block text-xs text-text-secondary font-semibold mb-1">
                           วันที่จ่ายเงิน
@@ -855,21 +830,34 @@ export function ReviewForm({
                           </p>
                         ) : null}
                       </div>
+                      <div>
+                        <label htmlFor={reviewFieldId("netIncome")} className="block text-xs text-text-secondary font-semibold mb-1">
+                          รายได้สุทธิ (บาท)
+                        </label>
+                        <input
+                          id={reviewFieldId("netIncome")}
+                          type="number"
+                          step="0.01"
+                          name="netIncome"
+                          className="w-full rounded-[12px] border border-border bg-white p-3 text-sm font-bold text-primary"
+                          value={netIncome}
+                          onChange={(e) => setNetIncome(e.target.value)}
+                          required
+                        />
+                      </div>
                     </div>
 
                     <div>
-                      <label htmlFor={reviewFieldId("netIncome")} className="block text-xs text-text-secondary font-semibold mb-1">
-                        รายได้สุทธิ (Net Income - บันทึกเข้าบัญชี)
+                      <label htmlFor={reviewFieldId("note")} className="block text-xs text-text-secondary font-semibold mb-1">
+                        บันทึกเพิ่มเติม
                       </label>
-                      <input
-                        id={reviewFieldId("netIncome")}
-                        type="number"
-                        step="0.01"
-                        name="netIncome"
-                        className="w-full rounded-[12px] border border-border bg-white p-3 text-sm font-bold text-primary"
-                        value={netIncome}
-                        onChange={(e) => setNetIncome(e.target.value)}
-                        required
+                      <textarea
+                        id={reviewFieldId("note")}
+                        name="note"
+                        className="w-full rounded-[12px] border border-border bg-white p-3 text-sm min-h-[80px]"
+                        value={note}
+                        onChange={(e) => setNote(e.target.value)}
+                        placeholder="รายละเอียดเพิ่มเติม..."
                       />
                     </div>
 
@@ -879,25 +867,53 @@ export function ReviewForm({
                         onClick={() => setIsDetailsExpanded(!isDetailsExpanded)}
                         className="flex w-full items-center justify-between p-3 text-left"
                       >
-                        <span className="text-xs font-bold text-text-secondary">รายละเอียดเพิ่มเติม (ภาษี, ประกันสังคม)</span>
+                        <span className="text-xs font-bold text-text-secondary">รายละเอียดเพิ่มเติม (นายจ้าง, ภาษี, SSO)</span>
                         {isDetailsExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                       </button>
 
-                      {isDetailsExpanded && (
-                        <div className="flex flex-col gap-3 p-3 pt-0">
+                      <div className={`flex flex-col gap-3 p-3 pt-0 ${isDetailsExpanded ? "" : "hidden"}`}>
                           <div>
-                            <label htmlFor={reviewFieldId("grossIncome")} className="block text-[10px] text-text-secondary font-semibold mb-1">
-                              รายได้ก่อนหัก (Gross)
+                            <label htmlFor={reviewFieldId("employer")} className="block text-[10px] text-text-secondary font-semibold mb-1">
+                              นายจ้าง / บริษัท
                             </label>
                             <input
-                              id={reviewFieldId("grossIncome")}
-                              type="number"
-                              step="0.01"
-                              name="grossIncome"
+                              id={reviewFieldId("employer")}
+                              type="text"
+                              name="employer"
                               className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
-                              value={grossIncome}
-                              onChange={(e) => setGrossIncome(e.target.value)}
+                              value={employer}
+                              onChange={(e) => setEmployer(e.target.value)}
                             />
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label htmlFor={reviewFieldId("payPeriod")} className="block text-[10px] text-text-secondary font-semibold mb-1">
+                                งวดเงินเดือน
+                              </label>
+                              <input
+                                id={reviewFieldId("payPeriod")}
+                                type="text"
+                                name="payPeriod"
+                                className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
+                                value={payPeriod}
+                                onChange={(e) => setPayPeriod(e.target.value)}
+                                placeholder="MM/YYYY"
+                              />
+                            </div>
+                            <div>
+                              <label htmlFor={reviewFieldId("grossIncome")} className="block text-[10px] text-text-secondary font-semibold mb-1">
+                                รายได้ก่อนหัก (Gross)
+                              </label>
+                              <input
+                                id={reviewFieldId("grossIncome")}
+                                type="number"
+                                step="0.01"
+                                name="grossIncome"
+                                className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
+                                value={grossIncome}
+                                onChange={(e) => setGrossIncome(e.target.value)}
+                              />
+                            </div>
                           </div>
                           <div className="grid grid-cols-2 gap-3">
                             <div>
@@ -930,7 +946,6 @@ export function ReviewForm({
                             </div>
                           </div>
                         </div>
-                      )}
                     </div>
                   </div>
                 )}
@@ -939,21 +954,6 @@ export function ReviewForm({
                 {(docType === "receipt" || docType === "delivery_receipt") && (
                   <div className="flex flex-col gap-3 border-t border-border pt-4">
                     <h3 className="font-bold text-primary text-sm">ข้อมูลใบเสร็จรับเงิน</h3>
-
-                    <div>
-                      <label htmlFor={reviewFieldId("merchant")} className="block text-xs text-text-secondary font-semibold mb-1">
-                        ชื่อร้านค้า / แพลตฟอร์ม
-                      </label>
-                      <input
-                        id={reviewFieldId("merchant")}
-                        type="text"
-                        name="merchant"
-                        className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
-                        value={merchant}
-                        onChange={(e) => setMerchant(e.target.value)}
-                        required
-                      />
-                    </div>
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
@@ -978,19 +978,35 @@ export function ReviewForm({
                           wasInferred={occurredAtWasInferred}
                         />
                       </div>
-                      <div>
-                        <label htmlFor={reviewFieldId("paymentMethod")} className="block text-xs text-text-secondary font-semibold mb-1">
-                          ช่องทางการจ่ายเงิน
+                      <div className="flex flex-col">
+                        <label htmlFor={reviewFieldId("totalPaid")} className="block text-xs text-text-secondary font-semibold mb-1">
+                          ยอดรวมจ่ายจริง (บาท)
                         </label>
                         <input
-                          id={reviewFieldId("paymentMethod")}
-                          type="text"
-                          name="paymentMethod"
-                          className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
-                          value={paymentMethod}
-                          onChange={(e) => setPaymentMethod(e.target.value)}
+                          id={reviewFieldId("totalPaid")}
+                          type="number"
+                          step="0.01"
+                          name="totalPaid"
+                          className="w-full rounded-[12px] border border-border bg-white p-3 text-sm font-extrabold text-primary"
+                          value={totalPaid}
+                          onChange={(e) => setTotalPaid(e.target.value)}
+                          required
                         />
                       </div>
+                    </div>
+
+                    <div>
+                      <label htmlFor={reviewFieldId("note")} className="block text-xs text-text-secondary font-semibold mb-1">
+                        บันทึกเพิ่มเติม
+                      </label>
+                      <textarea
+                        id={reviewFieldId("note")}
+                        name="note"
+                        className="w-full rounded-[12px] border border-border bg-white p-3 text-sm min-h-[80px]"
+                        value={note}
+                        onChange={(e) => setNote(e.target.value)}
+                        placeholder="รายละเอียดเพิ่มเติม..."
+                      />
                     </div>
 
                     <div className="rounded-[16px] border border-border bg-muted/30 p-1">
@@ -999,66 +1015,94 @@ export function ReviewForm({
                         onClick={() => setIsDetailsExpanded(!isDetailsExpanded)}
                         className="flex w-full items-center justify-between p-3 text-left"
                       >
-                        <span className="text-xs font-bold text-text-secondary">รายละเอียดเพิ่มเติม (ส่วนลด, ค่าบริการ)</span>
+                        <span className="text-xs font-bold text-text-secondary">รายละเอียดเพิ่มเติม (ร้านค้า, ส่วนลด, ค่าบริการ)</span>
                         {isDetailsExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                       </button>
 
-                      {isDetailsExpanded && (
-                        <div className="grid grid-cols-4 gap-2 p-3 pt-0">
+                      <div className={`flex flex-col gap-3 p-3 pt-0 ${isDetailsExpanded ? "" : "hidden"}`}>
                           <div>
-                            <label htmlFor={reviewFieldId("subtotal")} className="block text-[10px] text-text-secondary font-semibold mb-1">
-                              ยอดรวมย่อย
+                            <label htmlFor={reviewFieldId("merchant")} className="block text-[10px] text-text-secondary font-semibold mb-1">
+                              ชื่อร้านค้า / แพลตฟอร์ม
                             </label>
                             <input
-                              id={reviewFieldId("subtotal")}
-                              type="number"
-                              step="0.01"
-                              className="w-full rounded-[12px] border border-border bg-white p-2 text-xs"
-                              value={subtotal}
-                              onChange={(e) => setSubtotal(e.target.value)}
+                              id={reviewFieldId("merchant")}
+                              type="text"
+                              name="merchant"
+                              className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
+                              value={merchant}
+                              onChange={(e) => setMerchant(e.target.value)}
                             />
                           </div>
-                          <div>
-                            <label htmlFor={reviewFieldId("deliveryFee")} className="block text-[10px] text-text-secondary font-semibold mb-1">
-                              ค่าส่ง
-                            </label>
-                            <input
-                              id={reviewFieldId("deliveryFee")}
-                              type="number"
-                              step="0.01"
-                              className="w-full rounded-[12px] border border-border bg-white p-2 text-xs"
-                              value={deliveryFee}
-                              onChange={(e) => setDeliveryFee(e.target.value)}
-                            />
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label htmlFor={reviewFieldId("paymentMethod")} className="block text-[10px] text-text-secondary font-semibold mb-1">
+                                ช่องทางการจ่ายเงิน
+                              </label>
+                              <input
+                                id={reviewFieldId("paymentMethod")}
+                                type="text"
+                                name="paymentMethod"
+                                className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
+                                value={paymentMethod}
+                                onChange={(e) => setPaymentMethod(e.target.value)}
+                              />
+                            </div>
+                            <div>
+                              <label htmlFor={reviewFieldId("subtotal")} className="block text-[10px] text-text-secondary font-semibold mb-1">
+                                ยอดรวมย่อย
+                              </label>
+                              <input
+                                id={reviewFieldId("subtotal")}
+                                type="number"
+                                step="0.01"
+                                className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
+                                value={subtotal}
+                                onChange={(e) => setSubtotal(e.target.value)}
+                              />
+                            </div>
                           </div>
-                          <div>
-                            <label htmlFor={reviewFieldId("discount")} className="block text-[10px] text-text-secondary font-semibold mb-1">
-                              ส่วนลด
-                            </label>
-                            <input
-                              id={reviewFieldId("discount")}
-                              type="number"
-                              step="0.01"
-                              className="w-full rounded-[12px] border border-border bg-white p-2 text-xs"
-                              value={discount}
-                              onChange={(e) => setDiscount(e.target.value)}
-                            />
-                          </div>
-                          <div>
-                            <label htmlFor={reviewFieldId("serviceFee")} className="block text-[10px] text-text-secondary font-semibold mb-1">
-                              ค่าบริการ
-                            </label>
-                            <input
-                              id={reviewFieldId("serviceFee")}
-                              type="number"
-                              step="0.01"
-                              className="w-full rounded-[12px] border border-border bg-white p-2 text-xs"
-                              value={serviceFee}
-                              onChange={(e) => setServiceFee(e.target.value)}
-                            />
+                          <div className="grid grid-cols-3 gap-2">
+                            <div>
+                              <label htmlFor={reviewFieldId("deliveryFee")} className="block text-[10px] text-text-secondary font-semibold mb-1">
+                                ค่าส่ง
+                              </label>
+                              <input
+                                id={reviewFieldId("deliveryFee")}
+                                type="number"
+                                step="0.01"
+                                className="w-full rounded-[12px] border border-border bg-white p-2 text-xs"
+                                value={deliveryFee}
+                                onChange={(e) => setDeliveryFee(e.target.value)}
+                              />
+                            </div>
+                            <div>
+                              <label htmlFor={reviewFieldId("discount")} className="block text-[10px] text-text-secondary font-semibold mb-1">
+                                ส่วนลด
+                              </label>
+                              <input
+                                id={reviewFieldId("discount")}
+                                type="number"
+                                step="0.01"
+                                className="w-full rounded-[12px] border border-border bg-white p-2 text-xs"
+                                value={discount}
+                                onChange={(e) => setDiscount(e.target.value)}
+                              />
+                            </div>
+                            <div>
+                              <label htmlFor={reviewFieldId("serviceFee")} className="block text-[10px] text-text-secondary font-semibold mb-1">
+                                ค่าบริการ
+                              </label>
+                              <input
+                                id={reviewFieldId("serviceFee")}
+                                type="number"
+                                step="0.01"
+                                className="w-full rounded-[12px] border border-border bg-white p-2 text-xs"
+                                value={serviceFee}
+                                onChange={(e) => setServiceFee(e.target.value)}
+                              />
+                            </div>
                           </div>
                         </div>
-                      )}
                     </div>
 
                     <div className="flex justify-between items-center bg-gray-50 p-3 rounded-[12px] border border-dashed border-border mt-1">
@@ -1182,21 +1226,6 @@ export function ReviewForm({
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label htmlFor={reviewFieldId("amount")} className="block text-xs text-text-secondary font-semibold mb-1">
-                          ยอดโอน (บาท)
-                        </label>
-                        <input
-                          id={reviewFieldId("amount")}
-                          type="number"
-                          step="0.01"
-                          name="amount"
-                          className="w-full rounded-[12px] border border-border bg-white p-3 text-sm font-bold text-primary"
-                          value={transferAmount}
-                          onChange={(e) => setTransferAmount(e.target.value)}
-                          required
-                        />
-                      </div>
-                      <div>
                         <label htmlFor={reviewFieldId("occurredAt")} className="block text-xs text-text-secondary font-semibold mb-1">
                           วันและเวลาโอน
                         </label>
@@ -1218,36 +1247,35 @@ export function ReviewForm({
                           wasInferred={occurredAtWasInferred}
                         />
                       </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label htmlFor={reviewFieldId("destinationName")} className="block text-xs text-text-secondary font-semibold mb-1">
-                          ผู้รับเงินปลายทาง (Merchant/Payee)
+                        <label htmlFor={reviewFieldId("amount")} className="block text-xs text-text-secondary font-semibold mb-1">
+                          ยอดโอน (บาท)
                         </label>
                         <input
-                          id={reviewFieldId("destinationName")}
-                          type="text"
-                          name="destinationName"
-                          className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
-                          value={destinationName}
-                          onChange={(e) => setDestinationName(e.target.value)}
+                          id={reviewFieldId("amount")}
+                          type="number"
+                          step="0.01"
+                          name="amount"
+                          className="w-full rounded-[12px] border border-border bg-white p-3 text-sm font-bold text-primary"
+                          value={transferAmount}
+                          onChange={(e) => setTransferAmount(e.target.value)}
                           required
                         />
                       </div>
-                      <div>
-                        <label htmlFor={reviewFieldId("bank")} className="block text-xs text-text-secondary font-semibold mb-1">
-                          ธนาคาร
-                        </label>
-                        <input
-                          id={reviewFieldId("bank")}
-                          type="text"
-                          name="bank"
-                          className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
-                          value={bank}
-                          onChange={(e) => setBank(e.target.value)}
-                        />
-                      </div>
+                    </div>
+
+                    <div>
+                      <label htmlFor={reviewFieldId("note")} className="block text-xs text-text-secondary font-semibold mb-1">
+                        บันทึกเพิ่มเติม
+                      </label>
+                      <textarea
+                        id={reviewFieldId("note")}
+                        name="note"
+                        className="w-full rounded-[12px] border border-border bg-white p-3 text-sm min-h-[80px]"
+                        value={note}
+                        onChange={(e) => setNote(e.target.value)}
+                        placeholder="รายละเอียดเพิ่มเติม..."
+                      />
                     </div>
 
                     <div className="rounded-[16px] border border-border bg-muted/30 p-1">
@@ -1256,55 +1284,81 @@ export function ReviewForm({
                         onClick={() => setIsDetailsExpanded(!isDetailsExpanded)}
                         className="flex w-full items-center justify-between p-3 text-left"
                       >
-                        <span className="text-xs font-bold text-text-secondary">รายละเอียดเพิ่มเติม (เลขอ้างอิง, บัญชี)</span>
+                        <span className="text-xs font-bold text-text-secondary">รายละเอียดเพิ่มเติม (ผู้รับ, ธนาคาร, เลขอ้างอิง)</span>
                         {isDetailsExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                       </button>
 
-                      {isDetailsExpanded && (
-                        <div className="grid grid-cols-3 gap-2 p-3 pt-0">
+                      <div className={`flex flex-col gap-3 p-3 pt-0 ${isDetailsExpanded ? "" : "hidden"}`}>
                           <div>
-                            <label htmlFor={reviewFieldId("referenceNumber")} className="block text-[10px] text-text-secondary font-semibold mb-1">
-                              เลขอ้างอิง
+                            <label htmlFor={reviewFieldId("destinationName")} className="block text-[10px] text-text-secondary font-semibold mb-1">
+                              ผู้รับเงินปลายทาง (Merchant/Payee)
                             </label>
                             <input
-                              id={reviewFieldId("referenceNumber")}
+                              id={reviewFieldId("destinationName")}
                               type="text"
-                              name="referenceNumber"
-                              className="w-full rounded-[12px] border border-border bg-white p-2 text-xs"
-                              value={refNumber}
-                              onChange={(e) => setRefNumber(e.target.value)}
+                              name="destinationName"
+                              className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
+                              value={destinationName}
+                              onChange={(e) => setDestinationName(e.target.value)}
                             />
                           </div>
                           <div>
-                            <label htmlFor={reviewFieldId("accountLastFour")} className="block text-[10px] text-text-secondary font-semibold mb-1">
-                              ผู้โอนท้าย
+                            <label htmlFor={reviewFieldId("bank")} className="block text-[10px] text-text-secondary font-semibold mb-1">
+                              ธนาคาร
                             </label>
                             <input
-                              id={reviewFieldId("accountLastFour")}
+                              id={reviewFieldId("bank")}
                               type="text"
-                              name="accountLastFour"
-                              className="w-full rounded-[12px] border border-border bg-white p-2 text-xs text-center"
-                              value={senderLastFour}
-                              onChange={(e) => setSenderLastFour(e.target.value)}
-                              maxLength={4}
+                              name="bank"
+                              className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
+                              value={bank}
+                              onChange={(e) => setBank(e.target.value)}
                             />
                           </div>
-                          <div>
-                            <label htmlFor={reviewFieldId("destinationAccountLastFour")} className="block text-[10px] text-text-secondary font-semibold mb-1">
-                              ผู้รับท้าย
-                            </label>
-                            <input
-                              id={reviewFieldId("destinationAccountLastFour")}
-                              type="text"
-                              name="destinationAccountLastFour"
-                              className="w-full rounded-[12px] border border-border bg-white p-2 text-xs text-center"
-                              value={destLastFour}
-                              onChange={(e) => setDestLastFour(e.target.value)}
-                              maxLength={4}
-                            />
+                          <div className="grid grid-cols-3 gap-2">
+                            <div>
+                              <label htmlFor={reviewFieldId("referenceNumber")} className="block text-[10px] text-text-secondary font-semibold mb-1">
+                                เลขอ้างอิง
+                              </label>
+                              <input
+                                id={reviewFieldId("referenceNumber")}
+                                type="text"
+                                name="referenceNumber"
+                                className="w-full rounded-[12px] border border-border bg-white p-2 text-xs"
+                                value={refNumber}
+                                onChange={(e) => setRefNumber(e.target.value)}
+                              />
+                            </div>
+                            <div>
+                              <label htmlFor={reviewFieldId("accountLastFour")} className="block text-[10px] text-text-secondary font-semibold mb-1">
+                                ผู้โอนท้าย
+                              </label>
+                              <input
+                                id={reviewFieldId("accountLastFour")}
+                                type="text"
+                                name="accountLastFour"
+                                className="w-full rounded-[12px] border border-border bg-white p-2 text-xs text-center"
+                                value={senderLastFour}
+                                onChange={(e) => setSenderLastFour(e.target.value)}
+                                maxLength={4}
+                              />
+                            </div>
+                            <div>
+                              <label htmlFor={reviewFieldId("destinationAccountLastFour")} className="block text-[10px] text-text-secondary font-semibold mb-1">
+                                ผู้รับท้าย
+                              </label>
+                              <input
+                                id={reviewFieldId("destinationAccountLastFour")}
+                                type="text"
+                                name="destinationAccountLastFour"
+                                className="w-full rounded-[12px] border border-border bg-white p-2 text-xs text-center"
+                                value={destLastFour}
+                                onChange={(e) => setDestLastFour(e.target.value)}
+                                maxLength={4}
+                              />
+                            </div>
                           </div>
                         </div>
-                      )}
                     </div>
 
                     {/* Linked debt dropdown when selecting debt_payment */}
@@ -1340,145 +1394,48 @@ export function ReviewForm({
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label htmlFor={reviewFieldId("creditor")} className="block text-xs text-text-secondary font-semibold mb-1">
-                          เจ้าหนี้ / ผู้ให้บริการ
-                        </label>
-                        <input
-                          id={reviewFieldId("creditor")}
-                          type="text"
-                          name="creditor"
-                          className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
-                          value={creditor}
-                          onChange={(e) => setCreditor(e.target.value)}
-                          required
-                        />
-                      </div>
-                      <div>
-                        <label htmlFor={reviewFieldId("debtName")} className="block text-xs text-text-secondary font-semibold mb-1">
-                          ชื่อหนี้บัตร / สินเชื่อ
-                        </label>
-                        <input
-                          id={reviewFieldId("debtName")}
-                          type="text"
-                          name="debtName"
-                          className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
-                          value={debtName}
-                          onChange={(e) => setDebtName(e.target.value)}
-                          required
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2">
-                      <div>
-                        <label htmlFor={reviewFieldId("debtType")} className="block text-[10px] text-text-secondary font-semibold mb-1">
-                          ประเภทหนี้สิน
-                        </label>
-                        <select
-                          id={reviewFieldId("debtType")}
-                          name="debtType"
-                          className="w-full rounded-[12px] border border-border bg-white p-2 text-xs"
-                          value={debtType}
-                          onChange={(e) => setDebtType(e.target.value as Debt["debtType"])}
-                        >
-                          <option value="credit_card">บัตรเครดิต</option>
-                          <option value="personal_loan">สินเชื่อบุคคล</option>
-                          <option value="installment">ผ่อนสินค้า/จ่ายงวด</option>
-                          <option value="mortgage">บ้าน/ที่อยู่อาศัย</option>
-                          <option value="auto_loan">เช่าซื้อรถยนต์</option>
-                          <option value="buy_now_pay_later">BNPL</option>
-                          <option value="other">อื่น ๆ</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label htmlFor={reviewFieldId("dueDate")} className="block text-[10px] text-text-secondary font-semibold mb-1">
+                        <label htmlFor={reviewFieldId("dueDate")} className="block text-xs text-text-secondary font-semibold mb-1">
                           วันครบกำหนดชำระ
                         </label>
                         <input
                           id={reviewFieldId("dueDate")}
                           type="date"
                           name="dueDate"
-                          className="w-full rounded-[12px] border border-border bg-white p-2 text-xs"
+                          className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
                           value={dueDate}
                           onChange={(e) => setDueDate(e.target.value)}
                           required
                         />
                       </div>
                       <div>
-                        <label htmlFor={reviewFieldId("accountLastFour")} className="block text-[10px] text-text-secondary font-semibold mb-1">
-                          เลขบัตร/บัญชี (ท้าย 4 หลัก)
-                        </label>
-                        <input
-                          id={reviewFieldId("accountLastFour")}
-                          type="text"
-                          name="accountLastFour"
-                          className="w-full rounded-[12px] border border-border bg-white p-2 text-xs text-center"
-                          value={accountLastFour}
-                          onChange={(e) => setAccountLastFour(e.target.value)}
-                          maxLength={4}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-4 gap-2">
-                      <div>
-                        <label htmlFor={reviewFieldId("outstandingBalance")} className="block text-[10px] text-text-secondary font-semibold mb-1">
-                          ยอดค้างชำระทั้งหมด
-                        </label>
-                        <input
-                          id={reviewFieldId("outstandingBalance")}
-                          type="number"
-                          step="0.01"
-                          name="outstandingBalance"
-                          className="w-full rounded-[12px] border border-border bg-white p-2 text-xs"
-                          value={outstandingBalance}
-                          onChange={(e) => setOutstandingBalance(e.target.value)}
-                        />
-                      </div>
-                      <div>
-                        <label htmlFor={reviewFieldId("statementBalance")} className="block text-[10px] text-text-secondary font-semibold mb-1">
-                          ยอดเรียกเก็บรอบนี้
-                        </label>
-                        <input
-                          id={reviewFieldId("statementBalance")}
-                          type="number"
-                          step="0.01"
-                          name="statementBalance"
-                          className="w-full rounded-[12px] border border-border bg-white p-2 text-xs font-bold text-primary"
-                          value={statementBalance}
-                          onChange={(e) => setStatementBalance(e.target.value)}
-                        />
-                      </div>
-                      <div>
-                        <label htmlFor={reviewFieldId("amountDue")} className="block text-[10px] text-text-secondary font-semibold mb-1">
-                          ยอดต้องชำระ (Due)
+                        <label htmlFor={reviewFieldId("amountDue")} className="block text-xs text-text-secondary font-semibold mb-1">
+                          ยอดต้องชำระ (บาท)
                         </label>
                         <input
                           id={reviewFieldId("amountDue")}
                           type="number"
                           step="0.01"
                           name="amountDue"
-                          className="w-full rounded-[12px] border border-border bg-white p-2 text-xs font-bold text-primary"
+                          className="w-full rounded-[12px] border border-border bg-white p-3 text-sm font-bold text-primary"
                           value={amountDue}
                           onChange={(e) => setAmountDue(e.target.value)}
                           required
                         />
                       </div>
-                      <div>
-                        <label htmlFor={reviewFieldId("minimumPayment")} className="block text-[10px] text-text-secondary font-semibold mb-1">
-                          ยอดขั้นต่ำ (Min)
-                        </label>
-                        <input
-                          id={reviewFieldId("minimumPayment")}
-                          type="number"
-                          step="0.01"
-                          name="minimumPayment"
-                          className="w-full rounded-[12px] border border-border bg-white p-2 text-xs"
-                          value={minimumPayment}
-                          onChange={(e) => setMinimumPayment(e.target.value)}
-                          required
-                        />
-                      </div>
+                    </div>
+
+                    <div>
+                      <label htmlFor={reviewFieldId("note")} className="block text-xs text-text-secondary font-semibold mb-1">
+                        บันทึกเพิ่มเติม
+                      </label>
+                      <textarea
+                        id={reviewFieldId("note")}
+                        name="note"
+                        className="w-full rounded-[12px] border border-border bg-white p-3 text-sm min-h-[80px]"
+                        value={note}
+                        onChange={(e) => setNote(e.target.value)}
+                        placeholder="รายละเอียดเพิ่มเติม..."
+                      />
                     </div>
 
                     <div className="rounded-[16px] border border-border bg-muted/30 p-1">
@@ -1487,12 +1444,89 @@ export function ReviewForm({
                         onClick={() => setIsDetailsExpanded(!isDetailsExpanded)}
                         className="flex w-full items-center justify-between p-3 text-left"
                       >
-                        <span className="text-xs font-bold text-text-secondary">รายละเอียดเพิ่มเติม (ดอกเบี้ย, งวดคงเหลือ)</span>
+                        <span className="text-xs font-bold text-text-secondary">รายละเอียดเพิ่มเติม (เจ้าหนี้, ดอกเบี้ย, งวดคงเหลือ)</span>
                         {isDetailsExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                       </button>
 
-                      {isDetailsExpanded && (
-                        <div className="flex flex-col gap-3 p-3 pt-0">
+                      <div className={`flex flex-col gap-3 p-3 pt-0 ${isDetailsExpanded ? "" : "hidden"}`}>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label htmlFor={reviewFieldId("creditor")} className="block text-[10px] text-text-secondary font-semibold mb-1">
+                                เจ้าหนี้ / ผู้ให้บริการ
+                              </label>
+                              <input
+                                id={reviewFieldId("creditor")}
+                                type="text"
+                                name="creditor"
+                                className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
+                                value={creditor}
+                                onChange={(e) => setCreditor(e.target.value)}
+                              />
+                            </div>
+                            <div>
+                              <label htmlFor={reviewFieldId("debtName")} className="block text-[10px] text-text-secondary font-semibold mb-1">
+                                ชื่อหนี้บัตร / สินเชื่อ
+                              </label>
+                              <input
+                                id={reviewFieldId("debtName")}
+                                type="text"
+                                name="debtName"
+                                className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
+                                value={debtName}
+                                onChange={(e) => setDebtName(e.target.value)}
+                              />
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2">
+                            <div>
+                              <label htmlFor={reviewFieldId("debtType")} className="block text-[10px] text-text-secondary font-semibold mb-1">
+                                ประเภทหนี้สิน
+                              </label>
+                              <select
+                                id={reviewFieldId("debtType")}
+                                name="debtType"
+                                className="w-full rounded-[12px] border border-border bg-white p-2 text-xs"
+                                value={debtType}
+                                onChange={(e) => setDebtType(e.target.value as Debt["debtType"])}
+                              >
+                                <option value="credit_card">บัตรเครดิต</option>
+                                <option value="personal_loan">สินเชื่อบุคคล</option>
+                                <option value="installment">ผ่อนสินค้า/จ่ายงวด</option>
+                                <option value="mortgage">บ้าน/ที่อยูอร์ย</option>
+                                <option value="auto_loan">เช่าซื้อรถยนต์</option>
+                                <option value="buy_now_pay_later">BNPL</option>
+                                <option value="other">อื่น ๆ</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label htmlFor={reviewFieldId("outstandingBalance")} className="block text-[10px] text-text-secondary font-semibold mb-1">
+                                ยอดค้างชำระทั้งหมด
+                              </label>
+                              <input
+                                id={reviewFieldId("outstandingBalance")}
+                                type="number"
+                                step="0.01"
+                                name="outstandingBalance"
+                                className="w-full rounded-[12px] border border-border bg-white p-2 text-xs"
+                                value={outstandingBalance}
+                                onChange={(e) => setOutstandingBalance(e.target.value)}
+                              />
+                            </div>
+                            <div>
+                              <label htmlFor={reviewFieldId("minimumPayment")} className="block text-[10px] text-text-secondary font-semibold mb-1">
+                                ยอดขั้นต่ำ
+                              </label>
+                              <input
+                                id={reviewFieldId("minimumPayment")}
+                                type="number"
+                                step="0.01"
+                                name="minimumPayment"
+                                className="w-full rounded-[12px] border border-border bg-white p-2 text-xs"
+                                value={minimumPayment}
+                                onChange={(e) => setMinimumPayment(e.target.value)}
+                              />
+                            </div>
+                          </div>
                           <div className="grid grid-cols-2 gap-3">
                             <div>
                               <label htmlFor={reviewFieldId("interestRateAnnual")} className="block text-[10px] text-text-secondary font-semibold mb-1">
@@ -1537,8 +1571,8 @@ export function ReviewForm({
                             />
                           </div>
                         </div>
-                      )}
                     </div>
+
 
                     <div className="border-t border-dashed border-border pt-3 mt-1">
                       <div id={reviewFieldId("debtActionTypeGroup")} className="block text-xs font-bold text-foreground mb-1">
@@ -1600,38 +1634,7 @@ export function ReviewForm({
                   <div className="flex flex-col gap-3 border-t border-border pt-4">
                     <h3 className="font-bold text-primary text-sm">ข้อมูลธุรกรรมการเงิน</h3>
 
-                    <div>
-                      <label htmlFor={reviewFieldId("merchant")} className="block text-xs text-text-secondary font-semibold mb-1">
-                        คำอธิบาย / รายละเอียดธุรกรรม
-                      </label>
-                      <input
-                        id={reviewFieldId("merchant")}
-                        type="text"
-                        name="merchant"
-                        className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
-                        value={merchant}
-                        onChange={(e) => setMerchant(e.target.value)}
-                        required
-                        placeholder="เช่น ค่าเดินทาง, ค่าอุปกรณ์คอมพิวเตอร์"
-                      />
-                    </div>
-
                     <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label htmlFor={reviewFieldId("totalPaid")} className="block text-xs text-text-secondary font-semibold mb-1">
-                          ยอดเงิน (บาท)
-                        </label>
-                        <input
-                          id={reviewFieldId("totalPaid")}
-                          type="number"
-                          step="0.01"
-                          name="totalPaid"
-                          className="w-full rounded-[12px] border border-border bg-white p-3 text-sm font-bold text-primary"
-                          value={totalPaid}
-                          onChange={(e) => setTotalPaid(e.target.value)}
-                          required
-                        />
-                      </div>
                       <div>
                         <label htmlFor={reviewFieldId("occurredAt")} className="block text-xs text-text-secondary font-semibold mb-1">
                           วันและเวลาที่ทำรายการ
@@ -1654,6 +1657,35 @@ export function ReviewForm({
                           wasInferred={occurredAtWasInferred}
                         />
                       </div>
+                      <div>
+                        <label htmlFor={reviewFieldId("totalPaid")} className="block text-xs text-text-secondary font-semibold mb-1">
+                          ยอดเงิน (บาท)
+                        </label>
+                        <input
+                          id={reviewFieldId("totalPaid")}
+                          type="number"
+                          step="0.01"
+                          name="totalPaid"
+                          className="w-full rounded-[12px] border border-border bg-white p-3 text-sm font-bold text-primary"
+                          value={totalPaid}
+                          onChange={(e) => setTotalPaid(e.target.value)}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label htmlFor={reviewFieldId("note")} className="block text-xs text-text-secondary font-semibold mb-1">
+                        บันทึกเพิ่มเติม
+                      </label>
+                      <textarea
+                        id={reviewFieldId("note")}
+                        name="note"
+                        className="w-full rounded-[12px] border border-border bg-white p-3 text-sm min-h-[80px]"
+                        value={note}
+                        onChange={(e) => setNote(e.target.value)}
+                        placeholder="รายละเอียดเพิ่มเติม..."
+                      />
                     </div>
 
                     <div>
@@ -1679,26 +1711,40 @@ export function ReviewForm({
                         onClick={() => setIsDetailsExpanded(!isDetailsExpanded)}
                         className="flex w-full items-center justify-between p-3 text-left"
                       >
-                        <span className="text-xs font-bold text-text-secondary">รายละเอียดเพิ่มเติม (ช่องทางชำระเงิน)</span>
+                        <span className="text-xs font-bold text-text-secondary">รายละเอียดเพิ่มเติม (รายการ, ช่องทางชำระเงิน)</span>
                         {isDetailsExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                       </button>
 
-                      {isDetailsExpanded && (
-                        <div className="p-3 pt-0">
-                          <label htmlFor={reviewFieldId("paymentMethod")} className="block text-[10px] text-text-secondary font-semibold mb-1">
-                            ช่องทางการทำรายการ
-                          </label>
-                          <input
-                            id={reviewFieldId("paymentMethod")}
-                            type="text"
-                            name="paymentMethod"
-                            className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
-                            value={paymentMethod}
-                            onChange={(e) => setPaymentMethod(e.target.value)}
-                            placeholder="เช่น เงินสด, บัตรเครดิต"
-                          />
+                      <div className={`flex flex-col gap-3 p-3 pt-0 ${isDetailsExpanded ? "" : "hidden"}`}>
+                          <div>
+                            <label htmlFor={reviewFieldId("merchant")} className="block text-[10px] text-text-secondary font-semibold mb-1">
+                              คำอธิบาย / รายละเอียดธุรกรรม
+                            </label>
+                            <input
+                              id={reviewFieldId("merchant")}
+                              type="text"
+                              name="merchant"
+                              className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
+                              value={merchant}
+                              onChange={(e) => setMerchant(e.target.value)}
+                              placeholder="เช่น ค่าเดินทาง, ค่าอุปกรณ์คอมพิวเตอร์"
+                            />
+                          </div>
+                          <div>
+                            <label htmlFor={reviewFieldId("paymentMethod")} className="block text-[10px] text-text-secondary font-semibold mb-1">
+                              ช่องทางการทำรายการ
+                            </label>
+                            <input
+                              id={reviewFieldId("paymentMethod")}
+                              type="text"
+                              name="paymentMethod"
+                              className="w-full rounded-[12px] border border-border bg-white p-3 text-sm"
+                              value={paymentMethod}
+                              onChange={(e) => setPaymentMethod(e.target.value)}
+                              placeholder="เช่น เงินสด, บัตรเครดิต"
+                            />
+                          </div>
                         </div>
-                      )}
                     </div>
                   </div>
                 )}
