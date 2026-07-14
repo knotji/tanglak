@@ -1,8 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getMockState } from "@/lib/data/mock-store";
-import { createReconciliationCandidate } from "@/lib/reconciliation/reconciliation-candidates-repository";
+import {
+  createReconciliationCandidate,
+  findActiveReconciliationCandidateByIdempotencyKey,
+} from "@/lib/reconciliation/reconciliation-candidates-repository";
 import { hasSnapshotDrifted, invalidateStaleReconciliationCandidates } from "@/lib/reconciliation/reconciliation-invalidation";
 import type { ReconciliationCandidateDraft } from "@/lib/reconciliation/reconciliation-types";
+import type { ReconciliationCandidateStatus } from "@/lib/reconciliation/reconciliation-types";
 import type { Transaction } from "@/types/domain";
 
 vi.mock("@/lib/auth/session", async (importOriginal) => {
@@ -103,5 +107,81 @@ describe("invalidateStaleReconciliationCandidates", () => {
     await invalidateStaleReconciliationCandidates(USER_ID, "tx-a", edited);
 
     expect(edited).toEqual(editedSnapshotBefore);
+  });
+
+  it("invalidates proposed candidates when source evidence changes", async () => {
+    const { record } = await createReconciliationCandidate({
+      draft: draft(),
+      policyOutcome: "auto_match_safe",
+      requiresReview: false,
+    });
+
+    const invalidated = await invalidateStaleReconciliationCandidates(USER_ID, "tx-a", undefined);
+
+    expect(record.status).toBe("proposed");
+    expect(invalidated).toHaveLength(1);
+    expect(invalidated[0].id).toBe(record.id);
+    expect(invalidated[0].status).toBe("invalidated");
+  });
+
+  it("invalidates needs_review candidates when source evidence changes", async () => {
+    const { record } = await createReconciliationCandidate({
+      draft: draft(),
+      policyOutcome: "require_confirmation",
+      requiresReview: true,
+    });
+
+    const invalidated = await invalidateStaleReconciliationCandidates(USER_ID, "tx-a", undefined);
+
+    expect(record.status).toBe("needs_review");
+    expect(invalidated).toHaveLength(1);
+    expect(invalidated[0].id).toBe(record.id);
+    expect(invalidated[0].status).toBe("invalidated");
+  });
+
+  it.each<ReconciliationCandidateStatus>(["confirmed", "rejected", "invalidated"])(
+    "preserves %s candidates when source evidence changes",
+    async (status) => {
+      const { record } = await createReconciliationCandidate({
+        draft: draft(),
+        policyOutcome: "require_confirmation",
+        requiresReview: true,
+      });
+      getMockState().reconciliationCandidates[0] = {
+        ...getMockState().reconciliationCandidates[0],
+        status,
+        invalidatedAt: status === "invalidated" ? "2026-07-10T00:00:00.000Z" : undefined,
+        invalidationReason: status === "invalidated" ? "transaction_modified" : undefined,
+      };
+
+      const invalidated = await invalidateStaleReconciliationCandidates(USER_ID, "tx-a", undefined);
+
+      expect(invalidated).toHaveLength(0);
+      expect(getMockState().reconciliationCandidates).toHaveLength(1);
+      expect(getMockState().reconciliationCandidates[0].id).toBe(record.id);
+      expect(getMockState().reconciliationCandidates[0].status).toBe(status);
+    },
+  );
+
+  it("rescan after invalidation can still create exactly one fresh active candidate", async () => {
+    const original = await createReconciliationCandidate({
+      draft: draft(),
+      policyOutcome: "require_confirmation",
+      requiresReview: true,
+    });
+
+    await invalidateStaleReconciliationCandidates(USER_ID, "tx-a", undefined);
+
+    const rescanned = await Promise.all([
+      createReconciliationCandidate({ draft: draft({ confidence: "high" }), policyOutcome: "suggest_with_notice", requiresReview: true }),
+      createReconciliationCandidate({ draft: draft({ confidence: "high" }), policyOutcome: "suggest_with_notice", requiresReview: true }),
+    ]);
+    const created = rescanned.filter((result) => result.created);
+    const active = await findActiveReconciliationCandidateByIdempotencyKey(USER_ID, original.record.idempotencyKey);
+
+    expect(created).toHaveLength(1);
+    expect(active?.id).toBe(created[0].record.id);
+    expect(getMockState().reconciliationCandidates.filter((row) => row.status !== "invalidated")).toHaveLength(1);
+    expect(getMockState().reconciliationCandidates.filter((row) => row.status === "invalidated")).toHaveLength(1);
   });
 });

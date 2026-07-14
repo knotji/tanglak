@@ -98,7 +98,7 @@ create table public.reconciliation_candidates (
   invalidation_reason text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint reconciliation_candidates_source_ids_nonempty check (array_length(source_transaction_ids, 1) > 0)
+  constraint reconciliation_candidates_source_ids_nonempty check (cardinality(source_transaction_ids) > 0)
 );
 
 -- Idempotency, DB-enforced (in addition to the application-level

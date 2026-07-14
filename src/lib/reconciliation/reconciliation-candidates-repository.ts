@@ -50,6 +50,12 @@ function assertOwner(userId: string, ownerId: string) {
 const RECONCILIATION_CANDIDATE_COLUMNS =
   "id, user_id, candidate_type, status, confidence, policy_outcome, requires_review, source_transaction_ids, related_debt_ids, evidence, evidence_snapshots, idempotency_key, schema_version, invalidated_at, invalidation_reason, created_at, updated_at";
 
+const INVALIDATABLE_RECONCILIATION_STATUSES: readonly ReconciliationCandidateStatus[] = ["proposed", "needs_review"];
+
+function isInvalidatableReconciliationStatus(status: ReconciliationCandidateStatus) {
+  return INVALIDATABLE_RECONCILIATION_STATUSES.includes(status);
+}
+
 type ReconciliationCandidateRow = {
   id: string;
   user_id: string;
@@ -301,14 +307,17 @@ export async function listReconciliationCandidates(
   return (data ?? []).map((row) => mapReconciliationCandidateRow(row as ReconciliationCandidateRow));
 }
 
-/** Every non-invalidated candidate referencing a given source transaction id -- the lookup source-change invalidation needs. */
+/** Every non-terminal candidate referencing a given source transaction id -- the lookup source-change invalidation needs. */
 export async function listReconciliationCandidatesByTransactionId(
   userId: string,
   transactionId: string,
 ): Promise<ReconciliationCandidateRecord[]> {
   if (isMockAuthEnabled()) {
     return getMockState().reconciliationCandidates.filter(
-      (item) => item.userId === userId && item.status !== "invalidated" && item.sourceTransactionIds.includes(transactionId),
+      (item) =>
+        item.userId === userId &&
+        isInvalidatableReconciliationStatus(item.status) &&
+        item.sourceTransactionIds.includes(transactionId),
     );
   }
   const supabase = await createSupabaseServerClient();
@@ -316,7 +325,7 @@ export async function listReconciliationCandidatesByTransactionId(
     .from("reconciliation_candidates")
     .select(RECONCILIATION_CANDIDATE_COLUMNS)
     .eq("user_id", userId)
-    .neq("status", "invalidated")
+    .in("status", INVALIDATABLE_RECONCILIATION_STATUSES)
     .contains("source_transaction_ids", [transactionId]);
   if (error) throw new Error(error.message);
   return (data ?? []).map((row) => mapReconciliationCandidateRow(row as ReconciliationCandidateRow));
@@ -337,7 +346,9 @@ export async function invalidateReconciliationCandidate(
     const index = state.reconciliationCandidates.findIndex((item) => item.id === input.id);
     if (index < 0) throw new Error("Reconciliation candidate not found");
     assertOwner(input.userId, state.reconciliationCandidates[index].userId);
-    if (state.reconciliationCandidates[index].status === "invalidated") return state.reconciliationCandidates[index];
+    if (!isInvalidatableReconciliationStatus(state.reconciliationCandidates[index].status)) {
+      return state.reconciliationCandidates[index];
+    }
     state.reconciliationCandidates[index] = {
       ...state.reconciliationCandidates[index],
       status: "invalidated",
@@ -357,7 +368,7 @@ export async function invalidateReconciliationCandidate(
   if (fetchError) throw new Error(fetchError.message);
   if (!existing) throw new Error("Reconciliation candidate not found");
   assertOwner(input.userId, existing.user_id);
-  if (existing.status === "invalidated") {
+  if (!isInvalidatableReconciliationStatus(existing.status)) {
     const current = await findReconciliationCandidateById(input.userId, input.id);
     if (current) return current;
   }

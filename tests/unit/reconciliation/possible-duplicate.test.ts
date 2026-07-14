@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeEach } from "vitest";
+import { generateOwnAccountTransferCandidates } from "@/lib/reconciliation/own-account-transfer";
 import { generatePossibleDuplicateCandidates } from "@/lib/reconciliation/possible-duplicate";
 import { OTHER_USER_ID, USER_ID, resetReconciliationFixtureIds, tx } from "./fixtures";
 
@@ -143,5 +144,105 @@ describe("generatePossibleDuplicateCandidates", () => {
     });
 
     expect(generatePossibleDuplicateCandidates(USER_ID, [a, b])).toHaveLength(0);
+  });
+
+  it("does not emit possible_duplicate for an expense + income same movement", () => {
+    const out = tx({
+      type: "expense",
+      amountSatang: 100_000,
+      occurredAt: "2026-07-10T10:00:00+07:00",
+      referenceNumber: "TRANSFER-1",
+      source: "transfer_slip",
+    });
+    const inc = tx({
+      type: "income",
+      amountSatang: 100_000,
+      occurredAt: "2026-07-10T10:02:00+07:00",
+      referenceNumber: "TRANSFER-1",
+    });
+
+    expect(generatePossibleDuplicateCandidates(USER_ID, [out, inc])).toHaveLength(0);
+  });
+
+  it("still lets the own-account-transfer engine produce the expense + income candidate", () => {
+    const out = tx({
+      type: "expense",
+      amountSatang: 100_000,
+      occurredAt: "2026-07-10T10:00:00+07:00",
+      referenceNumber: "TRANSFER-2",
+      source: "transfer_slip",
+    });
+    const inc = tx({
+      type: "income",
+      amountSatang: 100_000,
+      occurredAt: "2026-07-10T10:02:00+07:00",
+      referenceNumber: "TRANSFER-2",
+    });
+
+    const [candidate] = generateOwnAccountTransferCandidates(USER_ID, [out, inc]);
+
+    expect(candidate.candidateType).toBe("own_account_transfer");
+    expect(candidate.sourceTransactionIds).toEqual(expect.arrayContaining([out.id, inc.id]));
+  });
+
+  it("keeps expense + expense duplicate detection intact", () => {
+    const first = tx({
+      type: "expense",
+      amountSatang: 45_000,
+      merchant: "Grab",
+      referenceNumber: "EXP-DUP",
+      occurredAt: "2026-07-10T10:00:00+07:00",
+    });
+    const second = tx({
+      type: "expense",
+      amountSatang: 45_000,
+      merchant: "Grab",
+      referenceNumber: "EXP-DUP",
+      occurredAt: "2026-07-10T10:02:00+07:00",
+    });
+
+    const [candidate] = generatePossibleDuplicateCandidates(USER_ID, [first, second]);
+
+    expect(candidate.candidateType).toBe("possible_duplicate");
+    expect(candidate.evidence.map((e) => e.reasonCode)).toContain("reference_match");
+  });
+
+  it("keeps income + income duplicate detection intact", () => {
+    const first = tx({
+      type: "income",
+      amountSatang: 75_000,
+      merchant: "Payroll",
+      referenceNumber: "INC-DUP",
+      occurredAt: "2026-07-10T10:00:00+07:00",
+    });
+    const second = tx({
+      type: "income",
+      amountSatang: 75_000,
+      merchant: "Payroll",
+      referenceNumber: "INC-DUP",
+      occurredAt: "2026-07-10T10:02:00+07:00",
+    });
+
+    const [candidate] = generatePossibleDuplicateCandidates(USER_ID, [first, second]);
+
+    expect(candidate.candidateType).toBe("possible_duplicate");
+    expect(candidate.evidence.map((e) => e.reasonCode)).toContain("reference_match");
+  });
+
+  it("does not emit possible_duplicate for unrelated opposite-direction transactions", () => {
+    const expense = tx({
+      type: "expense",
+      amountSatang: 20_000,
+      merchant: "Coffee",
+      occurredAt: "2026-07-10T10:00:00+07:00",
+    });
+    const income = tx({
+      type: "income",
+      amountSatang: 99_000,
+      merchant: "Refund from friend",
+      occurredAt: "2026-07-10T10:02:00+07:00",
+    });
+
+    expect(generatePossibleDuplicateCandidates(USER_ID, [expense, income])).toHaveLength(0);
   });
 });

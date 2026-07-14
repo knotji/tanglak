@@ -84,6 +84,7 @@ export function generatePossibleDuplicateCandidates(userId: string, transactions
       const a = ownTransactions[i];
       const b = ownTransactions[j];
       if (a.id === b.id) continue; // no self-match
+      if (a.type !== b.type) continue; // opposite-direction pairs belong to transfer/refund engines, not duplicate detection
 
       const { score, evidence } = scorePair(a, b);
       const confidence = confidenceTierFromScore(score);

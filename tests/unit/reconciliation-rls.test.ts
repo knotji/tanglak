@@ -44,4 +44,11 @@ describe("reconciliation_candidates RLS migration", () => {
   it("enforces idempotency at the database level with a unique index", () => {
     expect(migration).toMatch(/create unique index .*idempotency_key/);
   });
+
+  it("rejects empty source transaction id arrays with cardinality, not nullable array_length", () => {
+    expect(migration).toContain(
+      "constraint reconciliation_candidates_source_ids_nonempty check (cardinality(source_transaction_ids) > 0)",
+    );
+    expect(migration).not.toContain("array_length(source_transaction_ids, 1) > 0");
+  });
 });
