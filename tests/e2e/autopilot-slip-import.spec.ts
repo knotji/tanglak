@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { acquirePipelineLock } from "./helpers/pipeline-lock";
+import { acquirePipelineLock, PIPELINE_LOCKED_TEST_TIMEOUT_MS } from "./helpers/pipeline-lock";
 
 const email = `test-autopilot-${Date.now()}@example.test`;
 const password = "password123";
@@ -22,6 +22,8 @@ async function signUpAndOnboard(page: import("@playwright/test").Page) {
 }
 
 test.describe.serial("AI Financial Autopilot -- Slip Import vertical slice", () => {
+  test.describe.configure({ timeout: PIPELINE_LOCKED_TEST_TIMEOUT_MS });
+
   let releasePipelineLock: (() => Promise<void>) | undefined;
 
   test.beforeEach(async ({}, testInfo) => {

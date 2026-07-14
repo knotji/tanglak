@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { acquirePipelineLock } from "./helpers/pipeline-lock";
+import { acquirePipelineLock, PIPELINE_LOCKED_TEST_TIMEOUT_MS } from "./helpers/pipeline-lock";
 
 const email = `test-${Date.now()}@example.test`;
 const password = "password123";
@@ -23,10 +23,12 @@ async function loginAndCompleteOnboarding(page: import("@playwright/test").Page)
 }
 
 test.describe.serial("Gemini Document Upload & Review Flow", () => {
+  test.describe.configure({ timeout: PIPELINE_LOCKED_TEST_TIMEOUT_MS });
+
   let releasePipelineLock: (() => Promise<void>) | undefined;
 
-  test.beforeEach(async () => {
-    releasePipelineLock = await acquirePipelineLock();
+  test.beforeEach(async ({}, testInfo) => {
+    releasePipelineLock = await acquirePipelineLock({ label: testInfo.title });
   });
 
   test.afterEach(async () => {

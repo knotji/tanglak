@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { buildCustomStatementPdf } from "../fixtures/pdf-statements";
-import { acquirePipelineLock } from "./helpers/pipeline-lock";
+import { acquirePipelineLock, PIPELINE_LOCKED_TEST_TIMEOUT_MS } from "./helpers/pipeline-lock";
 
 const email = `test-import-selection-${Date.now()}@example.test`;
 const password = "password123";
@@ -29,10 +29,14 @@ async function loginAndCompleteOnboarding(page: import("@playwright/test").Page)
 }
 
 test.describe.serial("History Statement Import Selection E2E", () => {
+  test.describe.configure({ timeout: PIPELINE_LOCKED_TEST_TIMEOUT_MS });
+
   let releasePipelineLock: (() => Promise<void>) | undefined;
 
   test.beforeAll(async () => {
-    releasePipelineLock = await acquirePipelineLock();
+    releasePipelineLock = await acquirePipelineLock({
+      label: "History Statement Import Selection E2E",
+    });
   });
 
   test.afterAll(async () => {

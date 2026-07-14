@@ -1,5 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
-import { acquirePipelineLock } from "./helpers/pipeline-lock";
+import {
+  acquirePipelineLock,
+  PIPELINE_LOCKED_TEST_TIMEOUT_MS,
+  PIPELINE_LOCK_TIMEOUT_MS,
+} from "./helpers/pipeline-lock";
 
 const password = "password123";
 const forbiddenFinancialText = /-\u0e3f0|\+\u0e3f0|\u0e3f-0|NaN|Infinity|\u221e|Invalid Date/;
@@ -45,12 +49,14 @@ async function expectNoHorizontalOverflow(page: Page, width: number) {
 }
 
 test.describe.serial("post-merge production verification surface", () => {
+  test.describe.configure({ timeout: PIPELINE_LOCKED_TEST_TIMEOUT_MS });
+
   let releasePipelineLock: (() => Promise<void>) | undefined;
 
   test.beforeAll(async () => {
     releasePipelineLock = await acquirePipelineLock({
       label: "autopilot-post-merge-verification",
-      timeoutMs: 180_000,
+      timeoutMs: PIPELINE_LOCK_TIMEOUT_MS,
     });
   });
 

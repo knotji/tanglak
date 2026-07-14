@@ -5,6 +5,11 @@ import { tmpdir } from "node:os";
 const LOCK_DIR = join(tmpdir(), "tanglak-e2e-pipeline.lock");
 const STALE_AFTER_MS = 120_000;
 const DEFAULT_TIMEOUT_MS = STALE_AFTER_MS + 60_000;
+const DEFAULT_TEST_BODY_TIMEOUT_MS = 30_000;
+
+export const PIPELINE_LOCK_TIMEOUT_MS = DEFAULT_TIMEOUT_MS;
+export const PIPELINE_LOCKED_TEST_TIMEOUT_MS =
+  PIPELINE_LOCK_TIMEOUT_MS + DEFAULT_TEST_BODY_TIMEOUT_MS;
 
 type PipelineLockOptions = {
   label?: string;
