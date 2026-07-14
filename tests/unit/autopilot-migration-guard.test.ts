@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { handlePostgrestError } from "@/lib/supabase/error-guards";
 
 describe("handlePostgrestError", () => {
-  it("detects missing category_source and returns actionable message", () => {
+  it("detects missing category_source on transactions table and returns actionable message", () => {
     const error = {
       code: "42703",
       message: 'column "category_source" of relation "transactions" does not exist',
@@ -13,7 +13,7 @@ describe("handlePostgrestError", () => {
     );
   });
 
-  it("detects missing category_confidence and returns actionable message", () => {
+  it("detects missing category_confidence on transactions table and returns actionable message", () => {
     const error = {
       code: "42703",
       message: 'column "category_confidence" of relation "transactions" does not exist',
@@ -24,13 +24,22 @@ describe("handlePostgrestError", () => {
     );
   });
 
-  it("does not rewrite unrelated 42703 errors", () => {
+  it("does not rewrite unrelated 42703 errors on transactions table", () => {
     const error = {
       code: "42703",
       message: 'column "unknown_column" of relation "transactions" does not exist',
     };
 
     expect(() => handlePostgrestError(error)).toThrow('column "unknown_column" of relation "transactions" does not exist');
+  });
+
+  it("does not rewrite 42703 errors for other relations", () => {
+    const error = {
+      code: "42703",
+      message: 'column "category_source" of relation "other_table" does not exist',
+    };
+
+    expect(() => handlePostgrestError(error)).toThrow('column "category_source" of relation "other_table" does not exist');
   });
 
   it("does not rewrite unrelated database errors (e.g., 23505 unique violation)", () => {

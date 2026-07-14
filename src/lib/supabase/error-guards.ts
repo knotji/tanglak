@@ -1,13 +1,16 @@
 /**
  * Guard for PostgreSQL undefined-column errors (42703) specifically involving
- * autopilot-related columns. This handles the case where the production database
- * is missing the 202607130001_autopilot_action_audit_log.sql migration.
+ * autopilot-related columns on the transactions table. This handles the case
+ * where the production database is missing the
+ * 202607130001_autopilot_action_audit_log.sql migration.
  */
 export function handlePostgrestError(error: { code: string; message: string }): never {
-  if (
-    error.code === "42703" &&
-    (error.message.includes("category_source") || error.message.includes("category_confidence"))
-  ) {
+  const isUndefinedColumn = error.code === "42703";
+  const isTransactionTable = error.message.includes('"transactions"');
+  const isAutopilotColumn =
+    error.message.includes("category_source") || error.message.includes("category_confidence");
+
+  if (isUndefinedColumn && isTransactionTable && isAutopilotColumn) {
     throw new Error(
       "The Autopilot database migration is missing. Please apply migration 202607130001_autopilot_action_audit_log.sql.",
     );
