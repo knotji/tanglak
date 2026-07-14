@@ -8,7 +8,7 @@ import { MoneyAmount } from "@/components/MoneyAmount";
 import { CompactTransactionRow } from "@/components/finance/CompactTransactionRow";
 import { requireCompletedOnboarding } from "@/lib/auth/onboarding";
 import { requireUser } from "@/lib/auth/session";
-import { listDebts } from "@/lib/data/finance-repository";
+import { listDebts, countPendingAttentionItems } from "@/lib/data/finance-repository";
 import { getMonthlyFinanceSnapshot } from "@/lib/finance/monthly-snapshot";
 import { determineNextAction } from "@/lib/finance/next-action";
 import { timePage } from "@/lib/observability/timing";
@@ -30,12 +30,13 @@ export default async function TodayPage() {
     const user = await requireUser();
     const todayKey = getBangkokTodayString();
     const month = getBangkokMonthString();
-    const [, snapshot, debts] = await Promise.all([
+    const [, snapshot, debts, pendingAttentionCount] = await Promise.all([
       requireCompletedOnboarding(user),
       getMonthlyFinanceSnapshot(user.id, month),
       listDebts(user.id),
+      countPendingAttentionItems(user.id),
     ]);
-    const { transactions, budgetSummary, totals } = snapshot;
+    const { transactions, budgetSummary } = snapshot;
 
     // Bangkok-local date comparison, not a naive string prefix -- see
     // getBangkokDateOf in date.ts.
@@ -59,7 +60,7 @@ export default async function TodayPage() {
       unbudgetedCategoryLabel: unbudgetedCategory?.label,
       nearLimitCategoryLabel: nearLimitCategory?.label,
       hasAnyTransaction: transactions.length > 0,
-      unreviewedCount: totals.unreviewedCount,
+      unreviewedCount: pendingAttentionCount,
     });
 
     const { endDate } = getBangkokMonthRange(month);
@@ -90,8 +91,8 @@ export default async function TodayPage() {
             ) : (
               <CompactStat label="เหลืออีก" valueLabel={`${daysRemaining} วัน`} tone="default" />
             )}
-            {totals.unreviewedCount > 0 ? (
-              <CompactStat label="รอตรวจสอบ" valueLabel={`${totals.unreviewedCount} รายการ`} tone="debt" />
+            {pendingAttentionCount > 0 ? (
+              <CompactStat label="รอตรวจสอบ" valueLabel={`${pendingAttentionCount} รายการ`} tone="debt" />
             ) : dailyAllowance !== null ? (
               <CompactStat label="เหลืออีก" valueLabel={`${daysRemaining} วัน`} tone="default" />
             ) : (
