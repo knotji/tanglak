@@ -6,7 +6,7 @@ import {
   buildNoTextLayerPdf,
   buildUnsupportedLayoutPdf,
 } from "../fixtures/pdf-statements";
-import { acquirePipelineLock } from "./helpers/pipeline-lock";
+import { acquirePipelineLock, PIPELINE_LOCKED_TEST_TIMEOUT_MS } from "./helpers/pipeline-lock";
 
 async function login(page: import("@playwright/test").Page, email: string, password: string) {
   await page.goto("/auth");
@@ -40,10 +40,14 @@ async function uploadPdf(page: import("@playwright/test").Page, buffer: Buffer, 
 }
 
 test.describe.serial("PDF statement import — deterministic parsing edge cases", () => {
+  test.describe.configure({ timeout: PIPELINE_LOCKED_TEST_TIMEOUT_MS });
+
   let releasePipelineLock: (() => Promise<void>) | undefined;
 
   test.beforeAll(async () => {
-    releasePipelineLock = await acquirePipelineLock();
+    releasePipelineLock = await acquirePipelineLock({
+      label: "PDF statement import deterministic parsing edge cases",
+    });
   });
 
   test.afterAll(async () => {

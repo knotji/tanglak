@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { acquirePipelineLock } from "./helpers/pipeline-lock";
+import { acquirePipelineLock, PIPELINE_LOCKED_TEST_TIMEOUT_MS } from "./helpers/pipeline-lock";
 
 const email = `test-${Date.now()}@example.test`;
 const password = "password123";
@@ -23,10 +23,12 @@ async function loginAndCompleteOnboarding(page: import("@playwright/test").Page)
 }
 
 test.describe.serial("Gemini Document Upload & Review Flow", () => {
+  test.describe.configure({ timeout: PIPELINE_LOCKED_TEST_TIMEOUT_MS });
+
   let releasePipelineLock: (() => Promise<void>) | undefined;
 
-  test.beforeEach(async () => {
-    releasePipelineLock = await acquirePipelineLock();
+  test.beforeEach(async ({}, testInfo) => {
+    releasePipelineLock = await acquirePipelineLock({ label: testInfo.title });
   });
 
   test.afterEach(async () => {
@@ -346,6 +348,13 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
     await page.getByRole("button", { name: "เพิ่มหนี้", exact: true }).click();
     await expect(page.getByText("บัตรเครดิต ทดสอบวันที่")).toBeVisible();
 
+    await page.getByRole("button", { name: "+ เพิ่มหนี้" }).click();
+    await page.getByLabel("ชื่อหนี้").fill("บัตรเครดิต ไม่ได้เลือก");
+    await page.getByLabel("ยอดเดือนนี้").fill("700");
+    await page.getByLabel("ครบกำหนด", { exact: true }).fill("2026-08-10");
+    await page.getByRole("button", { name: "เพิ่มหนี้", exact: true }).click();
+    await expect(page.getByText("บัตรเครดิต ไม่ได้เลือก")).toBeVisible();
+
     await page.goto("/upload");
     const fileChooserPromise = page.waitForEvent("filechooser");
     await page.getByRole("button", { name: "สลิปชำระหนี้หรือบัตรเครดิต" }).click();
@@ -363,6 +372,7 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
     // The mock extraction is auto-detected as a possible debt payment, so
     // "ชำระหนี้สิน" is already selected; link it to the debt just created.
     await expect(page.locator('input[name="type"][value="debt_payment"]')).toBeChecked();
+    await expect(page.getByRole("button", { name: "บันทึกเป็นการชำระหนี้" })).toBeVisible();
     const debtSelect = page.getByLabel("เชื่อมต่อกับหนี้สินคงค้าง");
     const debtOptionValue = await debtSelect
       .locator("option", { hasText: "บัตรเครดิต ทดสอบวันที่" })
@@ -377,8 +387,10 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
     // debt payment or transaction is written, exactly like every other
     // confirmation path (not bypassed via the debt_payment branch).
     await occurredAtInput.fill("");
+    await expect(page.getByRole("button", { name: "บันทึกเป็นการชำระหนี้" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "ยืนยันความถูกต้อง" })).toHaveCount(0);
     await expect(async () => {
-      await page.getByRole("button", { name: "ยืนยันความถูกต้อง" }).click();
+      await page.getByRole("button", { name: "บันทึกเป็นการชำระหนี้" }).click();
       await expect(page.getByText("กรุณาระบุวันที่และเวลาของรายการ")).toBeVisible({ timeout: 2000 });
     }).toPass({ timeout: 15000 });
     await expect(page).toHaveURL(reviewUrl);
@@ -401,11 +413,19 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
     // Enter a valid Bangkok-local date/time manually and confirm -- it must
     // succeed and persist, not the current server time.
     await page.locator("input[name='occurredAt']").fill("2026-07-20T14:15");
-    await page.getByRole("button", { name: "ยืนยันความถูกต้อง" }).click();
+    await expect(page.getByRole("button", { name: "บันทึกเป็นการชำระหนี้" })).toBeVisible();
+    await page.getByRole("button", { name: "บันทึกเป็นการชำระหนี้" }).click();
     await expect(page).toHaveURL(/\/today/);
 
+    await page.goto("/transactions");
+    const debtPaymentRow = page.locator("div", { hasText: "KTC" }).filter({ hasText: "จ่ายหนี้" }).filter({ hasText: "฿1,500" }).first();
+    await expect(debtPaymentRow).toBeVisible();
+
     await page.goto("/debts");
-    await expect(page.getByText("฿1,500 จาก ฿1,000")).toBeVisible();
+    const selectedDebtCard = page.locator("article", { hasText: "บัตรเครดิต ทดสอบวันที่" });
+    await expect(selectedDebtCard.getByText("฿1,500 จาก ฿1,000")).toBeVisible();
+    const unselectedDebtCard = page.locator("article", { hasText: "บัตรเครดิต ไม่ได้เลือก" });
+    await expect(unselectedDebtCard.getByText("฿0 จาก ฿700")).toBeVisible();
   });
 
   test("Gemini failure and retry fallback", async ({ page }) => {

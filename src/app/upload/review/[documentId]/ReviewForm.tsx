@@ -108,6 +108,36 @@ const OCCURRED_AT_UNCLEAR_FIELD = "transaction.occurredAt";
 const OCCURRED_AT_NEEDS_REVIEW_TITLE_TH = "อ่านวันที่และเวลาไม่ชัด";
 const OCCURRED_AT_NEEDS_REVIEW_BODY_TH = "กรุณาตรวจสอบหรือกรอกข้อมูลก่อนบันทึก";
 
+type TransferReviewMode = "expense" | "transfer" | "debt_payment";
+
+const TRANSFER_REVIEW_MODE_OPTIONS: Array<{
+  value: TransferReviewMode;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "expense",
+    label: "ใช้จ่าย (Expense)",
+    description: "ซื้อสินค้าหรือบริการ และนับเป็นรายจ่าย",
+  },
+  {
+    value: "transfer",
+    label: "โอนบัญชีตนเอง",
+    description: "เงินย้ายระหว่างบัญชีของคุณ ไม่นับเป็นรายจ่าย",
+  },
+  {
+    value: "debt_payment",
+    label: "ชำระหนี้",
+    description: "บันทึกเป็นการชำระหนี้และผูกกับบัญชีหนี้",
+  },
+];
+
+const TRANSFER_REVIEW_CTA_LABELS: Record<TransferReviewMode, string> = {
+  expense: "บันทึกเป็นรายจ่าย",
+  transfer: "บันทึกเป็นเงินโอน",
+  debt_payment: "บันทึกเป็นการชำระหนี้",
+};
+
 /**
  * Final-confirmation validation for the transaction date/time field,
  * mirroring the server-side check in confirmDocumentAction. debt_statement
@@ -289,7 +319,7 @@ export function ReviewForm({
   const [bank, setBank] = useState(initialTx.bank || "");
   const [senderLastFour, setSenderLastFour] = useState(initialTx.accountLastFour || "");
   const [destLastFour, setDestLastFour] = useState(initialTx.destinationAccountLastFour || "");
-  const [transferType, setTransferType] = useState<string>(
+  const [transferType, setTransferType] = useState<TransferReviewMode>(
     initialTx.possibleDebtPayment ? "debt_payment" : initialTx.possibleOwnAccountTransfer ? "transfer" : "expense"
   );
   const [linkedDebtId, setLinkedDebtId] = useState<string>("");
@@ -989,6 +1019,41 @@ export function ReviewForm({
                 {/* Form Fields: TRANSFER SLIP */}
                 {docType === "transfer_slip" && (
                   <div className="flex flex-col gap-3 border-t border-border pt-4">
+                    <section className="rounded-[18px] border border-primary/20 bg-primary-soft/40 p-3" aria-labelledby={reviewFieldId("transferTypeGroup")}>
+                      <div id={reviewFieldId("transferTypeGroup")} className="text-sm font-bold text-foreground">
+                        รายการนี้เป็นแบบไหน?
+                      </div>
+                      <p className="mt-1 text-xs text-text-secondary">เลือกความหมายทางการเงินของสลิปนี้ก่อนตรวจรายละเอียด</p>
+                      <div role="radiogroup" aria-labelledby={reviewFieldId("transferTypeGroup")} className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        {TRANSFER_REVIEW_MODE_OPTIONS.map((option) => {
+                          const selected = transferType === option.value;
+
+                          return (
+                            <label
+                              key={option.value}
+                              className={`relative flex min-h-24 cursor-pointer flex-col rounded-[16px] border p-3 text-left transition ${
+                                selected ? "border-primary bg-white shadow-md ring-2 ring-primary/20" : "border-border bg-white/80 hover:border-primary/40"
+                              }`}
+                            >
+                              <input
+                                type="radio"
+                                name="type"
+                                value={option.value}
+                                checked={selected}
+                                onChange={() => setTransferType(option.value)}
+                                className="sr-only"
+                              />
+                              <span className="text-sm font-bold text-foreground">{option.label}</span>
+                              <span className="mt-1 text-xs leading-5 text-text-secondary">{option.description}</span>
+                              {selected ? (
+                                <span className="mt-2 w-fit rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold text-white">เลือกแล้ว</span>
+                              ) : null}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </section>
+
                     <h3 className="font-bold text-primary text-sm">ข้อมูลสลิปการโอนเงิน</h3>
 
                     <div className="grid grid-cols-2 gap-3">
@@ -1102,47 +1167,6 @@ export function ReviewForm({
                           onChange={(e) => setDestLastFour(e.target.value)}
                           maxLength={4}
                         />
-                      </div>
-                    </div>
-
-                    <div className="border-t border-dashed border-border pt-3 mt-1">
-                      <div id={reviewFieldId("transferTypeGroup")} className="block text-xs font-bold text-foreground mb-1">
-                        การจัดกลุ่มประเภทการทำรายการโอน
-                      </div>
-                      <div role="radiogroup" aria-labelledby={reviewFieldId("transferTypeGroup")} className="grid grid-cols-3 gap-2">
-                        <label className="flex items-center justify-center p-2 rounded-[12px] border border-border bg-white text-xs font-bold cursor-pointer [&:has(input:checked)]:border-primary [&:has(input:checked)]:bg-primary-soft text-foreground">
-                          <input
-                            type="radio"
-                            name="type"
-                            value="expense"
-                            checked={transferType === "expense"}
-                            onChange={() => setTransferType("expense")}
-                            className="hidden"
-                          />
-                          ใช้จ่าย (Expense)
-                        </label>
-                        <label className="flex items-center justify-center p-2 rounded-[12px] border border-border bg-white text-xs font-bold cursor-pointer [&:has(input:checked)]:border-primary [&:has(input:checked)]:bg-primary-soft text-foreground">
-                          <input
-                            type="radio"
-                            name="type"
-                            value="transfer"
-                            checked={transferType === "transfer"}
-                            onChange={() => setTransferType("transfer")}
-                            className="hidden"
-                          />
-                          โอนบัญชีตนเอง
-                        </label>
-                        <label className="flex items-center justify-center p-2 rounded-[12px] border border-border bg-white text-xs font-bold cursor-pointer [&:has(input:checked)]:border-primary [&:has(input:checked)]:bg-primary-soft text-foreground">
-                          <input
-                            type="radio"
-                            name="type"
-                            value="debt_payment"
-                            checked={transferType === "debt_payment"}
-                            onChange={() => setTransferType("debt_payment")}
-                            className="hidden"
-                          />
-                          ชำระหนี้สิน
-                        </label>
                       </div>
                     </div>
 
@@ -1522,7 +1546,7 @@ export function ReviewForm({
                     aria-busy={isSubmitting}
                     className="flex-1 rounded-[16px] bg-primary py-3.5 text-center text-sm font-bold text-white shadow-md hover:bg-primary-dark disabled:opacity-50"
                   >
-                    {isSubmitting ? "กำลังบันทึก..." : "ยืนยันความถูกต้อง"}
+                    {isSubmitting ? "กำลังบันทึก..." : docType === "transfer_slip" ? TRANSFER_REVIEW_CTA_LABELS[transferType] : "ยืนยันความถูกต้อง"}
                   </button>
                 </div>
               </form>

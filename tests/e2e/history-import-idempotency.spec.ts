@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { buildGenericBankStatementPdf } from "../fixtures/pdf-statements";
-import { acquirePipelineLock } from "./helpers/pipeline-lock";
+import { acquirePipelineLock, PIPELINE_LOCKED_TEST_TIMEOUT_MS } from "./helpers/pipeline-lock";
 
 const password = "password123";
 
@@ -37,10 +37,12 @@ async function uploadAndReachReview(page: import("@playwright/test").Page, filen
 }
 
 test.describe.serial("History Import commit idempotency", () => {
+  test.describe.configure({ timeout: PIPELINE_LOCKED_TEST_TIMEOUT_MS });
+
   let releasePipelineLock: (() => Promise<void>) | undefined;
 
   test.beforeAll(async () => {
-    releasePipelineLock = await acquirePipelineLock();
+    releasePipelineLock = await acquirePipelineLock({ label: "History Import commit idempotency" });
   });
 
   test.afterAll(async () => {

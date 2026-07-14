@@ -157,14 +157,17 @@ create trigger set_reconciliation_candidates_updated_at
 -- role. Mirrors the `autopilot_actions` append-only convention. No
 -- `using (true)`/`with check (true)` anywhere, and no `for all` policy.
 create policy "reconciliation_candidates_select_own"
-  on public.reconciliation_candidates for select
+  on public.reconciliation_candidates
+  for select
   using (auth.uid() = user_id);
 
 create policy "reconciliation_candidates_insert_own"
-  on public.reconciliation_candidates for insert
+  on public.reconciliation_candidates
+  for insert
   with check (auth.uid() = user_id);
 
 create policy "reconciliation_candidates_update_own"
-  on public.reconciliation_candidates for update
+  on public.reconciliation_candidates
+  for update
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
