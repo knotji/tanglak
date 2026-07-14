@@ -6,6 +6,7 @@ import { listImportBatches } from "@/lib/data/finance-repository";
 import Link from "next/link";
 import { deleteBatchAction, rollbackBatchAction } from "@/app/actions/history-import";
 import { redirect } from "next/navigation";
+import { formatThaiDateFull } from "@/lib/finance/date";
 
 export default async function HistoryImportSettingsPage() {
   const user = await requireUser();
@@ -70,11 +71,7 @@ export default async function HistoryImportSettingsPage() {
           ) : (
             <div className="flex flex-col gap-3">
               {batches.map((batch) => {
-                const dateStr = new Date(batch.createdAt).toLocaleDateString("th-TH", {
-                  year: "numeric",
-                  month: "short",
-                  day: "numeric",
-                });
+                const dateStr = formatThaiDateFull(batch.createdAt);
                 const batchContext = `${batch.originalFilename || "ไฟล์นิรนาม"} ${dateStr}`;
                 
                 return (

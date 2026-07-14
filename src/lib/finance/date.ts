@@ -192,6 +192,47 @@ export function formatBangkokMonthLabel(month: string): string {
   }).format(new Date(Date.UTC(year, monthNumber - 1, 1)));
 }
 
+/**
+ * Formats a date as a compact Thai string, e.g. "14 ก.ค."
+ * Uses Asia/Bangkok timezone.
+ */
+export function formatThaiDateCompact(date: Date | string): string {
+  return new Intl.DateTimeFormat("th-TH-u-ca-gregory", {
+    timeZone: "Asia/Bangkok",
+    day: "numeric",
+    month: "short",
+  }).format(new Date(date));
+}
+
+/**
+ * Formats a date as a full Thai string, e.g. "14 ก.ค. 2026"
+ * Uses Asia/Bangkok timezone.
+ */
+export function formatThaiDateFull(date: Date | string): string {
+  return new Intl.DateTimeFormat("th-TH-u-ca-gregory", {
+    timeZone: "Asia/Bangkok",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(date));
+}
+
+/**
+ * Formats a date as a Thai date/time string, e.g. "14 ก.ค. 2026 เวลา 11:51"
+ * Uses Asia/Bangkok timezone.
+ */
+export function formatThaiDateTime(date: Date | string): string {
+  const d = new Date(date);
+  const dateLabel = formatThaiDateFull(d);
+  const timeLabel = new Intl.DateTimeFormat("th-TH-u-ca-gregory", {
+    timeZone: "Asia/Bangkok",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(d);
+  return `${dateLabel} เวลา ${timeLabel}`;
+}
+
 const DATETIME_LOCAL_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
 
 interface WallClockParts {

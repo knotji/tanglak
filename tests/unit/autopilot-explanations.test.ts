@@ -26,7 +26,7 @@ describe("autopilot deterministic explanations", () => {
       decision: "require_confirmation",
       evidence: [{ reasonCode: "possible_internal_transfer" }],
     });
-    expect(text).toBe("TangLak ยังไม่แน่ใจว่ารายการนี้เป็นค่าใช้จ่ายหรือเงินโอน กรุณาตรวจเฉพาะจุดนี้");
+    expect(text).toBe("TangLak ยังไม่แน่ใจว่ารายการนี้เป็นรายจ่ายหรือเงินโอน กรุณาตรวจเฉพาะจุดนี้");
   });
 
   it("still returns safe, non-empty copy for reject with no evidence (Gemini-independent fallback)", () => {

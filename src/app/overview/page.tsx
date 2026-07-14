@@ -107,7 +107,7 @@ export default async function OverviewPage() {
               ) : null}
               {budgetSummary.unbudgetedSpentTotalSatang > 0 ? (
                 <p className="mt-1 text-xs text-text-secondary">
-                  ค่าใช้จ่ายในหมวดที่ยังไม่ได้ตั้งงบ {formatTHB(budgetSummary.unbudgetedSpentTotalSatang)}
+                  รายจ่ายในหมวดที่ยังไม่ได้ตั้งงบ {formatTHB(budgetSummary.unbudgetedSpentTotalSatang)}
                 </p>
               ) : null}
             </>

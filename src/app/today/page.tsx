@@ -21,6 +21,7 @@ function formatTodayHeading(todayKey: string) {
     weekday: "long",
     day: "numeric",
     month: "long",
+    year: "numeric",
   }).format(date);
 }
 

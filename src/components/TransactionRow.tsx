@@ -1,5 +1,6 @@
 import { CategoryIcon } from "@/components/CategoryIcon";
 import { MoneyAmount } from "@/components/MoneyAmount";
+import { formatThaiDateTime } from "@/lib/finance/date";
 import type { Transaction } from "@/types/domain";
 
 export function TransactionRow({
@@ -26,10 +27,8 @@ export function TransactionRow({
   // "+"/"-" text node next to it) -- see MoneyFlowRow.tsx for why that
   // split ends up rendering the sign and the digits in different colors.
   const signedSatang = isIncoming || isTransfer ? transaction.amountSatang : -transaction.amountSatang;
-  const time = new Intl.DateTimeFormat("th-TH", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(transaction.occurredAt));
+  const dateTime = formatThaiDateTime(transaction.occurredAt);
+  const time = dateTime.split(" เวลา ")[1];
   const actionContext = transaction.merchant ?? transaction.note ?? "รายการ";
 
   return (
@@ -44,7 +43,7 @@ export function TransactionRow({
           {transaction.type === "debt_payment" ? " · จ่ายหนี้" : ""}
         </p>
       </div>
-      <MoneyAmount satang={signedSatang} tone={tone} showSign={isIncoming} className="text-sm font-bold" />
+      <MoneyAmount satang={signedSatang} tone={tone} showSign={isIncoming || isTransfer} className="text-sm font-bold" />
       {(onEdit || onDelete) && (
         <div className="flex gap-1 rounded-[14px] bg-muted p-1">
           {onEdit ? (
