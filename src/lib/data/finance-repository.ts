@@ -417,11 +417,14 @@ export async function deleteTransaction(userId: string, id: string) {
 
 export async function listDebts(userId: string, includeClosed = false): Promise<Debt[]> {
   if (isMockAuthEnabled()) {
-    return getMockState().debts.filter((debt) => debt.userId === userId && (includeClosed || debt.status !== "paid_off"));
+    return getMockState().debts.filter(
+      (debt) => debt.userId === userId && debt.status !== "deleted" && (includeClosed || debt.status !== "paid_off"),
+    );
   }
 
   const supabase = await createSupabaseServerClient();
   let query = supabase.from("debts").select(DEBT_COLUMNS).eq("user_id", userId).order("due_date", { ascending: true });
+  query = query.neq("status", "deleted");
   if (!includeClosed) query = query.neq("status", "paid_off");
   const { data, error } = await timeAsync("query.debts", async () => query, { userId });
   if (error) throw new Error(error.message);
@@ -570,6 +573,33 @@ export async function updateDebt(userId: string, id: string, input: Partial<Debt
 
 export async function markDebtPaidOff(userId: string, id: string): Promise<Debt> {
   return setDebtStatus(userId, id, "paid_off");
+}
+
+export async function deleteDebt(userId: string, id: string): Promise<void> {
+  if (isMockAuthEnabled()) {
+    const debt = getMockState().debts.find((item) => item.id === id);
+    if (!debt) return;
+    assertOwner(userId, debt.userId);
+    debt.status = "deleted";
+    return;
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data: existing, error: readError } = await supabase
+    .from("debts")
+    .select("id, status")
+    .eq("id", id)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (readError) throw new Error(readError.message);
+  if (!existing || existing.status === "deleted") return;
+
+  const { error } = await supabase
+    .from("debts")
+    .update({ status: "deleted", deleted_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw new Error(error.message);
 }
 
 export async function reopenDebt(userId: string, id: string): Promise<Debt> {

@@ -3,10 +3,12 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { markDebtPaidOffAction } from "@/app/actions/finance";
+import { deleteDebtAction, markDebtPaidOffAction } from "@/app/actions/finance";
 import { AppShell } from "@/components/AppShell";
 import { DebtCard } from "@/components/DebtCard";
 import { EmptyState } from "@/components/EmptyState";
+import { ConfirmDialog } from "@/components/feedback/ConfirmDialog";
+import { useToast } from "@/components/feedback/ToastProvider";
 import { LocalImportReview } from "@/components/LocalImportReview";
 import { MobileBottomSheet } from "@/components/MobileBottomSheet";
 import { NextActionCard } from "@/components/NextActionCard";
@@ -21,12 +23,16 @@ import { buildMonthlyDebtSummary } from "@/lib/finance/debt-summary";
 import type { Debt, Transaction } from "@/types/domain";
 
 type SheetState = "create" | "edit" | "payment" | null;
+type ConfirmState = { kind: "close" | "delete"; debt: Debt } | null;
 
 export function DebtsClient({ debts, transactions = [] }: { debts: Debt[]; transactions?: Transaction[] }) {
   const router = useRouter();
+  const { showToast } = useToast();
   const [open, setOpen] = useState<SheetState>(null);
   const [selectedDebt, setSelectedDebt] = useState<Debt | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<ConfirmState>(null);
+  const [confirmPending, setConfirmPending] = useState(false);
   const totalOutstanding = debts.reduce((sum, debt) => sum + (debt.outstandingBalanceSatang ?? 0), 0);
   const remainingMinimum = debts.reduce((sum, debt) => sum + remainingToMinimum(debt), 0);
   const monthlySummary = buildMonthlyDebtSummary(debts, transactions, getBangkokMonthString());
@@ -42,10 +48,29 @@ export function DebtsClient({ debts, transactions = [] }: { debts: Debt[]; trans
   }
 
   async function markPaid(debt: Debt) {
-    if (!window.confirm(`ปิดหนี้ ${debt.name} ใช่ไหม? ประวัติการชำระจะยังอยู่เหมือนเดิม`)) return;
+    setConfirmPending(true);
     const result = await markDebtPaidOffAction(debt.id);
+    setConfirmPending(false);
+    setConfirming(null);
     setMessage(result.message ?? (result.ok ? "ปิดหนี้แล้ว" : "ปิดหนี้ไม่สำเร็จ"));
+    showToast(result.message ?? (result.ok ? "ปิดหนี้แล้ว" : "ปิดหนี้ไม่สำเร็จ"), result.ok ? "success" : "error");
     router.refresh();
+  }
+
+  async function deleteDebt(debt: Debt) {
+    setConfirmPending(true);
+    const result = await deleteDebtAction(debt.id);
+    setConfirmPending(false);
+    if (result.ok) {
+      setConfirming(null);
+      setOpen(null);
+      setSelectedDebt(null);
+      showToast(result.message ?? "ลบหนี้เรียบร้อย", "success");
+      router.push("/debts");
+      router.refresh();
+      return;
+    }
+    showToast(result.message ?? "ลบหนี้ไม่สำเร็จ", "error");
   }
 
   return (
@@ -157,7 +182,7 @@ export function DebtsClient({ debts, transactions = [] }: { debts: Debt[]; trans
                     แก้ไข
                   </button>
                   <button
-                    onClick={() => markPaid(debt)}
+                    onClick={() => setConfirming({ kind: "close", debt })}
                     aria-label={`ปิดหนี้ ${debt.name}`}
                     className="min-h-11 rounded-[16px] bg-muted text-sm font-bold text-primary"
                   >
@@ -182,11 +207,53 @@ export function DebtsClient({ debts, transactions = [] }: { debts: Debt[]; trans
         <ManualDebtForm onSaved={() => closeAndRefresh("บันทึกหนี้แล้ว")} />
       </MobileBottomSheet>
       <MobileBottomSheet title="แก้ไขหนี้" open={open === "edit"} onClose={() => setOpen(null)}>
-        {selectedDebt ? <ManualDebtForm debt={selectedDebt} onSaved={() => closeAndRefresh("บันทึกการแก้ไขแล้ว")} /> : null}
+        {selectedDebt ? (
+          <div className="space-y-4">
+            <ManualDebtForm debt={selectedDebt} onSaved={() => closeAndRefresh("บันทึกการแก้ไขแล้ว")} />
+            <section className="rounded-[16px] border border-overdue/20 bg-overdue/5 p-4">
+              <p className="text-sm font-bold text-overdue">ลบหนี้ที่กรอกผิด</p>
+              <p className="mt-1 text-xs leading-5 text-text-secondary">
+                ใช้เฉพาะเมื่อหนี้นี้ถูกเพิ่มผิด รายการจ่ายหรือธุรกรรมที่เคยบันทึกไว้จะไม่ถูกลบ
+              </p>
+              <button
+                type="button"
+                onClick={() => setConfirming({ kind: "delete", debt: selectedDebt })}
+                className="mt-3 min-h-11 w-full rounded-[16px] border border-overdue/30 bg-surface px-4 text-sm font-bold text-overdue"
+              >
+                ลบหนี้
+              </button>
+            </section>
+          </div>
+        ) : null}
       </MobileBottomSheet>
       <MobileBottomSheet title="เพิ่มการชำระ" open={open === "payment"} onClose={() => setOpen(null)}>
         {selectedDebt ? <DebtPaymentForm debtId={selectedDebt.id} onSaved={() => closeAndRefresh("บันทึกการชำระแล้ว")} /> : null}
       </MobileBottomSheet>
+      <ConfirmDialog
+        open={Boolean(confirming)}
+        title={
+          confirming?.kind === "delete"
+            ? `ลบหนี้ "${confirming.debt.name}"?`
+            : `ปิดหนี้ "${confirming?.debt.name ?? ""}" เป็นชำระครบแล้ว?`
+        }
+        body={
+          confirming?.kind === "delete"
+            ? "ข้อมูลหนี้นี้จะถูกนำออกจากรายการและยอดรวมหนี้ของคุณ รายการรายจ่ายหรือธุรกรรมที่เคยบันทึกไว้จะไม่ถูกลบ และประวัติการชำระเดิมยังเก็บความเชื่อมโยงไว้"
+            : "หนี้นี้จะย้ายออกจากรายการหนี้ที่ต้องติดตาม ประวัติการชำระจะยังอยู่เหมือนเดิม"
+        }
+        cancelLabel="ยกเลิก"
+        confirmLabel={confirming?.kind === "delete" ? "ลบหนี้" : "ปิดหนี้เป็นชำระครบแล้ว"}
+        pendingLabel={confirming?.kind === "delete" ? "กำลังลบ..." : "กำลังปิดหนี้..."}
+        confirmPending={confirmPending}
+        onCancel={() => {
+          if (!confirmPending) setConfirming(null);
+        }}
+        onConfirm={() => {
+          if (!confirming || confirmPending) return;
+          if (confirming.kind === "delete") void deleteDebt(confirming.debt);
+          else void markPaid(confirming.debt);
+        }}
+      />
     </AppShell>
   );
 }

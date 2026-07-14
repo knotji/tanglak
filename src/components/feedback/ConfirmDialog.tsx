@@ -9,6 +9,8 @@ export function ConfirmDialog({
   body,
   confirmLabel = "ยืนยัน",
   cancelLabel = "ยกเลิก",
+  confirmPending = false,
+  pendingLabel = "กำลังดำเนินการ...",
   onConfirm,
   onCancel,
 }: {
@@ -17,6 +19,8 @@ export function ConfirmDialog({
   body: string;
   confirmLabel?: string;
   cancelLabel?: string;
+  confirmPending?: boolean;
+  pendingLabel?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -40,11 +44,24 @@ export function ConfirmDialog({
         <h2 id={titleId} className="text-lg font-bold">{title}</h2>
         <p id={bodyId} className="mt-2 text-sm leading-6 text-text-secondary">{body}</p>
         <div className="mt-4 grid grid-cols-2 gap-2">
-          <button type="button" onClick={onCancel} className="min-h-11 rounded-[16px] bg-muted px-4 font-bold text-primary">
+          <button type="button" onClick={onCancel} disabled={confirmPending} className="min-h-11 rounded-[16px] bg-muted px-4 font-bold text-primary disabled:opacity-60">
             {cancelLabel}
           </button>
-          <button type="button" onClick={onConfirm} className="min-h-11 rounded-[16px] bg-overdue px-4 font-bold text-white">
-            {confirmLabel}
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={confirmPending}
+            aria-busy={confirmPending || undefined}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[16px] bg-overdue px-4 font-bold text-white disabled:opacity-60"
+          >
+            {confirmPending ? (
+              <>
+                <span className="h-4 w-4 rounded-full border-2 border-white/50 border-t-white" aria-hidden />
+                <span aria-live="polite">{pendingLabel}</span>
+              </>
+            ) : (
+              confirmLabel
+            )}
           </button>
         </div>
       </section>

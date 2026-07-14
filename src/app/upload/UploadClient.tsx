@@ -17,10 +17,8 @@ import { uploadAndExtractAction } from "@/app/actions/documents";
 import { StepProgress } from "@/components/feedback/StepProgress";
 
 /**
- * Slip-first document type quick-select. Bank-statement/CSV import
- * ("debt_statement"/"loan_schedule") is deliberately not offered here --
- * that flow still exists (see /history-import) but is no longer promoted
- * as a primary upload path. See docs/SLIP_FIRST_PRODUCT_DIRECTION.md.
+ * Slip-first document type quick-select. Bulk history upload is deliberately
+ * not offered here; this page is for evidence the user reviews before save.
  */
 const documentTypes = [
   { label: "สลิปโอนเงินออก", icon: ArrowUpRight, value: "transfer_slip" },
@@ -30,10 +28,10 @@ const documentTypes = [
 ];
 
 const uploadSteps = [
-  { id: "upload_evidence", label: "อัปโหลดหลักฐาน" },
-  { id: "ai_reading", label: "AI กำลังอ่าน" },
-  { id: "checking_data", label: "กำลังตรวจข้อมูล" },
-  { id: "ready_to_confirm", label: "พร้อมให้คุณยืนยัน" },
+  { id: "upload_evidence", label: "กำลังอัปโหลดสลิป" },
+  { id: "ai_reading", label: "กำลังอ่านข้อมูลจากสลิป" },
+  { id: "checking_data", label: "ตรวจสอบข้อมูลก่อนบันทึก" },
+  { id: "ready_to_confirm", label: "พร้อมให้คุณยืนยันรายการ" },
 ];
 
 export function UploadClient() {
@@ -106,11 +104,11 @@ export function UploadClient() {
           window.location.href = `/upload/review/${res.documentId}`;
         }
       } else {
-        setErrorMessage(res.message || "เกิดข้อผิดพลาดในการวิเคราะห์ข้อมูล");
+        setErrorMessage(res.message || "อ่านข้อมูลจากสลิปไม่สำเร็จ คุณยังกรอกเองได้");
         setIsProcessing(false);
       }
     } catch (_err) {
-      setErrorMessage("เกิดข้อผิดพลาดในการอัปโหลด กรุณาลองใหม่อีกครั้ง");
+      setErrorMessage("อัปโหลดสลิปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
       setIsProcessing(false);
     }
   };
@@ -217,7 +215,7 @@ export function UploadClient() {
                   aria-busy={isProcessing}
                   className="flex-1 rounded-[16px] bg-primary py-3 text-center text-sm font-bold text-white shadow-md hover:bg-primary-dark"
                 >
-                  วิเคราะห์ด้วย AI
+                  อ่านสลิป
                 </button>
               </>
             ) : (
@@ -226,7 +224,7 @@ export function UploadClient() {
                 aria-busy="true"
                 className="flex-1 rounded-[16px] bg-primary-soft py-3.5 text-center text-sm font-extrabold text-primary shadow-inner"
               >
-                กำลังโหลดข้อมูล...
+                กำลังอ่านสลิป...
               </div>
             )}
           </div>

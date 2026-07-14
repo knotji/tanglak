@@ -81,7 +81,7 @@ test.describe("production scenario: ฿5,000 income, one ฿20 unbudgeted food e
     await expect(page.getByText("ยังไม่มีหมวดหมู่งบประมาณ")).toHaveCount(0);
     await expect(page.getByText("อาหารและเครื่องดื่ม").first()).toBeVisible();
     await expect(page.getByText("ยังไม่ได้ตั้งงบ").first()).toBeVisible();
-    await expect(page.getByText("ค่าใช้จ่ายในหมวดที่ยังไม่ได้ตั้งงบ")).toBeVisible();
+    await expect(page.getByText(/ใช้จ่ายไป .*ในหมวดที่ยังไม่ได้ตั้งงบ/)).toBeVisible();
     // No real overspending, since no positive category budget was ever
     // exceeded.
     await expect(page.getByText("ยอดเกินงบรวม")).toHaveCount(0);

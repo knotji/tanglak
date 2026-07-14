@@ -3,26 +3,20 @@ import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { requireUser } from "@/lib/auth/session";
 import { requireCompletedOnboarding } from "@/lib/auth/onboarding";
-import { listAccounts } from "@/lib/data/finance-repository";
-import { HistoryImportClient } from "./HistoryImportClient";
 
 export const runtime = "nodejs";
 
 /**
- * Bank statement import is deprecated from TangLak's primary UX (see
- * docs/SLIP_FIRST_PRODUCT_DIRECTION.md) but the backend -- migrations,
- * parser, idempotency, rollback -- is intentionally preserved, and users
- * who already imported history keep full access to it. This route stays
- * reachable (bookmarks, direct links, the advanced settings entry) but
- * leads with a calm notice steering new activity toward the slip-first
- * flow instead of a raw "feature disabled" message.
+ * The old bulk history upload is no longer a product-facing feature. The
+ * backend parser/idempotency/rollback code remains for compatibility with
+ * existing historical batches, but this route no longer offers a new form.
  */
 function LegacyImportNotice() {
   return (
     <section className="rounded-[16px] border border-border bg-surface p-4">
-      <p className="text-sm font-bold text-foreground">การนำเข้ารายการจำนวนมากถูกพักไว้ชั่วคราว</p>
+      <p className="text-sm font-bold text-foreground">การนำเข้ารายการย้อนหลังถูกนำออกจากหน้าผลิตภัณฑ์แล้ว</p>
       <p className="mt-1 text-sm leading-6 text-text-secondary">
-        แนะนำให้อัปโหลดสลิปหรือเพิ่มรายการทีละรายการ เพื่อเริ่มติดตามการเงินตั้งแต่เดือนนี้
+        ตั้งหลักตอนนี้เน้นการสแกนสลิป เพิ่มรายการเอง เพิ่มหนี้ และบันทึกการชำระ เพื่อให้ข้อมูลที่ใช้จริงตรวจสอบได้ทีละรายการ
       </p>
       <div className="mt-3 flex flex-wrap gap-2">
         <Link
@@ -52,18 +46,14 @@ export default async function HistoryImportUploadPage() {
   const user = await requireUser();
   await requireCompletedOnboarding(user);
 
-  const accounts = await listAccounts(user.id);
-
   return (
     <AppShell>
       <PageHeader
-        title="นำเข้าประวัติย้อนหลัง"
-        subtitle="นำเข้าประวัติรายการจากธนาคารหรือบัตรเครดิตเพื่อวิเคราะห์ย้อนหลัง"
+        title="เพิ่มข้อมูลการเงิน"
+        subtitle="เลือกวิธีที่ตรวจสอบได้ก่อนบันทึกจริง"
       />
 
       <LegacyImportNotice />
-
-      <HistoryImportClient accounts={accounts} />
     </AppShell>
   );
 }

@@ -33,7 +33,7 @@ export type DebtType =
   | "informal_loan"
   | "other";
 
-export type DebtStatus = "active" | "paid_off" | "overdue" | "paused";
+export type DebtStatus = "active" | "paid_off" | "overdue" | "paused" | "deleted";
 
 export type DebtPaymentMode =
   | "fixed_monthly"

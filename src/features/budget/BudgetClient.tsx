@@ -316,12 +316,20 @@ export function BudgetClient({
       ) : null}
 
       <section className="rounded-[16px] border border-border bg-surface p-4" aria-label="สรุปงบประมาณ">
-        <p className="text-sm font-semibold text-text-secondary">เหลืองบรวม</p>
-        <MoneyAmount
-          satang={summary.remainingTotalSatang}
-          tone={summary.remainingTotalSatang < 0 ? "expense" : "income"}
-          className="mt-1 block text-[32px] font-bold leading-none"
-        />
+        <p className="text-sm font-semibold text-text-secondary">
+          {summary.hasBudget ? "งบที่เหลือจริง" : "ยังไม่ได้วางงบเดือนนี้"}
+        </p>
+        {summary.hasBudget ? (
+          <MoneyAmount
+            satang={summary.remainingTotalSatang}
+            tone={summary.remainingTotalSatang < 0 ? "expense" : "income"}
+            className="mt-1 block text-[32px] font-bold leading-none"
+          />
+        ) : (
+          <p className="mt-1 text-lg font-bold leading-snug text-text-secondary">
+            ตั้งงบเพื่อดูว่าแต่ละหมวดยังใช้ได้อีกเท่าไร
+          </p>
+        )}
         <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-border pt-3 text-sm">
           <div>
             <dt className="text-text-secondary">รายรับที่ตั้งไว้</dt>
@@ -342,12 +350,12 @@ export function BudgetClient({
             <dd className="tabular font-bold">{formatTHB(summary.spentTotalSatang)}</dd>
           </div>
         </dl>
-        {summary.overspentTotalSatang > 0 ? (
+        {summary.hasBudget && summary.overspentTotalSatang > 0 ? (
           <p className="mt-3 text-xs font-bold text-overdue">ยอดเกินงบรวม {formatTHB(summary.overspentTotalSatang)}</p>
         ) : null}
         {summary.unbudgetedSpentTotalSatang > 0 ? (
           <p className="mt-2 text-xs text-text-secondary">
-            ค่าใช้จ่ายในหมวดที่ยังไม่ได้ตั้งงบ {formatTHB(summary.unbudgetedSpentTotalSatang)}
+            ใช้จ่ายไป {formatTHB(summary.unbudgetedSpentTotalSatang)} ในหมวดที่ยังไม่ได้ตั้งงบ
           </p>
         ) : null}
         {summary.uncategorizedSpentSatang > 0 ? (

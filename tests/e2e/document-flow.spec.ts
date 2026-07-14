@@ -52,7 +52,7 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
 
     // Wait for the upload card to appear
     await expect(page.getByText("my_salary_slip.png")).toBeVisible();
-    await page.getByRole("button", { name: "วิเคราะห์ด้วย AI" }).click();
+    await page.getByRole("button", { name: "อ่านสลิป" }).click();
 
     // It should automatically transition to review screen
     await expect(page).toHaveURL(/\/upload\/review\//);
@@ -92,7 +92,7 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
       buffer: Buffer.from("mock-delivery-data"),
     });
 
-    await page.getByRole("button", { name: "วิเคราะห์ด้วย AI" }).click();
+    await page.getByRole("button", { name: "อ่านสลิป" }).click();
 
     // High extraction confidence (0.88) -- the AI Financial Autopilot
     // decision policy skips the manual review form entirely and shows the
@@ -122,7 +122,7 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
       buffer: Buffer.from("mock-missing-date-data"),
     });
 
-    await page.getByRole("button", { name: "วิเคราะห์ด้วย AI" }).click();
+    await page.getByRole("button", { name: "อ่านสลิป" }).click();
     await expect(page).toHaveURL(/\/upload\/review\//);
     const reviewUrl = page.url();
     const docId = reviewUrl.split("/").pop() || "";
@@ -203,11 +203,11 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
       buffer: Buffer.from("mock-missing-date-retry-data"),
     });
 
-    await page.getByRole("button", { name: "วิเคราะห์ด้วย AI" }).click();
+    await page.getByRole("button", { name: "อ่านสลิป" }).click();
     await expect(page).toHaveURL(/\/upload\/review\//);
     const reviewUrl = page.url();
 
-    const retryDialog = page.waitForEvent("dialog").then((dialog) => {
+    const retryDialog = page.waitForEvent("dialog", { timeout: 15_000 }).then((dialog) => {
       expect(dialog.message()).toContain("เริ่มสแกนเอกสารอีกครั้งแล้ว");
       return dialog.accept();
     });
@@ -239,7 +239,7 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
       buffer: Buffer.from("mock-debt-data"),
     });
 
-    await page.getByRole("button", { name: "วิเคราะห์ด้วย AI" }).click();
+    await page.getByRole("button", { name: "อ่านสลิป" }).click();
     await expect(page).toHaveURL(/\/upload\/review\//);
 
     // Verify extracted debt statement fields
@@ -278,7 +278,7 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
       buffer: Buffer.from("mock-debt-data"),
     });
 
-    await page.getByRole("button", { name: "วิเคราะห์ด้วย AI" }).click();
+    await page.getByRole("button", { name: "อ่านสลิป" }).click();
     await expect(page).toHaveURL(/\/upload\/review\//);
 
     await expect(page.locator('input[name="debtActionType"][value="create"]')).not.toBeChecked();
@@ -315,7 +315,7 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
       buffer: Buffer.from("mock-transfer-data"),
     });
 
-    await page.getByRole("button", { name: "วิเคราะห์ด้วย AI" }).click();
+    await page.getByRole("button", { name: "อ่านสลิป" }).click();
     await expect(page).toHaveURL(/\/upload\/review\//);
 
     // Check that duplicate warning matches. The account may also contain
@@ -365,7 +365,7 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
       buffer: Buffer.from("mock-transfer-debt-payment-data"),
     });
 
-    await page.getByRole("button", { name: "วิเคราะห์ด้วย AI" }).click();
+    await page.getByRole("button", { name: "อ่านสลิป" }).click();
     await expect(page).toHaveURL(/\/upload\/review\//);
     const reviewUrl = page.url();
 
@@ -445,7 +445,7 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
       buffer: Buffer.from("mock-failed-data"),
     });
 
-    await page.getByRole("button", { name: "วิเคราะห์ด้วย AI" }).click();
+    await page.getByRole("button", { name: "อ่านสลิป" }).click();
     await expect(page).toHaveURL(/\/upload\/review\//);
 
     // Verify failed message is safe Thai copy, not raw provider/schema internals.
@@ -488,12 +488,12 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
       buffer: Buffer.from("mock-retry-success-data"),
     });
 
-    await page.getByRole("button", { name: "วิเคราะห์ด้วย AI" }).click();
+    await page.getByRole("button", { name: "อ่านสลิป" }).click();
     await expect(page).toHaveURL(/\/upload\/review\//);
     const failedReviewUrl = page.url();
     await expect(page.getByText("การอ่านข้อมูลบางส่วนไม่ครบ")).toBeVisible();
 
-    const retryDialog = page.waitForEvent("dialog").then((dialog) => dialog.accept());
+    const retryDialog = page.waitForEvent("dialog", { timeout: 15_000 }).then((dialog) => dialog.accept());
     await page.getByRole("button", { name: "ลองประมวลผลอีกครั้ง" }).click();
     await retryDialog;
     await page.reload();
@@ -547,7 +547,7 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
       mimeType: "image/jpeg",
       buffer: Buffer.from("mock-missing-date-data"),
     });
-    await page.getByRole("button", { name: "วิเคราะห์ด้วย AI" }).click();
+    await page.getByRole("button", { name: "อ่านสลิป" }).click();
     await expect(page).toHaveURL(/\/upload\/review\//);
     await expect(page.locator("input[name='occurredAt']")).toBeVisible();
 
@@ -579,7 +579,7 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
       buffer: Buffer.from("mock-salary-data"),
     });
 
-    await page.getByRole("button", { name: "วิเคราะห์ด้วย AI" }).click();
+    await page.getByRole("button", { name: "อ่านสลิป" }).click();
     await expect(page).toHaveURL(/\/upload\/review\//);
 
     await expect(page.locator("input[name='employer']")).toHaveValue("Acme Corp");

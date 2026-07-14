@@ -46,10 +46,10 @@ export function TransactionRow({
       </div>
       <MoneyAmount satang={signedSatang} tone={tone} showSign={isIncoming} className="text-sm font-bold" />
       {(onEdit || onDelete) && (
-        <div className="flex gap-1">
+        <div className="flex gap-1 rounded-[14px] bg-muted p-1">
           {onEdit ? (
             <button
-              className="min-h-11 rounded-[12px] bg-muted px-3 text-xs font-bold text-primary"
+              className="min-h-11 rounded-[12px] bg-surface px-3 text-xs font-bold text-primary"
               aria-label={`แก้ไขรายการ ${actionContext}`}
               onClick={() => onEdit(transaction)}
             >
@@ -59,11 +59,11 @@ export function TransactionRow({
           {onDelete ? (
             <button
               disabled={busy}
-              className="min-h-11 rounded-[12px] bg-muted px-3 text-xs font-bold text-overdue disabled:opacity-60"
+              className="min-h-11 rounded-[12px] px-3 text-xs font-bold text-overdue disabled:opacity-60"
               aria-label={`ลบรายการ ${actionContext}`}
               onClick={() => onDelete(transaction)}
             >
-              {busy ? "..." : "ลบ"}
+              {busy ? "กำลังลบ" : "ลบรายการนี้"}
             </button>
           ) : null}
         </div>

@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useState } from "react";
 import { addDebtPaymentAction } from "@/app/actions/finance";
+import { LoadingButton } from "@/components/feedback/LoadingButton";
 import { parseRequiredMoney } from "@/lib/finance/money-guards";
 
 export function DebtPaymentForm({
@@ -48,9 +49,9 @@ export function DebtPaymentForm({
       ) : state.message ? (
         <p className="mt-3 text-sm text-overdue">{state.message}</p>
       ) : null}
-      <button disabled={pending} className="mt-4 min-h-11 w-full rounded-[16px] bg-primary px-4 font-bold text-white disabled:opacity-60">
-        {pending ? "กำลังบันทึก..." : "บันทึกการชำระ"}
-      </button>
+      <LoadingButton pending={pending} pendingLabel="กำลังบันทึกการชำระ..." className="mt-4 w-full">
+        บันทึกการชำระ
+      </LoadingButton>
     </form>
   );
 }

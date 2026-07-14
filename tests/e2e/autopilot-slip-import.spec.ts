@@ -47,7 +47,7 @@ test.describe.serial("AI Financial Autopilot -- Slip Import vertical slice", () 
       mimeType: "image/jpeg",
       buffer: Buffer.from("mock-delivery-data"),
     });
-    await page.getByRole("button", { name: "วิเคราะห์ด้วย AI" }).click();
+    await page.getByRole("button", { name: "อ่านสลิป" }).click();
 
     // Confident receipt/delivery_receipt slips skip the manual review form
     // entirely -- the lightweight autopilot result screen is shown instead.
@@ -89,12 +89,14 @@ test.describe.serial("AI Financial Autopilot -- Slip Import vertical slice", () 
       mimeType: "image/jpeg",
       buffer: Buffer.from("mock-missing-date-data"),
     });
-    await page.getByRole("button", { name: "วิเคราะห์ด้วย AI" }).click();
+    await page.getByRole("button", { name: "อ่านสลิป" }).click();
 
     // A missing/unclear occurredAt is never auto-decided -- deferred to the
     // existing review form, never a new confirmation UI.
     await expect(page).toHaveURL(/\/upload\/review\//);
-    await page.locator("input[name='occurredAt']").fill("2026-07-15T09:30");
+    const occurredAtInput = page.locator("input[name='occurredAt']");
+    await occurredAtInput.fill("2026-07-15T09:30");
+    await expect(occurredAtInput).toHaveValue("2026-07-15T09:30");
     await page.getByRole("button", { name: "ยืนยันความถูกต้อง" }).click();
     await expect(page).toHaveURL(/\/today/);
   });

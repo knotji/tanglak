@@ -141,33 +141,30 @@ describe("navigation performance wiring", () => {
     }
   });
 
-  it("shows real step labels for PDF import and Gemini upload without fake percentages", () => {
-    const historyImport = readProjectFile("src/app/history-import/HistoryImportClient.tsx");
+  it("shows real step labels for slip upload without fake percentages", () => {
+    const historyPage = readProjectFile("src/app/history-import/page.tsx");
     const upload = readProjectFile("src/app/upload/UploadClient.tsx");
     const stepProgress = readProjectFile("src/components/feedback/StepProgress.tsx");
 
-    for (const label of ["อัปโหลดไฟล์", "อ่าน Statement", "ตรวจรายการ", "เตรียมหน้าตรวจสอบ"]) {
-      expect(historyImport).toContain(label);
-    }
-    for (const label of ["อัปโหลดหลักฐาน", "AI กำลังอ่าน", "กำลังตรวจข้อมูล", "พร้อมให้คุณยืนยัน"]) {
+    expect(historyPage).not.toContain("HistoryImportClient");
+    for (const label of ["กำลังอัปโหลดสลิป", "กำลังอ่านข้อมูลจากสลิป", "ตรวจสอบข้อมูลก่อนบันทึก", "พร้อมให้คุณยืนยันรายการ"]) {
       expect(upload).toContain(label);
     }
 
-    expect(historyImport).toContain('setProgressStep("upload_file")');
-    expect(historyImport).toContain('setProgressStep("read_statement")');
-    expect(historyImport).toContain('setProgressStep("check_rows")');
-    expect(historyImport).toContain('setProgressStep("prepare_review")');
+    expect(upload).toContain('setProgressStep("upload_evidence")');
+    expect(upload).toContain('setProgressStep("ai_reading")');
+    expect(upload).toContain('setProgressStep("checking_data")');
+    expect(upload).toContain('setProgressStep("ready_to_confirm")');
     expect(upload).not.toContain("%");
-    expect(historyImport).not.toContain("%");
+    expect(historyPage).not.toContain("%");
     expect(stepProgress).not.toContain("%");
   });
 
   it("marks loading buttons as busy and disabled without clearing selected upload state", () => {
-    const historyImport = readProjectFile("src/app/history-import/HistoryImportClient.tsx");
+    const historyPage = readProjectFile("src/app/history-import/page.tsx");
     const upload = readProjectFile("src/app/upload/UploadClient.tsx");
 
-    expect(historyImport).toContain("disabled={isUploading}");
-    expect(historyImport).toContain("aria-busy={isUploading}");
+    expect(historyPage).not.toContain("input[type='file']");
     expect(upload).toContain("disabled={isProcessing}");
     expect(upload).toContain("aria-busy={isProcessing}");
     expect(upload).toContain("setErrorMessage(res.message");

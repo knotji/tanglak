@@ -88,7 +88,7 @@ test.describe.serial("Supabase config hydration", () => {
       mimeType: "image/png",
       buffer: Buffer.from("mock-config-hydration-data"),
     });
-    await page.getByRole("button", { name: "วิเคราะห์ด้วย AI" }).click();
+    await page.getByRole("button", { name: "อ่านสลิป" }).click();
     await expect(page).toHaveURL(/\/upload\/review\//);
     const reviewUrl = page.url();
 

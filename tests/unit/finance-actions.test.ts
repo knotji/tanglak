@@ -24,6 +24,7 @@ vi.mock("@/lib/auth/session", async (importOriginal) => {
 import { requireUser } from "@/lib/auth/session";
 import {
   addDebtPaymentAction,
+  deleteDebtAction,
   deleteDebtPaymentAction,
   deleteTransactionAction,
   saveDebtAction,
@@ -211,5 +212,36 @@ describe("finance server actions — financial value guards", () => {
     const result = await deleteDebtPaymentAction(transaction.id, debt.id);
     expect(result.ok).toBe(false);
     expect(getMockState().transactions.find((t) => t.id === transaction.id)).toBeDefined();
+  });
+
+  it("deleteDebtAction archives an owned debt without deleting linked payment transactions", async () => {
+    const debt = await createDebt("user-a", {
+      name: "KTC",
+      amountDueSatang: 1000,
+      minimumPaymentSatang: 500,
+      dueDate: "2026-07-18",
+    });
+    const { transaction } = await addDebtPayment("user-a", debt.id, 500);
+
+    const result = await deleteDebtAction(debt.id);
+
+    expect(result.ok).toBe(true);
+    expect(getMockState().debts.find((item) => item.id === debt.id)?.status).toBe("deleted");
+    expect(getMockState().transactions.find((item) => item.id === transaction.id)?.debtId).toBe(debt.id);
+  });
+
+  it("deleteDebtAction leaves another user's debt unchanged on failure", async () => {
+    const debt = await createDebt("user-a", {
+      name: "KTC",
+      amountDueSatang: 1000,
+      minimumPaymentSatang: 500,
+      dueDate: "2026-07-18",
+    });
+
+    vi.mocked(requireUser).mockResolvedValue({ id: "user-b", email: "user-b@example.test" });
+    const result = await deleteDebtAction(debt.id);
+
+    expect(result.ok).toBe(false);
+    expect(getMockState().debts.find((item) => item.id === debt.id)?.status).toBe("active");
   });
 });
