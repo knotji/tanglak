@@ -64,9 +64,12 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
     await expect(page.locator("input[name='employer']")).toHaveValue("Acme Corp");
     await expect(page.locator("input[name='netIncome']")).toHaveValue("38920");
 
-    // Click confirm
-    await page.getByRole("button", { name: "ยืนยันความถูกต้อง" }).click();
-    await expect(page).toHaveURL(/\/today/);
+    // This is the first interactive action on the review page, so mirror the
+    // bounded hydration-race retry used below for rejected submits.
+    await expect(async () => {
+      await page.getByRole("button", { name: "ยืนยันความถูกต้อง" }).click();
+      await expect(page).toHaveURL(/\/today/, { timeout: 2000 });
+    }).toPass({ timeout: 15000 });
 
     // Verify on transactions page
     await page.goto("/transactions");

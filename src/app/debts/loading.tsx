@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/PageHeader";
 
 export default function DebtsLoading() {
   return (
-    <AppShell>
+    <AppShell contentElement="div">
       <div className="flex items-start justify-between gap-3">
         <PageHeader title="หนี้" subtitle="กำลังโหลดข้อมูลหนี้" />
         <button disabled className="min-h-11 shrink-0 rounded-[16px] bg-primary px-4 text-sm font-bold text-white opacity-60">

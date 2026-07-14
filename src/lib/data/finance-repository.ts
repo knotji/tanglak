@@ -61,6 +61,8 @@ function assertOwner(userId: string, ownerId: string) {
   if (userId !== ownerId) throw new Error("Cannot access another user's data");
 }
 
+const DELETED_DEBT_ERROR = "Deleted debt cannot be changed";
+
 /**
  * A transaction's `debtId` is a client/caller-supplied foreign key — never
  * trust it without confirming the referenced debt actually belongs to the
@@ -73,18 +75,20 @@ async function assertDebtBelongsToUser(userId: string, debtId: string): Promise<
   if (isMockAuthEnabled()) {
     const debt = getMockState().debts.find((item) => item.id === debtId);
     if (!debt || debt.userId !== userId) throw new Error("Debt not found");
+    if (debt.status === "deleted") throw new Error(DELETED_DEBT_ERROR);
     return;
   }
 
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from("debts")
-    .select("id")
+    .select("id, status")
     .eq("id", debtId)
     .eq("user_id", userId)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Debt not found");
+  if (data.status === "deleted") throw new Error(DELETED_DEBT_ERROR);
 }
 
 async function assertAccountBelongsToUser(userId: string, accountId: string): Promise<void> {
@@ -296,7 +300,6 @@ export async function updateTransaction(
   id: string,
   input: Partial<TransactionInput>,
 ): Promise<Transaction> {
-  if (input.debtId) await assertDebtBelongsToUser(userId, input.debtId);
   if (input.sourceAccountId) await assertAccountBelongsToUser(userId, input.sourceAccountId);
   if (input.destinationAccountId) await assertAccountBelongsToUser(userId, input.destinationAccountId);
 
@@ -312,6 +315,9 @@ export async function updateTransaction(
     const finalDebtId = input.debtId !== undefined ? input.debtId : state.transactions[index].debtId;
     assertMoneySatang(finalAmount, finalType === "debt_payment" ? "positive" : "nonnegative", "amountSatang");
     assertDebtPaymentLinked(finalType, finalDebtId);
+    if (finalDebtId && (finalType === "debt_payment" || input.debtId !== undefined)) {
+      await assertDebtBelongsToUser(userId, finalDebtId);
+    }
     const previousDebtId = state.transactions[index].debtId;
     state.transactions[index] = { ...state.transactions[index], ...input };
     if (previousDebtId) recalculateMockDebtPaid(userId, previousDebtId);
@@ -320,19 +326,24 @@ export async function updateTransaction(
   }
 
   const supabase = await createSupabaseServerClient();
-  const { data: previous } = await supabase
+  const { data: previous, error: previousError } = await supabase
     .from("transactions")
     .select("debt_id, type, amount_satang")
     .eq("id", id)
     .eq("user_id", userId)
     .maybeSingle();
+  if (previousError) throw new Error(previousError.message);
+  if (!previous) throw new Error("Transaction not found");
   // Validate the final merged state (type + amount + debtId together), not
   // just whichever of these happens to be present in this patch.
-  const finalType = input.type ?? previous?.type;
-  const finalAmount = input.amountSatang ?? previous?.amount_satang;
-  const finalDebtId = input.debtId !== undefined ? input.debtId : previous?.debt_id;
+  const finalType = input.type ?? previous.type;
+  const finalAmount = input.amountSatang ?? previous.amount_satang;
+  const finalDebtId = input.debtId !== undefined ? input.debtId : previous.debt_id;
   assertMoneySatang(finalAmount, finalType === "debt_payment" ? "positive" : "nonnegative", "amountSatang");
   assertDebtPaymentLinked(finalType, finalDebtId);
+  if (finalDebtId && (finalType === "debt_payment" || input.debtId !== undefined)) {
+    await assertDebtBelongsToUser(userId, finalDebtId);
+  }
   const payload: Record<string, unknown> = {};
   if (input.type !== undefined) payload.type = input.type;
   if (input.amountSatang !== undefined) payload.amount_satang = input.amountSatang;
@@ -361,7 +372,7 @@ export async function updateTransaction(
     .single();
   if (error) throw new Error(error.message);
   const transaction = mapTransaction(data);
-  if (previous?.debt_id) await recalculateDebtPaidThisCycle(userId, previous.debt_id);
+  if (previous.debt_id) await recalculateDebtPaidThisCycle(userId, previous.debt_id);
   if (transaction.debtId) await recalculateDebtPaidThisCycle(userId, transaction.debtId);
   return transaction;
 }
@@ -611,11 +622,22 @@ async function setDebtStatus(userId: string, id: string, status: Debt["status"])
     const debt = getMockState().debts.find((item) => item.id === id);
     if (!debt) throw new Error("Debt not found");
     assertOwner(userId, debt.userId);
+    if (debt.status === "deleted") throw new Error(DELETED_DEBT_ERROR);
     debt.status = status;
     return debt;
   }
 
   const supabase = await createSupabaseServerClient();
+  const { data: existing, error: readError } = await supabase
+    .from("debts")
+    .select("id, status")
+    .eq("id", id)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (readError) throw new Error(readError.message);
+  if (!existing) throw new Error("Debt not found");
+  if (existing.status === "deleted") throw new Error(DELETED_DEBT_ERROR);
+
   const { data, error } = await supabase
     .from("debts")
     .update({
@@ -625,6 +647,7 @@ async function setDebtStatus(userId: string, id: string, status: Debt["status"])
     })
     .eq("id", id)
     .eq("user_id", userId)
+    .neq("status", "deleted")
     .select("*")
     .single();
   if (error) throw new Error(error.message);
@@ -677,8 +700,28 @@ export async function addDebtPayment(
   return { debt: updatedDebt ?? debt, transaction };
 }
 
+async function getDebtRecordForUser(
+  userId: string,
+  debtId: string,
+  options: { includeDeleted: boolean },
+): Promise<Debt | null> {
+  if (isMockAuthEnabled()) {
+    const debt = getMockState().debts.find((item) => item.id === debtId && item.userId === userId);
+    if (!debt) return null;
+    if (!options.includeDeleted && debt.status === "deleted") return null;
+    return debt;
+  }
+
+  const supabase = await createSupabaseServerClient();
+  let query = supabase.from("debts").select(DEBT_COLUMNS).eq("id", debtId).eq("user_id", userId);
+  if (!options.includeDeleted) query = query.neq("status", "deleted");
+  const { data, error } = await query.maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? mapDebt(data) : null;
+}
+
 async function getDebtForUser(userId: string, debtId: string): Promise<Debt> {
-  const debt = (await listDebts(userId, true)).find((item) => item.id === debtId);
+  const debt = await getDebtRecordForUser(userId, debtId, { includeDeleted: false });
   if (!debt) throw new Error("Debt not found");
   return debt;
 }
@@ -689,7 +732,8 @@ export async function recalculateDebtPaidThisCycle(userId: string, debtId: strin
     return;
   }
 
-  const debt = await getDebtForUser(userId, debtId);
+  const debt = await getDebtRecordForUser(userId, debtId, { includeDeleted: true });
+  if (!debt || debt.status === "deleted") return;
   const cycle = getDebtCycleWindow(debt, today);
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
@@ -707,7 +751,8 @@ export async function recalculateDebtPaidThisCycle(userId: string, debtId: strin
     .from("debts")
     .update({ amount_paid_this_cycle_satang: total })
     .eq("id", debtId)
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .neq("status", "deleted");
   if (updateError) throw new Error(updateError.message);
 }
 
@@ -715,6 +760,7 @@ function recalculateMockDebtPaid(userId: string, debtId: string, today = new Dat
   const state = getMockState();
   const debt = state.debts.find((item) => item.id === debtId && item.userId === userId);
   if (!debt) return;
+  if (debt.status === "deleted") return;
   const cycle = getDebtCycleWindow(debt, today);
   const start = new Date(cycle.startInstant).getTime();
   const endExclusive = new Date(cycle.endExclusiveInstant).getTime();

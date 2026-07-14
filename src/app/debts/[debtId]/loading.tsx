@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/PageHeader";
 
 export default function DebtDetailLoading() {
   return (
-    <AppShell>
+    <AppShell contentElement="div">
       <PageHeader title="ประวัติการชำระ" subtitle="กำลังโหลด" />
       <RouteSkeleton rows={4} />
     </AppShell>

@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/PageHeader";
 
 export default function ReviewLoading() {
   return (
-    <AppShell>
+    <AppShell contentElement="div">
       <PageHeader title="ตรวจสอบรายการ" subtitle="กำลังอ่านข้อมูลสลิป" />
       <DelayedLoadingMessage message="กำลังอ่านข้อมูลสลิป..." />
       <div aria-hidden="true" className="space-y-3">

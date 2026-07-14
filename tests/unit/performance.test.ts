@@ -83,10 +83,36 @@ describe("navigation performance wiring", () => {
       "src/app/transactions/loading.tsx",
       "src/app/debts/loading.tsx",
       "src/app/overview/loading.tsx",
+      "src/app/budget/loading.tsx",
+      "src/app/upload/loading.tsx",
+      "src/app/history-import/loading.tsx",
     ]) {
       const source = readProjectFile(path);
-      expect(source).toContain("<AppShell>");
+      expect(source).toContain('<AppShell contentElement="div">');
       expect(source).toContain("<PageHeader");
+    }
+  });
+
+  it("keeps only completed pages responsible for the main content landmark", () => {
+    const appShell = readProjectFile("src/components/AppShell.tsx");
+
+    expect(appShell).toContain('contentElement?: "main" | "div"');
+    expect(appShell).toContain('contentElement = "main"');
+    expect(appShell).toContain('id: "main-content"');
+    expect(appShell).toContain("contentElement === \"main\"");
+
+    for (const path of [
+      "src/app/today/loading.tsx",
+      "src/app/transactions/loading.tsx",
+      "src/app/debts/loading.tsx",
+      "src/app/overview/loading.tsx",
+      "src/app/budget/loading.tsx",
+      "src/app/upload/loading.tsx",
+      "src/app/history-import/loading.tsx",
+    ]) {
+      const source = readProjectFile(path);
+      expect(source).toContain('contentElement="div"');
+      expect(source).not.toContain('id="main-content"');
     }
   });
 

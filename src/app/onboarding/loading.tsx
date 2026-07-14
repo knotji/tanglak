@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/PageHeader";
 
 export default function OnboardingLoading() {
   return (
-    <AppShell nav={false}>
+    <AppShell nav={false} contentElement="div">
       <PageHeader title="เริ่มตั้งหลัก" subtitle="กำลังโหลด" />
       <RouteSkeleton rows={3} />
     </AppShell>
