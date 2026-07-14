@@ -51,7 +51,7 @@ export default async function TodayPage() {
 
     const overspentCategory = budgetSummary.categories.find((c: CategorySummary) => c.status === "overspent");
     const unbudgetedCategory = budgetSummary.categories.find(
-      (c) => c.status === "no_budget" && c.unbudgetedSpentSatang > 0,
+      (c: CategorySummary) => c.status === "no_budget" && c.unbudgetedSpentSatang > 0,
     );
     const nearLimitCategory = budgetSummary.categories.find((c: CategorySummary) => c.status === "near_limit");
 
