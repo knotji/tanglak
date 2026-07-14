@@ -37,8 +37,8 @@ describe("parseWallClockComponents", () => {
 });
 
 describe("formatThaiDateLabel", () => {
-  it('formats "2025-05-15" as "15 พ.ค. 2025"', () => {
-    expect(formatThaiDateLabel("2025-05-15")).toBe("15 พ.ค. 2025");
+  it('formats "2026-07-14" as "14 ก.ค. 2026"', () => {
+    expect(formatThaiDateLabel("2026-07-14")).toBe("14 ก.ค. 2026");
   });
 
   it("throws for invalid date keys", () => {
