@@ -18,14 +18,16 @@ export type NextActionInput = {
   /** Label of a category with spending but no positive budget configured -- distinct from overspentCategoryLabel (see docs/MONTHLY_BUDGET_ENGINE.md). */
   unbudgetedCategoryLabel?: string;
   hasAnyTransaction: boolean;
+  unreviewedCount?: number;
 };
 
 /**
  * Picks a single highest-priority action for the Today dashboard, per the
  * priority order: overdue minimum > due today > due within 3 days > minimum
  * not met (any other due date, including none) > no monthly budget >
- * overspent category > unbudgeted-spending category > near-limit category >
- * no transactions yet > "on track" fallback. Only ever one action is
+ * overspent category > unbudgeted-spending category > unreviewed items >
+ * near-limit category > no transactions yet > "on track" fallback. Only ever
+ * one action is
  * returned -- callers must not render more than one of these at a time.
  * Due-today is a distinct tier from due-soon (see F-005 in
  * docs/SLIP_DEBT_IMPLEMENTATION_FINDINGS.md) -- it must never render as
@@ -131,6 +133,16 @@ export function determineNextAction(input: NextActionInput, today: Date = new Da
       body: "ตั้งงบหมวดนี้เพื่อติดตามการใช้จ่ายให้ชัดเจนขึ้น",
       action: "ตั้งงบหมวดนี้",
       actionHref: "/budget",
+      tone: "primary",
+    };
+  }
+
+  if (input.unreviewedCount && input.unreviewedCount > 0) {
+    return {
+      title: "มีรายการรอตรวจสอบ",
+      body: `พบ ${input.unreviewedCount} รายการที่ต้องยืนยัน เพื่อความแม่นยำของงบประมาณ`,
+      action: "ไปตรวจสอบ",
+      actionHref: "/transactions",
       tone: "primary",
     };
   }

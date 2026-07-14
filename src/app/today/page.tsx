@@ -12,7 +12,8 @@ import { listDebts } from "@/lib/data/finance-repository";
 import { getMonthlyFinanceSnapshot } from "@/lib/finance/monthly-snapshot";
 import { determineNextAction } from "@/lib/finance/next-action";
 import { timePage } from "@/lib/observability/timing";
-import { getBangkokTodayString, getBangkokMonthString, getBangkokDateOf } from "@/lib/finance/date";
+import { getBangkokTodayString, getBangkokMonthString, getBangkokDateOf, getBangkokMonthRange } from "@/lib/finance/date";
+import { daysUntilDue } from "@/lib/finance/calculations";
 
 function formatTodayHeading(todayKey: string) {
   const date = new Date(`${todayKey}T00:00:00+07:00`);
@@ -34,7 +35,7 @@ export default async function TodayPage() {
       getMonthlyFinanceSnapshot(user.id, month),
       listDebts(user.id),
     ]);
-    const { transactions, budgetSummary } = snapshot;
+    const { transactions, budgetSummary, totals } = snapshot;
 
     // Bangkok-local date comparison, not a naive string prefix -- see
     // getBangkokDateOf in date.ts.
@@ -44,7 +45,7 @@ export default async function TodayPage() {
     const spentToday = todayTransactions
       .filter((transaction) => transaction.type === "expense")
       .reduce((sum, transaction) => sum + transaction.amountSatang, 0);
-    const monthlySpent = budgetSummary.spentTotalSatang;
+
     const overspentCategory = budgetSummary.categories.find((c) => c.status === "overspent");
     const unbudgetedCategory = budgetSummary.categories.find(
       (c) => c.status === "no_budget" && c.unbudgetedSpentSatang > 0,
@@ -58,7 +59,15 @@ export default async function TodayPage() {
       unbudgetedCategoryLabel: unbudgetedCategory?.label,
       nearLimitCategoryLabel: nearLimitCategory?.label,
       hasAnyTransaction: transactions.length > 0,
+      unreviewedCount: totals.unreviewedCount,
     });
+
+    const { endDate } = getBangkokMonthRange(month);
+    const daysRemaining = Math.max(1, daysUntilDue(endDate) + 1);
+    const dailyAllowance =
+      budgetSummary.hasBudget && budgetSummary.remainingTotalSatang > 0
+        ? Math.floor(budgetSummary.remainingTotalSatang / daysRemaining)
+        : null;
 
     return (
       <AppShell>
@@ -76,18 +85,17 @@ export default async function TodayPage() {
             <p className="mt-2 text-lg font-bold leading-snug text-text-secondary">ยังไม่มีรายจ่ายวันนี้</p>
           )}
           <div className="mt-4 grid grid-cols-2 gap-2">
-            <CompactStat label="เดือนนี้ใช้ไป" amountSatang={monthlySpent} />
-            {budgetSummary.plannedTotalSatang > 0 ? (
-              // A remaining-budget figure is only meaningful against a real,
-              // positive allocation -- never show a negative number that's
-              // really just "no category budget was ever set" (Issue 2).
-              <CompactStat
-                label="งบที่เหลือ"
-                amountSatang={budgetSummary.remainingTotalSatang}
-                tone={budgetSummary.remainingTotalSatang < 0 ? "debt" : "income"}
-              />
+            {dailyAllowance !== null ? (
+              <CompactStat label="ใช้ได้อีกวันละ" amountSatang={dailyAllowance} tone="income" />
             ) : (
-              <CompactStat label="งบที่เหลือ" valueLabel="ยังไม่ได้ตั้งงบ" tone="default" />
+              <CompactStat label="เหลืออีก" valueLabel={`${daysRemaining} วัน`} tone="default" />
+            )}
+            {totals.unreviewedCount > 0 ? (
+              <CompactStat label="รอตรวจสอบ" valueLabel={`${totals.unreviewedCount} รายการ`} tone="debt" />
+            ) : dailyAllowance !== null ? (
+              <CompactStat label="เหลืออีก" valueLabel={`${daysRemaining} วัน`} tone="default" />
+            ) : (
+              <CompactStat label="รายการวันนี้" valueLabel={`${todayTransactions.length} รายการ`} tone="default" />
             )}
           </div>
         </section>
