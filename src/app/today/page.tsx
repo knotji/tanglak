@@ -1,3 +1,5 @@
+import type { CategorySummary } from "@/lib/finance/budget-calculations";
+import type { Transaction } from "@/types/domain";
 import { AppShell } from "@/components/AppShell";
 import { CompactStat } from "@/components/CompactStat";
 import { FloatingActionButton } from "@/components/FloatingActionButton";
@@ -8,11 +10,12 @@ import { MoneyAmount } from "@/components/MoneyAmount";
 import { CompactTransactionRow } from "@/components/finance/CompactTransactionRow";
 import { requireCompletedOnboarding } from "@/lib/auth/onboarding";
 import { requireUser } from "@/lib/auth/session";
-import { listDebts } from "@/lib/data/finance-repository";
+import { listDebts, countPendingAttentionItems } from "@/lib/data/finance-repository";
 import { getMonthlyFinanceSnapshot } from "@/lib/finance/monthly-snapshot";
 import { determineNextAction } from "@/lib/finance/next-action";
 import { timePage } from "@/lib/observability/timing";
-import { getBangkokTodayString, getBangkokMonthString, getBangkokDateOf } from "@/lib/finance/date";
+import { getBangkokTodayString, getBangkokMonthString, getBangkokDateOf, getBangkokMonthRange } from "@/lib/finance/date";
+import { daysUntilDue } from "@/lib/finance/calculations";
 
 function formatTodayHeading(todayKey: string) {
   const date = new Date(`${todayKey}T00:00:00+07:00`);
@@ -30,27 +33,28 @@ export default async function TodayPage() {
     const user = await requireUser();
     const todayKey = getBangkokTodayString();
     const month = getBangkokMonthString();
-    const [, snapshot, debts] = await Promise.all([
+    const [, snapshot, debts, pendingAttentionCount] = await Promise.all([
       requireCompletedOnboarding(user),
       getMonthlyFinanceSnapshot(user.id, month),
       listDebts(user.id),
+      countPendingAttentionItems(user.id),
     ]);
     const { transactions, budgetSummary } = snapshot;
 
     // Bangkok-local date comparison, not a naive string prefix -- see
     // getBangkokDateOf in date.ts.
     const todayTransactions = transactions
-      .filter((transaction) => getBangkokDateOf(transaction.occurredAt) === todayKey)
-      .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
+      .filter((transaction: Transaction) => getBangkokDateOf(transaction.occurredAt) === todayKey)
+      .sort((a: Transaction, b: Transaction) => b.occurredAt.localeCompare(a.occurredAt));
     const spentToday = todayTransactions
-      .filter((transaction) => transaction.type === "expense")
-      .reduce((sum, transaction) => sum + transaction.amountSatang, 0);
-    const monthlySpent = budgetSummary.spentTotalSatang;
-    const overspentCategory = budgetSummary.categories.find((c) => c.status === "overspent");
+      .filter((transaction: Transaction) => transaction.type === "expense")
+      .reduce((sum: number, transaction: Transaction) => sum + transaction.amountSatang, 0);
+
+    const overspentCategory = budgetSummary.categories.find((c: CategorySummary) => c.status === "overspent");
     const unbudgetedCategory = budgetSummary.categories.find(
-      (c) => c.status === "no_budget" && c.unbudgetedSpentSatang > 0,
+      (c: CategorySummary) => c.status === "no_budget" && c.unbudgetedSpentSatang > 0,
     );
-    const nearLimitCategory = budgetSummary.categories.find((c) => c.status === "near_limit");
+    const nearLimitCategory = budgetSummary.categories.find((c: CategorySummary) => c.status === "near_limit");
 
     const nextAction = determineNextAction({
       debts,
@@ -59,7 +63,15 @@ export default async function TodayPage() {
       unbudgetedCategoryLabel: unbudgetedCategory?.label,
       nearLimitCategoryLabel: nearLimitCategory?.label,
       hasAnyTransaction: transactions.length > 0,
+      unreviewedCount: pendingAttentionCount,
     });
+
+    const { endDate } = getBangkokMonthRange(month);
+    const daysRemaining = Math.max(1, daysUntilDue(endDate) + 1);
+    const dailyAllowance =
+      budgetSummary.hasBudget && budgetSummary.remainingTotalSatang > 0
+        ? Math.floor(budgetSummary.remainingTotalSatang / daysRemaining)
+        : null;
 
     return (
       <AppShell>
@@ -77,18 +89,17 @@ export default async function TodayPage() {
             <p className="mt-2 text-lg font-bold leading-snug text-text-secondary">ยังไม่มีรายจ่ายวันนี้</p>
           )}
           <div className="mt-4 grid grid-cols-2 gap-2">
-            <CompactStat label="เดือนนี้ใช้ไป" amountSatang={monthlySpent} />
-            {budgetSummary.plannedTotalSatang > 0 ? (
-              // A remaining-budget figure is only meaningful against a real,
-              // positive allocation -- never show a negative number that's
-              // really just "no category budget was ever set" (Issue 2).
-              <CompactStat
-                label="งบที่เหลือ"
-                amountSatang={budgetSummary.remainingTotalSatang}
-                tone={budgetSummary.remainingTotalSatang < 0 ? "debt" : "income"}
-              />
+            {dailyAllowance !== null ? (
+              <CompactStat label="ใช้ได้อีกวันละ" amountSatang={dailyAllowance} tone="income" />
             ) : (
-              <CompactStat label="งบที่เหลือ" valueLabel="ยังไม่ได้ตั้งงบ" tone="default" />
+              <CompactStat label="เหลืออีก" valueLabel={`${daysRemaining} วัน`} tone="default" />
+            )}
+            {pendingAttentionCount > 0 ? (
+              <CompactStat label="รอตรวจสอบ" valueLabel={`${pendingAttentionCount} รายการ`} tone="debt" />
+            ) : dailyAllowance !== null ? (
+              <CompactStat label="เหลืออีก" valueLabel={`${daysRemaining} วัน`} tone="default" />
+            ) : (
+              <CompactStat label="รายการวันนี้" valueLabel={`${todayTransactions.length} รายการ`} tone="default" />
             )}
           </div>
         </section>
@@ -99,7 +110,7 @@ export default async function TodayPage() {
           <h2 className="py-3 text-sm font-bold text-foreground">รายการวันนี้</h2>
           {todayTransactions.length ? (
             <div>
-              {todayTransactions.map((transaction) => (
+              {todayTransactions.map((transaction: Transaction) => (
                 <CompactTransactionRow key={transaction.id} transaction={transaction} />
               ))}
             </div>

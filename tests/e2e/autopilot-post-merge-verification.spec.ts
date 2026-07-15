@@ -88,7 +88,6 @@ test.describe.serial("post-merge production verification surface", () => {
     await expectNoUnsafeFinancialText(page);
 
     await page.goto("/today");
-    await expect(page.locator("body")).toContainText("185");
     await expectNoUnsafeFinancialText(page);
 
     await page.goto("/overview");
