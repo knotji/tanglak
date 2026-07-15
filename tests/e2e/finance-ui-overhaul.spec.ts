@@ -4,6 +4,17 @@ const password = "password123";
 
 async function signUp(page: import("@playwright/test").Page, name: string) {
   const email = `overhaul-${Date.now()}-${Math.random().toString(36).slice(2)}@example.test`;
+
+  // Register page error & console error diagnostics
+  page.on("pageerror", (err) => {
+    console.error(`[Page Error] ${err.stack || err.message}`);
+  });
+  page.on("console", (msg) => {
+    if (msg.type() === "error") {
+      console.error(`[Console Error] ${msg.text()}`);
+    }
+  });
+
   await page.context().clearCookies();
   await page.goto("/auth");
   await page.getByRole("button", { name: "สมัครใหม่" }).click();
@@ -17,7 +28,12 @@ async function signUp(page: import("@playwright/test").Page, name: string) {
   await page.goto("/onboarding?edit=1");
   await page.getByLabel("ชื่อที่อยากให้เรียก").fill(name);
   await page.getByRole("button", { name: "เริ่มใช้งาน" }).click();
+
+  // Wait for onboarding submission to process and redirect to today
   await expect(page).toHaveURL(/\/today/);
+
+  // Wait for the Today page to be fully loaded and rendered deterministically
+  await expect(page.getByRole("heading", { name: "วันนี้", exact: true })).toBeVisible();
 }
 
 test.describe("finance UI overhaul", () => {
@@ -25,13 +41,27 @@ test.describe("finance UI overhaul", () => {
     await signUp(page, "ผู้ใช้เมนูงบ");
     await page.goto("/today");
 
+    // Wait for the navigation to be ready
     const budgetLink = page.getByRole("link", { name: "งบ", exact: true });
     await expect(budgetLink).toBeVisible();
-    await budgetLink.click();
 
+    // Use Promise.all to prevent Next.js navigation race condition
+    await Promise.all([
+      page.waitForURL(/\/budget/),
+      budgetLink.click(),
+    ]);
+
+    // Ensure we did not redirect back to auth or onboarding
     await expect(page).toHaveURL(/\/budget/);
+    const finalUrl = page.url();
+    expect(finalUrl).not.toContain("/auth");
+    expect(finalUrl).not.toContain("/onboarding");
+
+    // Verify accessible heading is visible
     const budgetPage = page.locator("main", { has: page.getByRole("heading", { name: "งบประมาณรายเดือน" }) });
     await expect(budgetPage).toBeVisible({ timeout: 15_000 });
+
+    // Verify the link has the correct aria-current attribute
     await expect(page.getByRole("link", { name: "งบ", exact: true })).toHaveAttribute("aria-current", "page");
   });
 

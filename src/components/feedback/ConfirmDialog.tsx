@@ -11,6 +11,7 @@ export function ConfirmDialog({
   cancelLabel = "ยกเลิก",
   confirmPending = false,
   pendingLabel = "กำลังดำเนินการ...",
+  tone = "destructive",
   onConfirm,
   onCancel,
 }: {
@@ -21,6 +22,7 @@ export function ConfirmDialog({
   cancelLabel?: string;
   confirmPending?: boolean;
   pendingLabel?: string;
+  tone?: "destructive" | "primary";
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -52,7 +54,9 @@ export function ConfirmDialog({
             onClick={onConfirm}
             disabled={confirmPending}
             aria-busy={confirmPending || undefined}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[16px] bg-overdue px-4 font-bold text-white disabled:opacity-60"
+            className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-[16px] px-4 font-bold text-white disabled:opacity-60 ${
+              tone === "primary" ? "bg-primary hover:bg-primary-dark" : "bg-overdue hover:opacity-90"
+            }`}
           >
             {confirmPending ? (
               <>

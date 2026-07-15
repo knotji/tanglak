@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ConfirmDialog } from "@/components/feedback/ConfirmDialog";
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { InlineError } from "@/components/feedback/InlineError";
@@ -150,15 +151,21 @@ function CategoryRow({ month, category }: { month: string; category: BudgetSumma
   const router = useRouter();
   const [state, action, pending] = useActionState(saveBudgetCategoryAction, { ok: false });
   const [deleting, setDeleting] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const percentage = calculateBudgetPercentage(category.spentSatang, category.budgetedSatang);
   const percentLabel =
     category.budgetedSatang <= 0
       ? "ยังไม่ได้ตั้งงบสำหรับหมวดนี้"
       : `${percentage}% ของงบหมวดนี้`;
 
-  async function handleDelete() {
+  function handleDelete() {
     if (!category.budgetCategoryId) return;
-    if (!window.confirm(`ลบงบหมวด "${category.label}" ใช่ไหม?`)) return;
+    setConfirmDeleteOpen(true);
+  }
+
+  async function executeDelete() {
+    setConfirmDeleteOpen(false);
+    if (!category.budgetCategoryId) return;
     setDeleting(true);
     await deleteBudgetCategoryAction(category.budgetCategoryId, month);
     setDeleting(false);
@@ -203,6 +210,17 @@ function CategoryRow({ month, category }: { month: string; category: BudgetSumma
           <InlineError message={state.message} />
         </div>
       ) : null}
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        title="ลบงบหมวดหมู่หรือไม่"
+        body={`คุณต้องการลบงบประมาณสำหรับหมวด "${category.label}" หรือไม่? การลบนี้จะยกเลิกการตั้งงบของหมวดนี้ในเดือนปัจจุบัน`}
+        confirmLabel="ลบงบประมาณ"
+        cancelLabel="ยกเลิก"
+        confirmPending={deleting}
+        pendingLabel="กำลังลบ..."
+        onConfirm={executeDelete}
+        onCancel={() => setConfirmDeleteOpen(false)}
+      />
     </div>
   );
 }

@@ -210,12 +210,14 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
     await expect(page).toHaveURL(/\/upload\/review\//);
     const reviewUrl = page.url();
 
-    const retryDialog = page.waitForEvent("dialog", { timeout: 15_000 }).then((dialog) => {
-      expect(dialog.message()).toContain("เริ่มสแกนเอกสารอีกครั้งแล้ว");
-      return dialog.accept();
-    });
+    // Click to open custom ConfirmDialog
     await page.getByRole("button", { name: "ประมวลผลใหม่" }).click();
-    await retryDialog;
+
+    // Accept in custom ConfirmDialog
+    await page.getByRole("dialog").getByRole("button", { name: "ประมวลผลใหม่" }).click();
+
+    // Verify toast notification is displayed instead of alert
+    await expect(page.getByText("เริ่มสแกนเอกสารอีกครั้งแล้ว")).toBeVisible({ timeout: 15_000 });
 
     // Retry stays on the exact same review URL (same document id) and the
     // fields are re-populated from the same file -- no second document was
@@ -496,9 +498,14 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
     const failedReviewUrl = page.url();
     await expect(page.getByText("การอ่านข้อมูลบางส่วนไม่ครบ")).toBeVisible();
 
-    const retryDialog = page.waitForEvent("dialog", { timeout: 15_000 }).then((dialog) => dialog.accept());
+    // Click to open custom ConfirmDialog
     await page.getByRole("button", { name: "ลองประมวลผลอีกครั้ง" }).click();
-    await retryDialog;
+
+    // Accept in custom ConfirmDialog
+    await page.getByRole("dialog").getByRole("button", { name: "ประมวลผลใหม่" }).click();
+
+    // Wait for the scanning/reprocessing toast to appear
+    await expect(page.getByText("เริ่มสแกนเอกสารอีกครั้งแล้ว")).toBeVisible({ timeout: 15_000 });
     await page.reload();
     await expect(page.locator("input[name='totalPaid']")).toHaveValue("120");
     await expect(page).toHaveURL(failedReviewUrl);
