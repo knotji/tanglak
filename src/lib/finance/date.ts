@@ -377,3 +377,104 @@ export function getBangkokDateTimeLocalOf(isoInstant: string): string {
   const get = (type: string) => parts.find((p) => p.type === type)!.value;
   return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
 }
+
+export type DateTimeParseResult =
+  | { ok: true; isoInstant: string; type: "date-only" | "datetime" }
+  | { ok: false; error: string };
+
+/**
+ * Parses and strictly validates a date/time input from financial forms.
+ * Accepts YYYY-MM-DD (date-only) and YYYY-MM-DDTHH:mm (datetime-local),
+ * validating calendar existence, leap years, and time ranges.
+ * Pinning offset to Asia/Bangkok (+07:00) strictly to avoid machine timezone shift.
+ */
+export function parseAndValidateDateTime(value: unknown): DateTimeParseResult {
+  if (typeof value !== "string" || !value.trim()) {
+    return { ok: false, error: "กรุณาระบุวันที่ให้ถูกต้อง" };
+  }
+
+  const trimmed = value.trim();
+
+  // 1. Try matching YYYY-MM-DD
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (dateOnlyMatch) {
+    const year = Number(dateOnlyMatch[1]);
+    const month = Number(dateOnlyMatch[2]);
+    const day = Number(dateOnlyMatch[3]);
+
+    if (month < 1 || month > 12) {
+      return { ok: false, error: "วันที่นี้ไม่มีอยู่จริง" };
+    }
+
+    const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    if (day < 1 || day > daysInMonth) {
+      return { ok: false, error: "วันที่นี้ไม่มีอยู่จริง" };
+    }
+
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return {
+      ok: true,
+      isoInstant: `${year}-${pad(month)}-${pad(day)}T12:00:00+07:00`,
+      type: "date-only",
+    };
+  }
+
+  // 2. Try matching YYYY-MM-DDTHH:mm (or YYYY-MM-DDTHH:mm:ss etc.)
+  if (trimmed.includes("T")) {
+    const parts = trimmed.split("T");
+    if (parts.length === 2) {
+      const datePart = parts[0];
+      const timePart = parts[1];
+
+      // Validate date portion
+      const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(datePart);
+      if (!dateMatch) {
+        return { ok: false, error: "กรุณาระบุวันที่ให้ถูกต้อง" };
+      }
+
+      const year = Number(dateMatch[1]);
+      const month = Number(dateMatch[2]);
+      const day = Number(dateMatch[3]);
+
+      if (month < 1 || month > 12) {
+        return { ok: false, error: "วันที่นี้ไม่มีอยู่จริง" };
+      }
+
+      const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+      if (day < 1 || day > daysInMonth) {
+        return { ok: false, error: "วันที่นี้ไม่มีอยู่จริง" };
+      }
+
+      // Validate time portion (HH:mm or HH:mm:ss, optional seconds, optional offset)
+      const timeMatch = /^(\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?$/.exec(timePart);
+      if (!timeMatch) {
+        return { ok: false, error: "กรุณาระบุเวลาให้ถูกต้อง" };
+      }
+
+      const hour = Number(timeMatch[1]);
+      const minute = Number(timeMatch[2]);
+      const second = timeMatch[3] ? Number(timeMatch[3]) : 0;
+
+      if (hour < 0 || hour > 23) {
+        return { ok: false, error: "กรุณาระบุเวลาให้ถูกต้อง" };
+      }
+
+      if (minute < 0 || minute > 59) {
+        return { ok: false, error: "กรุณาระบุเวลาให้ถูกต้อง" };
+      }
+
+      if (second < 0 || second > 59) {
+        return { ok: false, error: "กรุณาระบุเวลาให้ถูกต้อง" };
+      }
+
+      const pad = (n: number) => String(n).padStart(2, "0");
+      return {
+        ok: true,
+        isoInstant: `${year}-${pad(month)}-${pad(day)}T${pad(hour)}:${pad(minute)}:${pad(second)}+07:00`,
+        type: "datetime",
+      };
+    }
+  }
+
+  return { ok: false, error: "วันและเวลาไม่ถูกต้อง" };
+}

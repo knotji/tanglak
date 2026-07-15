@@ -13,6 +13,7 @@ import {
   listDebtPaymentHistory,
   updateDebt,
   updateTransaction,
+  getTransactionById,
 } from "@/lib/data/finance-repository";
 import { parseRequiredMoney } from "@/lib/finance/money-guards";
 import { setTransactionCategoryProvenance } from "@/lib/autopilot/autopilot-provenance";
@@ -26,7 +27,7 @@ import {
   DEBT_ERROR_MINIMUM_ABOVE_OUTSTANDING_TH,
   DEBT_ERROR_UNLINKED_PAYMENT_TH,
 } from "@/lib/finance/debt-guards";
-import { bangkokDateTimeLocalToInstant } from "@/lib/finance/date";
+import { parseAndValidateDateTime } from "@/lib/finance/date";
 
 export type FinanceActionState = {
   ok: boolean;
@@ -89,6 +90,9 @@ export async function saveTransactionAction(
   const parsed = transactionSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, message: "กรอกข้อมูลรายการให้ครบ" };
 
+  const dateResult = parseAndValidateDateTime(parsed.data.date);
+  if (!dateResult.ok) return { ok: false, message: dateResult.error };
+
   const amountResult = parseRequiredMoney(parsed.data.amount, parsed.data.type === "debt_payment" ? "positive" : "nonnegative");
   if (!amountResult.ok) return { ok: false, message: amountResult.error };
 
@@ -97,10 +101,26 @@ export async function saveTransactionAction(
     return { ok: false, message: DEBT_ERROR_UNLINKED_PAYMENT_TH };
   }
 
+  let occurredAt = dateResult.isoInstant;
+  const transactionId = parsed.data.id;
+  if (transactionId && dateResult.type === "date-only") {
+    try {
+      const existing = await getTransactionById(user.id, transactionId);
+      if (existing) {
+        const existingDate = existing.occurredAt.slice(0, 10);
+        if (parsed.data.date === existingDate) {
+          occurredAt = existing.occurredAt;
+        }
+      }
+    } catch {
+      // Ignore lookup errors
+    }
+  }
+
   const input = {
     type: parsed.data.type,
     amountSatang: amountResult.satang!,
-    occurredAt: parsed.data.date.includes("T") ? bangkokDateTimeLocalToInstant(parsed.data.date) : `${parsed.data.date}T12:00:00+07:00`,
+    occurredAt,
     merchant: parsed.data.label,
     category: parsed.data.category,
     sourceAccountId: parsed.data.sourceAccountId || undefined,
@@ -109,15 +129,15 @@ export async function saveTransactionAction(
   };
 
   try {
-    let transactionId = parsed.data.id;
-    if (transactionId) await updateTransaction(user.id, transactionId, input);
-    else transactionId = (await createTransaction(user.id, input)).id;
+    let savedTransactionId = transactionId;
+    if (savedTransactionId) await updateTransaction(user.id, savedTransactionId, input);
+    else savedTransactionId = (await createTransaction(user.id, input)).id;
 
     // A user who explicitly picked/typed a category in this form is making
     // a manual decision -- record it as "manual" provenance so autopilot
     // (see autopilot-provenance.ts) never overwrites it on reprocessing.
     if (parsed.data.category) {
-      await setTransactionCategoryProvenance(user.id, transactionId, "manual", undefined);
+      await setTransactionCategoryProvenance(user.id, savedTransactionId, "manual", undefined);
     }
 
     revalidateFinance();
@@ -243,15 +263,31 @@ export async function updateDebtPaymentAction(
   const parsed = debtPaymentUpdateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, message: "กรอกข้อมูลการชำระให้ครบ" };
 
+  const dateResult = parseAndValidateDateTime(parsed.data.date);
+  if (!dateResult.ok) return { ok: false, message: dateResult.error };
+
   const amountResult = parseRequiredMoney(parsed.data.amount, "positive");
   if (!amountResult.ok) return { ok: false, message: amountResult.error };
 
   try {
+    const existing = await getTransactionById(user.id, parsed.data.id);
+    if (!existing) {
+      return { ok: false, message: "ไม่พบรายการชำระหนี้นี้" };
+    }
+
+    let occurredAt = dateResult.isoInstant;
+    if (dateResult.type === "date-only") {
+      const existingDate = existing.occurredAt.slice(0, 10);
+      if (parsed.data.date === existingDate) {
+        occurredAt = existing.occurredAt;
+      }
+    }
+
     await updateTransaction(user.id, parsed.data.id, {
       type: "debt_payment",
       debtId: parsed.data.debtId,
       amountSatang: amountResult.satang!,
-      occurredAt: parsed.data.date.includes("T") ? bangkokDateTimeLocalToInstant(parsed.data.date) : `${parsed.data.date}T12:00:00+07:00`,
+      occurredAt,
       note: parsed.data.note,
     });
     revalidateFinance();
