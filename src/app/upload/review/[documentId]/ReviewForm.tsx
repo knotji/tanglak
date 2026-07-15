@@ -458,7 +458,7 @@ export function ReviewForm({
     // Independently re-check monetary fields client-side before submitting
     const clientMoneyError = validateReviewMoneyFields(docType, fd, items);
     if (clientMoneyError) {
-      setFormError(clientMoneyError);
+      setFormError(clientMoneyError === receiptTotalPaidError ? null : clientMoneyError);
       return;
     }
 
@@ -1028,10 +1028,11 @@ export function ReviewForm({
                           className="w-full rounded-[12px] border border-border bg-white p-3 text-sm font-extrabold text-primary"
                           value={totalPaid}
                           onChange={(e) => setTotalPaid(e.target.value)}
+                          aria-invalid={Boolean(receiptTotalPaidError)}
                           aria-describedby={receiptTotalPaidError ? reviewFieldId("totalPaidError") : undefined}
                           required
                         />
-                        {receiptTotalPaidError && formError !== receiptTotalPaidError ? (
+                        {receiptTotalPaidError ? (
                           <p id={reviewFieldId("totalPaidError")} role="alert" className="mt-1 text-xs font-semibold text-red-700">
                             {receiptTotalPaidError}
                           </p>

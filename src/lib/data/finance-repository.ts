@@ -234,6 +234,26 @@ export async function getTransactionById(userId: string, id: string): Promise<Tr
   return data ? mapTransaction(data) : null;
 }
 
+/** Single-transaction fetch by source document id, scoped to the owning user. Used to make document confirmation retries idempotent. */
+export async function getTransactionByDocumentId(userId: string, documentId: string): Promise<Transaction | null> {
+  if (isMockAuthEnabled()) {
+    const transaction = getMockState().transactions.find((item) => item.documentId === documentId && item.userId === userId);
+    return transaction ?? null;
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("transactions")
+    .select(TRANSACTION_COLUMNS)
+    .eq("document_id", documentId)
+    .eq("user_id", userId)
+    .order("updated_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) handlePostgrestError(error);
+  return data ? mapTransaction(data) : null;
+}
+
 export async function createTransaction(userId: string, input: TransactionInput): Promise<Transaction> {
   assertMoneySatang(input.amountSatang, input.type === "debt_payment" ? "positive" : "nonnegative", "amountSatang");
   assertDebtPaymentLinked(input.type, input.debtId);
