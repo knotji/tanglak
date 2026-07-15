@@ -18,21 +18,6 @@ export const DEBT_ERROR_DUE_DATE_INVALID_TH = "วันครบกำหนด
 export const DEBT_ERROR_NOT_FOUND_TH = "ไม่พบข้อมูลหนี้";
 export const DEBT_ERROR_MINIMUM_ABOVE_OUTSTANDING_TH = "ยอดขั้นต่ำต้องไม่มากกว่ายอดหนี้ทั้งหมด";
 export const DEBT_ERROR_UNLINKED_PAYMENT_TH = "กรุณาเลือกหนี้ที่เกี่ยวข้องกับรายการชำระนี้";
-export const DEBT_ERROR_NOT_ACTIVE_TH = "หนี้นี้ไม่ได้อยู่ในสถานะที่ชำระได้ (ปิด/พัก/ลบไปแล้ว) จึงบันทึกการชำระเพิ่มไม่ได้";
-
-/**
- * Locked rule: only a debt in `active` status may receive a new payment.
- * `paid_off`, `paused`, `deleted`, and any other non-`active` status are all
- * rejected -- never silently allowed through, never auto-reopened. Mirrors
- * the same check enforced atomically inside the `record_debt_payment`
- * Postgres RPC (see supabase/migrations/202607140003_atomic_debt_payment_rpc.sql)
- * for the mock-auth code path.
- */
-export function assertDebtActiveForPayment(status: string | undefined): void {
-  if (status !== "active") {
-    throw new Error(DEBT_ERROR_NOT_ACTIVE_TH);
-  }
-}
 
 /** Annual interest rate is a percentage: 0 through 100, inclusive. */
 export const INTEREST_RATE_MIN = 0;

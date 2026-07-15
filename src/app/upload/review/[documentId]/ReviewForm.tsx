@@ -597,10 +597,7 @@ export function ReviewForm({
                 </button>
               ) : null}
               <button
-                onClick={() => {
-                  setManualMode(true);
-                  setIsDetailsExpanded(true);
-                }}
+                onClick={() => setManualMode(true)}
                 className="rounded-[16px] border border-border bg-white px-6 py-3 font-bold text-foreground shadow-sm hover:bg-gray-50"
               >
                 กรอกข้อมูลด้วยตนเอง
@@ -973,7 +970,7 @@ export function ReviewForm({
                           ref={dateFieldRef}
                           id={reviewFieldId("occurredAt")}
                           type="datetime-local"
-                          name="occurredAt"
+                          name={docType === "receipt" || docType === "delivery_receipt" ? "occurredAt" : undefined}
                           className={`w-full rounded-[12px] border bg-white p-3 text-sm ${dateFieldBorderClass(occurredAt)}`}
                           value={occurredAt}
                           onChange={(e) => setOccurredAt(e.target.value)}
@@ -995,7 +992,7 @@ export function ReviewForm({
                           id={reviewFieldId("totalPaid")}
                           type="number"
                           step="0.01"
-                          name="totalPaid"
+                          name={docType === "receipt" || docType === "delivery_receipt" ? "totalPaid" : undefined}
                           className="w-full rounded-[12px] border border-border bg-white p-3 text-sm font-extrabold text-primary"
                           value={totalPaid}
                           onChange={(e) => setTotalPaid(e.target.value)}
@@ -1124,9 +1121,7 @@ export function ReviewForm({
                       </button>
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-bold text-text-secondary">ยอดรวมจ่ายจริง:</span>
-                        <output className="min-w-28 rounded-[12px] border border-border bg-white p-2 text-right text-sm font-extrabold text-primary">
-                          {totalPaid || "0"}
-                        </output>
+                        <span className="text-sm font-extrabold text-primary">{formatTHB(Number(totalPaid || 0) * 100)}</span>
                       </div>
                     </div>
 
@@ -1235,7 +1230,7 @@ export function ReviewForm({
                           ref={dateFieldRef}
                           id={reviewFieldId("occurredAt")}
                           type="datetime-local"
-                          name="occurredAt"
+                          name={docType === "transfer_slip" ? "occurredAt" : undefined}
                           className={`w-full rounded-[12px] border bg-white p-3 text-sm ${dateFieldBorderClass(transferDate)}`}
                           value={transferDate}
                           onChange={(e) => setTransferDate(e.target.value)}
@@ -1257,7 +1252,7 @@ export function ReviewForm({
                           id={reviewFieldId("amount")}
                           type="number"
                           step="0.01"
-                          name="amount"
+                          name={docType === "transfer_slip" ? "amount" : undefined}
                           className="w-full rounded-[12px] border border-border bg-white p-3 text-sm font-bold text-primary"
                           value={transferAmount}
                           onChange={(e) => setTransferAmount(e.target.value)}
@@ -1645,7 +1640,7 @@ export function ReviewForm({
                           ref={dateFieldRef}
                           id={reviewFieldId("occurredAt")}
                           type="datetime-local"
-                          name="occurredAt"
+                          name={docType === "other" ? "occurredAt" : undefined}
                           className={`w-full rounded-[12px] border bg-white p-3 text-sm ${dateFieldBorderClass(occurredAt)}`}
                           value={occurredAt}
                           onChange={(e) => setOccurredAt(e.target.value)}
@@ -1667,7 +1662,7 @@ export function ReviewForm({
                           id={reviewFieldId("totalPaid")}
                           type="number"
                           step="0.01"
-                          name="totalPaid"
+                          name={docType === "other" ? "totalPaid" : undefined}
                           className="w-full rounded-[12px] border border-border bg-white p-3 text-sm font-bold text-primary"
                           value={totalPaid}
                           onChange={(e) => setTotalPaid(e.target.value)}

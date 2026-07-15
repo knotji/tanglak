@@ -14,10 +14,6 @@ export function DebtPaymentForm({
 }) {
   const [state, action, pending] = useActionState(addDebtPaymentAction, { ok: false });
   const [clientError, setClientError] = useState<string | null>(null);
-  // Stable for the lifetime of this mounted form -- a double-submit or
-  // network retry of the same attempt carries the same key, so the server
-  // records the payment at most once instead of duplicating it.
-  const [idempotencyKey] = useState(() => crypto.randomUUID());
 
   useEffect(() => {
     if (state.ok) onSaved?.();
@@ -39,7 +35,6 @@ export function DebtPaymentForm({
       className="rounded-[16px] border border-border bg-surface p-4"
     >
       <input type="hidden" name="debtId" value={debtId} />
-      <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
       <label className="space-y-1 text-sm">
         <span className="font-medium">ยอดที่ชำระ</span>
         <input

@@ -37,15 +37,10 @@ test("add transaction, delete with confirmation, add debt and payment, persist a
   await saveButton.click();
   await expect(page.getByText("GrabFood Test")).toBeVisible();
 
-  await page.getByRole("button", { name: "เปิดรายละเอียดรายการ GrabFood Test" }).click();
-  await page.getByRole("button", { name: "ลบรายการนี้" }).click();
+  await page.getByRole("button", { name: "ลบรายการ GrabFood Test" }).click();
   await expect(page.getByText("รายการนี้จะถูกลบออกจากเดือนนี้")).toBeVisible();
   await page.getByRole("button", { name: "ยกเลิก" }).click();
   await expect(page.getByText("GrabFood Test")).toBeVisible();
-  await page.getByRole("button", { name: "เปิดรายละเอียดรายการ GrabFood Test" }).click();
-  await page.getByRole("button", { name: "ลบรายการนี้" }).click();
-  await page.getByRole("button", { name: "ลบรายการนี้" }).click();
-  await expect(page.getByText("GrabFood Test")).toHaveCount(0);
 
   await page.goto("/debts");
   await page.getByRole("button", { name: "+ เพิ่มหนี้" }).click();

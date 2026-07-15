@@ -423,13 +423,8 @@ export async function confirmDocumentAction(
         // debt_payments tables and recalculates cycles. The reviewed,
         // user-confirmed occurredAt is passed explicitly -- never the
         // function's own "pay now" default, which is reserved for the
-        // separate manual quick-pay flow (addDebtPaymentAction). The
-        // document id is a stable, naturally-unique key for this
-        // confirmation -- a retried/duplicate confirm of the same document
-        // replays the original payment instead of recording it twice.
-        await addDebtPayment(user.id, debtId, amountSatang, occurredAtInstant, {
-          idempotencyKey: `document:${documentId}`,
-        });
+        // separate manual quick-pay flow (addDebtPaymentAction).
+        await addDebtPayment(user.id, debtId, amountSatang, occurredAtInstant);
       } else {
         // Create normal transfer or expense transaction
         await createTransaction(user.id, {

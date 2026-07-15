@@ -63,7 +63,6 @@ const paymentSchema = z.object({
   debtId: z.string().min(1),
   amount: z.string().min(1),
   note: z.string().optional(),
-  idempotencyKey: z.string().optional(),
 });
 
 const debtPaymentUpdateSchema = z.object({
@@ -219,15 +218,7 @@ export async function addDebtPaymentAction(
   if (!amountResult.ok) return { ok: false, message: amountResult.error };
 
   try {
-    // A client-generated key kept stable across a single submission attempt
-    // (see DebtPaymentForm) -- a double-submit/retry of the same attempt
-    // replays the original payment instead of recording it twice. Never
-    // required: a caller with no stable key simply gets no idempotency
-    // protection, not a rejected request.
-    await addDebtPayment(user.id, parsed.data.debtId, amountResult.satang!, undefined, {
-      note: parsed.data.note,
-      idempotencyKey: parsed.data.idempotencyKey || undefined,
-    });
+    await addDebtPayment(user.id, parsed.data.debtId, amountResult.satang!, undefined, parsed.data.note);
     revalidateFinance();
     return { ok: true, message: "บันทึกการชำระแล้ว" };
   } catch (error) {

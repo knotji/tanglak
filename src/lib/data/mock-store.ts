@@ -3,16 +3,6 @@ import type { AutopilotActionRecord } from "@/lib/autopilot/autopilot-types";
 import type { ReconciliationCandidateRecord } from "@/lib/reconciliation/reconciliation-types";
 import { createHash } from "node:crypto";
 
-type MockDebtPayment = {
-  id: string;
-  userId: string;
-  debtId: string;
-  transactionId: string;
-  amountSatang: number;
-  paidAt: string;
-  idempotencyKey?: string;
-};
-
 type MockState = {
   users: Map<string, { email: string; password: string; id: string }>;
   transactions: Transaction[];
@@ -27,7 +17,6 @@ type MockState = {
   budgetCategories: BudgetCategory[];
   autopilotActions: AutopilotActionRecord[];
   reconciliationCandidates: ReconciliationCandidateRecord[];
-  debtPayments: MockDebtPayment[];
 };
 
 const globalForMock = globalThis as typeof globalThis & {
@@ -49,7 +38,6 @@ export function getMockState(): MockState {
     budgetCategories: [],
     autopilotActions: [],
     reconciliationCandidates: [],
-    debtPayments: [],
   };
   return globalForMock.__tanglakMockState;
 }
