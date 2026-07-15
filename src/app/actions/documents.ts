@@ -32,6 +32,8 @@ import { logSafeError } from "@/lib/observability/safe-diagnostics";
 import { resolveExpenseCategoryLabel } from "@/lib/finance/category-fallback";
 import { getCategoryById } from "@/lib/finance/categories";
 import { runSlipImportAutopilot } from "@/lib/autopilot/autopilot-slip-integration";
+import { resolveLearnedCategoryForMerchant, computeLearnedCategoryConfidence } from "@/lib/finance/category-learning";
+import { setTransactionCategoryProvenance } from "@/lib/autopilot/autopilot-provenance";
 
 export type DocumentActionState = {
   ok: boolean;
@@ -338,6 +340,9 @@ export async function confirmDocumentAction(
       const totalPaidSatang = totalPaidResult.satang!;
 
       // Create transaction
+      const candidateTransactions = await listRecentConfirmedTransactions(user.id);
+      const learnedMatch = resolveLearnedCategoryForMerchant(candidateTransactions, merchant);
+
       const transaction = await createTransaction(user.id, {
         type: "expense",
         amountSatang: totalPaidSatang,
@@ -348,10 +353,16 @@ export async function confirmDocumentAction(
         // groceries instead of a blanket "อื่น ๆ". delivery_receipt still
         // defaults to food when the merchant gives no stronger signal,
         // matching the prior fixed behavior for that document type.
-        category: resolveExpenseCategoryLabel(merchant, documentType === "delivery_receipt" ? "food" : "other"),
+        category: resolveExpenseCategoryLabel(merchant, documentType === "delivery_receipt" ? "food" : "other", learnedMatch),
         paymentMethod,
         note: `${documentType === "delivery_receipt" ? "ชำระเงินค่าอาหาร/บริการส่ง" : ""}\n${formData.get("note") || ""}`,
       });
+
+      if (learnedMatch) {
+        const confidenceTier = computeLearnedCategoryConfidence(learnedMatch);
+        const confidenceScore = confidenceTier === "high" ? 0.9 : confidenceTier === "medium" ? 0.6 : 0.3;
+        await setTransactionCategoryProvenance(user.id, transaction.id, "learned_rule", confidenceScore);
+      }
 
       // Insert transaction items if present
       if (itemsJson) {
@@ -432,7 +443,10 @@ export async function confirmDocumentAction(
         });
       } else {
         // Create normal transfer or expense transaction
-        await createTransaction(user.id, {
+        const candidateTransactions = await listRecentConfirmedTransactions(user.id);
+        const learnedMatch = txType === "expense" ? resolveLearnedCategoryForMerchant(candidateTransactions, destinationName) : null;
+
+        const transaction = await createTransaction(user.id, {
           type: txType,
           amountSatang,
           occurredAt: occurredAtInstant,
@@ -440,9 +454,15 @@ export async function confirmDocumentAction(
           category:
             txType === "transfer"
               ? getCategoryById("transfers")!.label
-              : resolveExpenseCategoryLabel(destinationName, "other"),
+              : resolveExpenseCategoryLabel(destinationName, "other", learnedMatch),
           note: `เลขอ้างอิง: ${referenceNumber || "-"}\nธนาคาร: ${bank || "-"}\nโอนจาก: xxxx-${accountLastFour || "-"}\nไปยัง: xxxx-${destinationAccountLastFour || "-"}`,
         });
+
+        if (txType === "expense" && learnedMatch) {
+          const confidenceTier = computeLearnedCategoryConfidence(learnedMatch);
+          const confidenceScore = confidenceTier === "high" ? 0.9 : confidenceTier === "medium" ? 0.6 : 0.3;
+          await setTransactionCategoryProvenance(user.id, transaction.id, "learned_rule", confidenceScore);
+        }
       }
 
     } else if (documentType === "debt_statement") {
@@ -544,17 +564,26 @@ export async function confirmDocumentAction(
       const totalPaidResult = parseRequiredMoney(totalPaid, txType === "debt_payment" ? "positive" : "nonnegative");
       if (!totalPaidResult.ok) return { ok: false, message: totalPaidResult.error };
 
-      await createTransaction(user.id, {
+      const candidateTransactions = await listRecentConfirmedTransactions(user.id);
+      const learnedMatch = txType === "expense" ? resolveLearnedCategoryForMerchant(candidateTransactions, merchant) : null;
+
+      const transaction = await createTransaction(user.id, {
         type: txType,
         amountSatang: totalPaidResult.satang!,
         occurredAt: bangkokDateTimeLocalToInstant(occurredAt),
         merchant: merchant || "ไม่ระบุชื่อรายการ",
         note: formData.get("note") as string,
-        category: resolveExpenseCategoryLabel(merchant, "other"),
+        category: resolveExpenseCategoryLabel(merchant, "other", learnedMatch),
         paymentMethod,
         source: "manual",
         documentId: doc.id,
       });
+
+      if (txType === "expense" && learnedMatch) {
+        const confidenceTier = computeLearnedCategoryConfidence(learnedMatch);
+        const confidenceScore = confidenceTier === "high" ? 0.9 : confidenceTier === "medium" ? 0.6 : 0.3;
+        await setTransactionCategoryProvenance(user.id, transaction.id, "learned_rule", confidenceScore);
+      }
     }
 
     // 5. Update document status to confirmed

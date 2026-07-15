@@ -6,6 +6,7 @@
  */
 
 import type { ExtractedCategoryResolution } from "@/lib/finance/category-fallback";
+import { computeLearnedCategoryConfidence } from "@/lib/finance/category-learning";
 import type { AutopilotConfidence } from "./autopilot-types";
 
 const HIGH_THRESHOLD = 0.85;
@@ -37,6 +38,12 @@ export function computeCategoryConfidence(
   resolution: ExtractedCategoryResolution,
   aiCategoryConfidence: number | undefined,
 ): AutopilotConfidence {
+  if (resolution.source === "learned") {
+    if (resolution.learnedMatch) {
+      return computeLearnedCategoryConfidence(resolution.learnedMatch);
+    }
+    return "low";
+  }
   if (resolution.source === "ai") {
     if (aiCategoryConfidence === undefined) return "medium";
     if (aiCategoryConfidence >= HIGH_THRESHOLD) return "high";

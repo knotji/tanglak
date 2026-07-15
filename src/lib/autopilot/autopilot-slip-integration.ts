@@ -17,6 +17,7 @@ import { executeAutopilotAction } from "./autopilot-executor";
 import { createAutopilotActionRecord, finalizeAutopilotActionRecord } from "./autopilot-audit";
 import { buildDeterministicExplanation } from "./autopilot-explanations";
 import type { Transaction } from "@/types/domain";
+import { resolveLearnedCategoryForMerchant } from "@/lib/finance/category-learning";
 
 export type SlipAutopilotOutcome =
   | {
@@ -64,11 +65,17 @@ export async function runSlipImportAutopilot(
     unclearFields.includes("amount") ||
     unclearFields.includes("occurredAt");
 
+  // Fetch recent confirmed transactions first to learn from history
+  const candidateTransactions = await listRecentConfirmedTransactions(userId);
+
+  const learnedMatch = resolveLearnedCategoryForMerchant(candidateTransactions, t.merchant);
+
   const resolution = resolveExtractedCategory({
     categoryId: t.categoryId,
     merchant: t.merchant,
     description: t.note,
     defaultCategoryId: extraction.documentType === "delivery_receipt" ? "food" : "other",
+    learnedMatch,
   });
 
   const coreConfidence = coreFieldsUnclear ? "low" : computeCoreFieldConfidence(extraction.confidence);
@@ -122,8 +129,6 @@ export async function runSlipImportAutopilot(
     return { kind: "deferred", reason: "schema_invalid" };
   }
 
-  const candidateTransactions = await listRecentConfirmedTransactions(userId);
-
   const result = await executeAutopilotAction({
     userId,
     proposal: schemaResult.proposal,
@@ -131,6 +136,7 @@ export async function runSlipImportAutopilot(
     categoryConfidence,
     candidateTransactions,
     possibleOwnAccountTransfer: t.possibleOwnAccountTransfer,
+    categorySource: resolution.source === "learned" ? "learned_rule" : "ai",
   });
 
   if ((result.decision === "auto_execute" || result.decision === "execute_with_notice") && result.transaction) {

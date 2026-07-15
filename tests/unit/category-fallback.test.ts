@@ -172,4 +172,44 @@ describe("resolveExtractedCategory — Part C AI-output enforcement", () => {
     expect(result.category.id).toBe("other");
     expect(result.source).toBe("default");
   });
+
+  it("prioritizes learnedMatch over AI and rules", () => {
+    const learnedMatch = {
+      categoryLabel: "การเดินทาง",
+      supportCount: 3,
+      eligibleTransactionCount: 3,
+      agreementRatio: 1.0,
+      latestOccurredAt: "2026-07-15T12:00:00+07:00",
+    };
+
+    const result = resolveExtractedCategory({
+      categoryId: "groceries",
+      merchant: "STARBUCKS",
+      defaultCategoryId: "other",
+      learnedMatch,
+    });
+
+    expect(result.category.id).toBe("transport");
+    expect(result.source).toBe("learned");
+    expect(result.learnedMatch).toBe(learnedMatch);
+  });
+});
+
+describe("resolveExpenseCategoryLabel with learnedMatch parameter", () => {
+  it("prioritizes learnedMatch label over rules and fallbacks", () => {
+    const learnedMatch = {
+      categoryLabel: "ช้อปปิ้ง",
+      supportCount: 3,
+      eligibleTransactionCount: 3,
+      agreementRatio: 1.0,
+      latestOccurredAt: "2026-07-15T12:00:00+07:00",
+    };
+    const label = resolveExpenseCategoryLabel("TOPS MARKET", "other", learnedMatch);
+    expect(label).toBe(getCategoryById("shopping")!.label);
+  });
+
+  it("falls back to rule matching if learnedMatch is missing", () => {
+    const label = resolveExpenseCategoryLabel("TOPS MARKET", "other", null);
+    expect(label).toBe(getCategoryById("groceries")!.label);
+  });
 });
