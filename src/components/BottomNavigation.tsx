@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { isRouteActive } from "@/lib/navigation/routes";
 import {
   ChartNoAxesCombined,
   Home,
@@ -28,7 +29,7 @@ export function BottomNavigation() {
     >
       <div className="mx-auto grid max-w-xl grid-cols-5 gap-1">
         {items.map((item) => {
-          const active = pathname === item.href;
+          const active = isRouteActive(pathname, item.href);
           const Icon = item.icon;
           return (
             <Link

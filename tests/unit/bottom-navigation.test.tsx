@@ -85,4 +85,24 @@ describe("BottomNavigation", () => {
     expect(container.querySelector('nav[aria-label="เมนูหลัก"]')).toBeTruthy();
     cleanup(root, container);
   });
+
+  it("highlights parent route on nested paths (e.g. /debts/[debtId])", () => {
+    mockUsePathname.mockReturnValue("/debts/abc");
+    const { container, root } = render(<BottomNavigation />);
+    const activeLink = container.querySelector('a[href="/debts"]');
+    const inactiveLink = container.querySelector('a[href="/today"]');
+
+    expect(activeLink?.getAttribute("aria-current")).toBe("page");
+    expect(inactiveLink?.getAttribute("aria-current")).toBeNull();
+    cleanup(root, container);
+  });
+
+  it("does not highlight parent route on prefix collision paths (e.g. /debt-tools)", () => {
+    mockUsePathname.mockReturnValue("/debt-tools");
+    const { container, root } = render(<BottomNavigation />);
+    const link = container.querySelector('a[href="/debts"]');
+
+    expect(link?.getAttribute("aria-current")).toBeNull();
+    cleanup(root, container);
+  });
 });
