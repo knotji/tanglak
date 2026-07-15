@@ -4,14 +4,23 @@ import { mapDebt, mapTransaction, mapDocument, mapDocumentExtraction, mapImportB
 import { timeAsync } from "@/lib/observability/timing";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { handlePostgrestError } from "@/lib/supabase/error-guards";
-import { assertMoneySatang } from "@/lib/finance/money-guards";
+import { assertMoneySatang, MONEY_ERROR_POSITIVE_TH } from "@/lib/finance/money-guards";
 import { BUDGET_ERROR_DUPLICATE_TH, BUDGET_ERROR_NOT_FOUND_TH } from "@/lib/finance/budget-guards";
 import {
   assertInterestRateAnnual,
   assertMinimumNotAboveOutstanding,
   assertDebtPaymentLinked,
+  assertDebtActiveForPayment,
+  DEBT_ERROR_NOT_FOUND_TH,
+  DEBT_ERROR_NOT_ACTIVE_TH,
 } from "@/lib/finance/debt-guards";
-import { getBangkokMonthOf, getDebtCycleWindow, isValidDateKey, isValidMonthQuery } from "@/lib/finance/date";
+import {
+  getBangkokMonthOf,
+  getDebtCycleWindow,
+  isValidDateKey,
+  isValidMonthQuery,
+  TRANSACTION_OCCURRED_AT_REQUIRED_TH,
+} from "@/lib/finance/date";
 import { logSafeError } from "@/lib/observability/safe-diagnostics";
 import type { Debt, Transaction, FinanceDocument, DocumentExtraction, ImportBatch, ImportRow, Account, MonthlyBudget, BudgetCategory } from "@/types/domain";
 
@@ -655,6 +664,42 @@ async function setDebtStatus(userId: string, id: string, status: Debt["status"])
   return mapDebt(data);
 }
 
+export type AddDebtPaymentOptions = {
+  /**
+   * A stable, caller-supplied replay key -- never derived from an unstable
+   * value like the payment's own timestamp. Supplying the same
+   * (userId, idempotencyKey) twice (e.g. a retried/double-submitted
+   * request) returns the originally-recorded payment instead of creating a
+   * duplicate. Omit when the caller has no natural stable key to attach.
+   */
+  idempotencyKey?: string;
+};
+
+const RECORD_DEBT_PAYMENT_GENERIC_ERROR_TH = "บันทึกการชำระหนี้ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง";
+
+/**
+ * Maps a known `record_debt_payment` RPC failure (see
+ * supabase/migrations/202607140003_atomic_debt_payment_rpc.sql) to the same
+ * safe Thai copy the rest of the debt-payment write path already uses --
+ * never surfaces the raw Postgres exception message to the client.
+ */
+function mapRecordDebtPaymentError(error: { message: string }): Error {
+  switch (error.message) {
+    case "debt payment amount must be positive":
+      return new Error(MONEY_ERROR_POSITIVE_TH);
+    case "debt payment occurred_at is required":
+      return new Error(TRANSACTION_OCCURRED_AT_REQUIRED_TH);
+    case "debt not found or not owned by user":
+      return new Error(DEBT_ERROR_NOT_FOUND_TH);
+    case "deleted debt cannot be changed":
+      return new Error(DELETED_DEBT_ERROR);
+    case "debt is not active":
+      return new Error(DEBT_ERROR_NOT_ACTIVE_TH);
+    default:
+      return new Error(RECORD_DEBT_PAYMENT_GENERIC_ERROR_TH);
+  }
+}
+
 /**
  * `occurredAt`, when provided, must already be a validated, explicit ISO
  * instant (e.g. from `bangkokDateTimeLocalToInstant`) -- this function never
@@ -663,42 +708,127 @@ async function setDebtStatus(userId: string, id: string, status: Debt["status"])
  * unaffected by the missing-occurredAt review-flow fix. Document-review
  * confirmation (a reviewed, user-editable date/time) must always pass an
  * explicit, already-validated `occurredAt` -- never rely on this default.
+ *
+ * The whole operation (transaction insert + debt_payments insert + cycle
+ * recalculation) is performed as a single atomic unit -- see
+ * `record_debt_payment` in
+ * supabase/migrations/202607140003_atomic_debt_payment_rpc.sql. A failure at
+ * any step rolls back every write this call made; the caller never observes
+ * a half-written payment (a confirmed transaction with no matching
+ * debt_payments row, or a stale paid-this-cycle total).
  */
 export async function addDebtPayment(
   userId: string,
   debtId: string,
   amountSatang: number,
   occurredAt?: string,
+  options?: AddDebtPaymentOptions,
 ) {
   // A debt payment must be a real, positive payment (Category A) — zero and
   // negative amounts are rejected here before anything is persisted.
   assertMoneySatang(amountSatang, "positive", "amountSatang");
 
   const paidAt = occurredAt ?? new Date().toISOString();
-  const debt = await getDebtForUser(userId, debtId);
-  const transaction = await createTransaction(userId, {
+  const idempotencyKey = options?.idempotencyKey;
+
+  if (isMockAuthEnabled()) {
+    return addDebtPaymentMock(userId, debtId, amountSatang, paidAt, idempotencyKey);
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("record_debt_payment", {
+    p_user_id: userId,
+    p_debt_id: debtId,
+    p_amount_satang: amountSatang,
+    p_occurred_at: paidAt,
+    p_idempotency_key: idempotencyKey ?? null,
+  });
+  if (error) throw mapRecordDebtPaymentError(error);
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { transaction_id: string; already_recorded: boolean }
+    | undefined;
+  if (!row) throw new Error(RECORD_DEBT_PAYMENT_GENERIC_ERROR_TH);
+
+  const [transaction, updatedDebt] = await Promise.all([
+    getTransactionById(userId, row.transaction_id),
+    getDebtRecordForUser(userId, debtId, { includeDeleted: true }),
+  ]);
+  if (!transaction || !updatedDebt) throw new Error(RECORD_DEBT_PAYMENT_GENERIC_ERROR_TH);
+  return { debt: updatedDebt, transaction };
+}
+
+/**
+ * Mock-auth counterpart of the atomic `record_debt_payment` RPC. Mirrors its
+ * validation order (idempotent replay check, then active-only status guard)
+ * and its all-or-nothing guarantee: if recalculation fails after the
+ * transaction/debt_payment rows are added to the in-memory store, both are
+ * removed again before the error is rethrown, so no partial payment is ever
+ * left behind.
+ */
+function addDebtPaymentMock(
+  userId: string,
+  debtId: string,
+  amountSatang: number,
+  paidAt: string,
+  idempotencyKey?: string,
+): { debt: Debt; transaction: Transaction } {
+  const state = getMockState();
+
+  if (idempotencyKey) {
+    const existingPayment = state.debtPayments.find(
+      (payment) => payment.userId === userId && payment.idempotencyKey === idempotencyKey,
+    );
+    if (existingPayment) {
+      const existingTransaction = state.transactions.find((item) => item.id === existingPayment.transactionId);
+      const existingDebt = state.debts.find((item) => item.id === debtId && item.userId === userId);
+      if (existingTransaction && existingDebt) {
+        return { debt: existingDebt, transaction: existingTransaction };
+      }
+    }
+  }
+
+  const debt = state.debts.find((item) => item.id === debtId && item.userId === userId);
+  if (!debt) throw new Error(DEBT_ERROR_NOT_FOUND_TH);
+  if (debt.status === "deleted") throw new Error(DELETED_DEBT_ERROR);
+  assertDebtActiveForPayment(debt.status);
+
+  const transaction: Transaction = {
+    id: crypto.randomUUID(),
+    userId,
     type: "debt_payment",
+    status: "confirmed",
     amountSatang,
+    currency: "THB",
     occurredAt: paidAt,
     merchant: `ชำระ ${debt.name}`,
     debtId,
-  });
+    source: "manual",
+  };
 
-  if (!isMockAuthEnabled()) {
-    const supabase = await createSupabaseServerClient();
-    const { error } = await supabase.from("debt_payments").insert({
-      user_id: userId,
-      debt_id: debtId,
-      transaction_id: transaction.id,
-      amount_satang: amountSatang,
-      paid_at: paidAt,
+  state.transactions.unshift(transaction);
+  try {
+    state.debtPayments.unshift({
+      id: crypto.randomUUID(),
+      userId,
+      debtId,
+      transactionId: transaction.id,
+      amountSatang,
+      paidAt,
+      idempotencyKey,
     });
-    if (error) throw new Error(error.message);
+    recalculateMockDebtPaid(userId, debtId);
+  } catch (error) {
+    // Roll back every write this call made so a mid-operation failure never
+    // leaves a half-written payment -- mirroring the atomic Postgres RPC
+    // used outside mock-auth mode.
+    state.transactions = state.transactions.filter((item) => item.id !== transaction.id);
+    state.debtPayments = state.debtPayments.filter((item) => item.transactionId !== transaction.id);
+    throw error;
   }
 
-  await recalculateDebtPaidThisCycle(userId, debtId);
-  const [updatedDebt] = await listDebts(userId, true).then((debts) => debts.filter((item) => item.id === debtId));
-  return { debt: updatedDebt ?? debt, transaction };
+  const updatedDebt = state.debts.find((item) => item.id === debtId && item.userId === userId);
+  if (!updatedDebt) throw new Error(RECORD_DEBT_PAYMENT_GENERIC_ERROR_TH);
+  return { debt: updatedDebt, transaction };
 }
 
 async function getDebtRecordForUser(
