@@ -67,13 +67,19 @@ describe("accessibility release blockers", () => {
 
   it("adds contextual action names and practical mobile touch target classes", () => {
     const transactionRow = readProjectFile("src/components/TransactionRow.tsx");
+    const transactionsClient = readProjectFile("src/features/transactions/TransactionsClient.tsx");
     const debtsClient = readProjectFile("src/features/debts/DebtsClient.tsx");
     const settingsData = readProjectFile("src/app/settings/data/page.tsx");
 
-    expect(transactionRow).toContain("aria-label={`แก้ไขรายการ ${actionContext}`}");
-    expect(transactionRow).toContain("aria-label={`ลบรายการ ${actionContext}`}");
-    expect(transactionRow).toContain("flex gap-1 rounded-[14px] bg-muted p-1");
-    expect(transactionRow).toContain("min-h-11 rounded-[12px] bg-surface px-3");
+    // TransactionRow is now a single action button leading to an action sheet
+    expect(transactionRow).toContain("aria-label={`เปิดรายละเอียดรายการ ${actionContext}`}");
+    expect(transactionRow).toContain('className="flex w-full items-center gap-3 py-3');
+
+    // Actions moved to TransactionsClient sheet
+    expect(transactionsClient).toContain("แก้ไขรายการ");
+    expect(transactionsClient).toContain("ลบรายการนี้");
+    expect(transactionsClient).toContain('className="flex w-full items-center gap-3 rounded-[16px] bg-surface p-4');
+
     expect(debtsClient).toContain("aria-label={`ดูประวัติหนี้ ${debt.name}`}");
     expect(settingsData).toContain("aria-label={`ย้อนกลับ (Rollback) ชุดนำเข้า ${batchContext}`}");
     expect(settingsData).toContain("min-h-11");

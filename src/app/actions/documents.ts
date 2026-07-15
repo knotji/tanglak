@@ -316,7 +316,7 @@ export async function confirmDocumentAction(
         occurredAt: `${paymentDate}T12:00:00+07:00`,
         merchant: employer || "รายได้เงินเดือน",
         category: getCategoryById("salary")!.label,
-        note,
+        note: `${note}\n\nบันทึกจากผู้ใช้: ${formData.get("note") || "-"}`,
       });
 
     } else if (documentType === "receipt" || documentType === "delivery_receipt") {
@@ -350,7 +350,7 @@ export async function confirmDocumentAction(
         // matching the prior fixed behavior for that document type.
         category: resolveExpenseCategoryLabel(merchant, documentType === "delivery_receipt" ? "food" : "other"),
         paymentMethod,
-        note: documentType === "delivery_receipt" ? "ชำระเงินค่าอาหาร/บริการส่ง" : undefined,
+        note: `${documentType === "delivery_receipt" ? "ชำระเงินค่าอาหาร/บริการส่ง" : ""}\n${formData.get("note") || ""}`,
       });
 
       // Insert transaction items if present
@@ -446,17 +446,17 @@ export async function confirmDocumentAction(
       }
 
     } else if (documentType === "debt_statement") {
-      const creditor = formData.get("creditor") as string;
-      const debtName = formData.get("debtName") as string;
+      const creditor = (formData.get("creditor") as string) || "";
+      const debtName = (formData.get("debtName") as string) || "";
       const debtType = (formData.get("debtType") as Debt["debtType"]) || "other";
-      const outstandingBalance = formData.get("outstandingBalance") as string;
-      const statementBalance = formData.get("statementBalance") as string;
-      const amountDue = formData.get("amountDue") as string;
-      const minimumPayment = formData.get("minimumPayment") as string;
-      const dueDate = formData.get("dueDate") as string;
-      const remainingInstallments = formData.get("remainingInstallments") as string;
-      const interestRateAnnual = formData.get("interestRateAnnual") as string;
-      const accountLastFour = formData.get("accountLastFour") as string;
+      const outstandingBalance = (formData.get("outstandingBalance") as string) || "";
+      const statementBalance = (formData.get("statementBalance") as string) || "";
+      const amountDue = (formData.get("amountDue") as string) || "";
+      const minimumPayment = (formData.get("minimumPayment") as string) || "";
+      const dueDate = (formData.get("dueDate") as string) || "";
+      const remainingInstallments = (formData.get("remainingInstallments") as string) || "";
+      const interestRateAnnual = (formData.get("interestRateAnnual") as string) || "";
+      const accountLastFour = (formData.get("accountLastFour") as string) || "";
 
       const debtActionType = formData.get("debtActionType") as "create" | "update";
       const existingDebtId = formData.get("existingDebtId") as string;
@@ -549,6 +549,7 @@ export async function confirmDocumentAction(
         amountSatang: totalPaidResult.satang!,
         occurredAt: bangkokDateTimeLocalToInstant(occurredAt),
         merchant: merchant || "ไม่ระบุชื่อรายการ",
+        note: formData.get("note") as string,
         category: resolveExpenseCategoryLabel(merchant, "other"),
         paymentMethod,
         source: "manual",

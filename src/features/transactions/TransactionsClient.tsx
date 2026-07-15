@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Edit3, Trash2 } from "lucide-react";
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { deleteTransactionAction } from "@/app/actions/finance";
@@ -41,6 +41,8 @@ export function TransactionsClient({
   const [isMonthPending, startMonthTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Transaction | undefined>();
+  const [showActionSheet, setShowActionSheet] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Transaction | null>(null);
@@ -146,18 +148,20 @@ export function TransactionsClient({
       />
       <LocalImportReview />
       {sortedDays.length ? (
-        <div className={`space-y-3 transition-opacity duration-200 ${isPending ? "pointer-events-none opacity-60" : ""}`}>
+        <div
+          className={`min-h-[50vh] space-y-3 transition-opacity duration-200 ${
+            isPending ? "pointer-events-none opacity-60" : ""
+          }`}
+        >
           {sortedDays.map((day) => (
             <TransactionGroup
               key={day}
               date={day}
               transactions={groups[day]}
-              onEdit={(transaction) => {
-                setEditing(transaction);
-                setOpen(true);
+              onTransactionClick={(transaction) => {
+                setSelectedTransaction(transaction);
+                setShowActionSheet(true);
               }}
-              onDelete={setDeleteTarget}
-              busyId={deletingId}
             />
           ))}
         </div>
@@ -167,12 +171,76 @@ export function TransactionsClient({
           body={`เดือน${monthLabel}ยังไม่มีรายรับหรือรายจ่ายที่บันทึกไว้`}
         />
       )}
+      {/* Transaction Action Sheet */}
+      <MobileBottomSheet
+        title="จัดการรายการ"
+        open={showActionSheet}
+        onClose={() => {
+          setShowActionSheet(false);
+          setSelectedTransaction(null);
+        }}
+      >
+        {selectedTransaction && (
+          <div className="flex flex-col gap-2 pb-4">
+            <div className="mb-2 rounded-[16px] bg-muted/50 p-4">
+              <p className="text-xs font-bold text-text-secondary uppercase tracking-wider">
+                {selectedTransaction.merchant ?? "รายละเอียดรายการ"}
+              </p>
+              <p className="mt-1 text-sm font-medium">
+                {new Date(selectedTransaction.occurredAt).toLocaleString("th-TH", {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                })}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setEditing(selectedTransaction);
+                setShowActionSheet(false);
+                setOpen(true);
+              }}
+              className="flex w-full items-center gap-3 rounded-[16px] bg-surface p-4 text-left font-bold text-foreground shadow-sm ring-1 ring-border hover:bg-muted/30"
+            >
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-soft text-primary">
+                <Edit3 size={20} />
+              </div>
+              <div>
+                <div className="text-sm">แก้ไขรายการ</div>
+                <div className="text-[11px] font-medium text-text-secondary">
+                  เปลี่ยนชื่อ หมวดหมู่ หรือวันที่
+                </div>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setDeleteTarget(selectedTransaction);
+                setShowActionSheet(false);
+              }}
+              className="flex w-full items-center gap-3 rounded-[16px] bg-surface p-4 text-left font-bold text-overdue shadow-sm ring-1 ring-border hover:bg-red-50"
+            >
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-50 text-overdue">
+                <Trash2 size={20} />
+              </div>
+              <div>
+                <div className="text-sm">ลบรายการนี้</div>
+                <div className="text-[11px] font-medium text-text-secondary">
+                  ข้อมูลจะถูกลบออกถาวร
+                </div>
+              </div>
+            </button>
+          </div>
+        )}
+      </MobileBottomSheet>
+
       <MobileBottomSheet
         title={editing ? "แก้ไขรายการ" : "เพิ่มรายการ"}
         open={open}
         onClose={() => {
           setOpen(false);
           setEditing(undefined);
+          setSelectedTransaction(null);
         }}
       >
         <ManualTransactionForm

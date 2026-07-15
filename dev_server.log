@@ -1,0 +1,17 @@
+
+> tanglak@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.10 (Turbopack)
+- Local:         http://localhost:3011
+- Network:       http://192.168.0.2:3011
+✓ Ready in 550ms
+
+○ Compiling / ...
+ GET / 307 in 6.4s (next.js: 6.1s, application-code: 288ms)
+[TangLak timing] page.load route=/today 198ms
+ GET /today 200 in 2.3s (next.js: 1759ms, application-code: 492ms)
+ GET / 307 in 86ms (next.js: 10ms, application-code: 76ms)
+[TangLak timing] page.load route=/today 44ms
+ GET /today 200 in 87ms (next.js: 4ms, application-code: 83ms)
+[?25h

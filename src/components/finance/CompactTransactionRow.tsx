@@ -1,15 +1,23 @@
 import { CategoryIcon } from "@/components/CategoryIcon";
 import { MoneyAmount } from "@/components/MoneyAmount";
-import { formatThaiDateTime } from "@/lib/finance/date";
+import { formatStandardDateTime } from "@/lib/finance/date";
 import type { Transaction, TransactionType } from "@/types/domain";
 import { IncomeExpenseIndicator } from "./IncomeExpenseIndicator";
 
 function transactionTone(type: TransactionType) {
-  return type === "income" || type === "refund" ? "income" : type === "transfer" ? "neutral" : "expense";
+  return type === "income" || type === "refund"
+    ? "income"
+    : type === "transfer"
+      ? "neutral"
+      : "expense";
 }
 
 function shouldShowSign(type: TransactionType) {
-  return type === "income" || type === "refund";
+  return (
+    type === "income" ||
+    type === "refund" ||
+    type === "transfer"
+  );
 }
 
 export function CompactTransactionRow({
@@ -21,23 +29,36 @@ export function CompactTransactionRow({
   actionLabel?: string;
   onAction?: (transaction: Transaction) => void;
 }) {
-  const description = transaction.merchant ?? transaction.note ?? "รายการ";
-  const dateTime = formatThaiDateTime(transaction.occurredAt);
+  const description =
+    transaction.merchant ?? transaction.note ?? "รายการ";
+
+  const dateTime = formatStandardDateTime(transaction.occurredAt);
 
   return (
     <article className="flex max-w-full items-center gap-3 overflow-hidden border-b border-border py-3 last:border-b-0">
-      <CategoryIcon category={transaction.category} type={transaction.type} />
+      <CategoryIcon
+        category={transaction.category}
+        type={transaction.type}
+      />
+
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
-          <h3 className="truncate text-sm font-bold text-foreground">{description}</h3>
+          <h3 className="truncate text-sm font-bold text-foreground">
+            {description}
+          </h3>
+
           {transaction.isHistorical || transaction.importBatchId ? (
-            <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-text-secondary">นำเข้า</span>
+            <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-text-secondary">
+              นำเข้า
+            </span>
           ) : null}
         </div>
+
         <p className="mt-0.5 truncate text-xs text-text-secondary">
           {transaction.category ?? "ไม่ระบุหมวด"} · {dateTime}
         </p>
       </div>
+
       <div className="shrink-0 text-right">
         <MoneyAmount
           satang={transaction.amountSatang}
@@ -45,8 +66,13 @@ export function CompactTransactionRow({
           showSign={shouldShowSign(transaction.type)}
           className="block text-sm font-bold"
         />
-        <IncomeExpenseIndicator type={transaction.type} showLabel={false} />
+
+        <IncomeExpenseIndicator
+          type={transaction.type}
+          showLabel={false}
+        />
       </div>
+
       {onAction ? (
         <button
           type="button"

@@ -665,6 +665,7 @@ async function setDebtStatus(userId: string, id: string, status: Debt["status"])
 }
 
 export type AddDebtPaymentOptions = {
+  note?: string;
   /**
    * A stable, caller-supplied replay key -- never derived from an unstable
    * value like the payment's own timestamp. Supplying the same
@@ -730,9 +731,10 @@ export async function addDebtPayment(
 
   const paidAt = occurredAt ?? new Date().toISOString();
   const idempotencyKey = options?.idempotencyKey;
+  const note = options?.note;
 
   if (isMockAuthEnabled()) {
-    return addDebtPaymentMock(userId, debtId, amountSatang, paidAt, idempotencyKey);
+    return addDebtPaymentMock(userId, debtId, amountSatang, paidAt, { idempotencyKey, note });
   }
 
   const supabase = await createSupabaseServerClient();
@@ -748,6 +750,10 @@ export async function addDebtPayment(
     | { transaction_id: string; already_recorded: boolean }
     | undefined;
   if (!row) throw new Error(RECORD_DEBT_PAYMENT_GENERIC_ERROR_TH);
+
+  if (note !== undefined && !row.already_recorded) {
+    await updateTransaction(userId, row.transaction_id, { note });
+  }
 
   const [transaction, updatedDebt] = await Promise.all([
     getTransactionById(userId, row.transaction_id),
@@ -770,9 +776,10 @@ function addDebtPaymentMock(
   debtId: string,
   amountSatang: number,
   paidAt: string,
-  idempotencyKey?: string,
+  options: AddDebtPaymentOptions = {},
 ): { debt: Debt; transaction: Transaction } {
   const state = getMockState();
+  const { idempotencyKey, note } = options;
 
   if (idempotencyKey) {
     const existingPayment = state.debtPayments.find(
@@ -802,6 +809,7 @@ function addDebtPaymentMock(
     occurredAt: paidAt,
     merchant: `ชำระ ${debt.name}`,
     debtId,
+    note,
     source: "manual",
   };
 

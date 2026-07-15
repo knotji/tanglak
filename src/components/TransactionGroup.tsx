@@ -13,15 +13,11 @@ function dayLabel(date: string) {
 export function TransactionGroup({
   date,
   transactions,
-  onEdit,
-  onDelete,
-  busyId,
+  onTransactionClick,
 }: {
   date: string;
   transactions: Transaction[];
-  onEdit?: (transaction: Transaction) => void;
-  onDelete?: (transaction: Transaction) => void;
-  busyId?: string | null;
+  onTransactionClick?: (transaction: Transaction) => void;
 }) {
   const total = transactions.reduce((sum, transaction) => {
     if (transaction.type === "income" || transaction.type === "refund") {
@@ -44,9 +40,7 @@ export function TransactionGroup({
           <TransactionRow
             key={transaction.id}
             transaction={transaction}
-            onEdit={onEdit}
-            onDelete={onDelete}
-            busy={busyId === transaction.id}
+            onClick={onTransactionClick}
           />
         ))}
       </div>

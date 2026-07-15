@@ -200,4 +200,38 @@ describe("TransactionsClient filter transition state", () => {
     // Ensure it didn't flash empty state "ยังไม่มีรายการ" during rendering
     expect(container.textContent).not.toContain("ยังไม่มีรายการ");
   });
+
+  it("opens the action sheet when a transaction row is clicked", async () => {
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <TransactionsClient
+          transactions={mockTransactions}
+          accounts={[]}
+          selectedMonth="2026-07"
+          currentMonth="2026-07"
+          monthLabel="กรกฎาคม 2026"
+        />
+      );
+    });
+
+    // Action sheet should be hidden initially
+    expect(container.textContent).not.toContain("จัดการรายการ");
+
+    // Find and click the GrabFood row
+    const row = Array.from(container.querySelectorAll("button")).find((btn) =>
+      btn.getAttribute("aria-label")?.includes("GrabFood")
+    );
+    expect(row).toBeTruthy();
+
+    await act(async () => {
+      row?.click();
+    });
+
+    // Action sheet should now be visible with Edit and Delete options
+    expect(container.textContent).toContain("จัดการรายการ");
+    expect(container.textContent).toContain("แก้ไขรายการ");
+    expect(container.textContent).toContain("ลบรายการนี้");
+  });
 });
