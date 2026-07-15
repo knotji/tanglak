@@ -2,6 +2,8 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ConfirmDialog } from "@/components/feedback/ConfirmDialog";
+import { useToast } from "@/components/feedback/ToastProvider";
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { NextActionCard } from "@/components/NextActionCard";
@@ -234,15 +236,28 @@ export function ReviewForm({
   previewUrl,
 }: ReviewFormProps) {
   const router = useRouter();
+  const { showToast } = useToast();
   const [doc] = useState<FinanceDocument>(initialDocument);
   const normalizedPreview = extraction?.normalizedPreview as ExtractedFinancialDocument | undefined;
   const [docType, setDocType] = useState<string>(
     normalizedPreview?.documentType || doc.documentType || "other"
   );
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  type PendingAction =
+    | "confirming"
+    | "deleting"
+    | "reprocessing"
+    | "saving"
+    | null;
+  const [pendingAction, setPendingAction] = useState<PendingAction>(null);
+
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isReprocessDialogOpen, setIsReprocessDialogOpen] = useState(false);
+
+  const isSubmitting = pendingAction === "confirming";
+  const isDeleting = pendingAction === "deleting";
+  const isRetrying = pendingAction === "reprocessing";
+
   const [formError, setFormError] = useState<string | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [isRetrying, setIsRetrying] = useState(false);
   const [manualMode, setManualMode] = useState(false);
   const [isPreviewExpanded, setIsPreviewExpanded] = useState(false);
   const [isDetailsExpanded, setIsDetailsExpanded] = useState(false);
@@ -372,28 +387,37 @@ export function ReviewForm({
   }
 
   // Action: Retry
-  const handleRetry = async () => {
-    setIsRetrying(true);
+  const handleRetry = () => {
+    setIsReprocessDialogOpen(true);
+  };
+
+  const executeRetry = async () => {
+    setIsReprocessDialogOpen(false);
+    setPendingAction("reprocessing");
     const res = await retryExtractionAction(doc.id);
     if (res.ok) {
-      alert("เริ่มสแกนเอกสารอีกครั้งแล้ว");
+      showToast("เริ่มสแกนเอกสารอีกครั้งแล้ว", "success");
       router.refresh();
     } else {
-      alert(res.message || DOCUMENT_EXTRACTION_FALLBACK_MESSAGE);
-      setIsRetrying(false);
+      showToast(res.message || DOCUMENT_EXTRACTION_FALLBACK_MESSAGE, "error");
+      setPendingAction(null);
     }
   };
 
   // Action: Delete
-  const handleDelete = async () => {
-    if (!confirm("คุณต้องการลบสลิป/หลักฐานและรายการทั้งหมดจากเอกสารชิ้นนี้ใช่หรือไม่?")) return;
-    setIsDeleting(true);
+  const handleDelete = () => {
+    setIsDeleteDialogOpen(true);
+  };
+
+  const executeDelete = async () => {
+    setIsDeleteDialogOpen(false);
+    setPendingAction("deleting");
     const res = await deleteDocumentAction(doc.id);
     if (res.ok) {
       router.push("/today");
     } else {
-      alert(res.message);
-      setIsDeleting(false);
+      showToast(res.message || "ลบเอกสารไม่สำเร็จ", "error");
+      setPendingAction(null);
     }
   };
 
@@ -402,13 +426,13 @@ export function ReviewForm({
     resolution: "use_existing" | "merge",
     existingTxId: string
   ) => {
-    setIsSubmitting(true);
+    setPendingAction("confirming");
     const res = await resolveDuplicateAction(doc.id, resolution, existingTxId);
     if (res.ok) {
       router.push("/today");
     } else {
-      alert(res.message);
-      setIsSubmitting(false);
+      showToast(res.message || "ดำเนินการไม่สำเร็จ", "error");
+      setPendingAction(null);
     }
   };
 
@@ -425,21 +449,13 @@ export function ReviewForm({
     }
 
     // Independently re-check monetary fields client-side before submitting
-    // (the server still re-validates independently in confirmDocumentAction
-    // — this is only for immediate, correctable feedback).
     const clientMoneyError = validateReviewMoneyFields(docType, fd, items);
     if (clientMoneyError) {
       setFormError(clientMoneyError);
       return;
     }
 
-    // Final confirmation requires a real, parseable transaction date/time --
-    // never fabricated. On failure, move focus to the field so the user can
-    // see and fix it immediately, matching the required Thai copy. Focusing
-    // the element already brings it into view per spec (and does so
-    // instantly) -- a separate smooth-scroll animation is intentionally not
-    // used here, since an animated scroll is unnecessary and can visibly lag
-    // behind the state update under load.
+    // Final confirmation requires a real, parseable transaction date/time
     const clientOccurredAtError = validateReviewOccurredAt(docType, fd);
     if (clientOccurredAtError) {
       setFormError(clientOccurredAtError);
@@ -448,14 +464,14 @@ export function ReviewForm({
     }
 
     setFormError(null);
-    setIsSubmitting(true);
+    setPendingAction("confirming");
 
     const res = await confirmDocumentAction(doc.id, fd);
     if (res.ok) {
       router.push("/today");
     } else {
-      alert(res.message);
-      setIsSubmitting(false);
+      showToast(res.message || "บันทึกเอกสารไม่สำเร็จ", "error");
+      setPendingAction(null);
     }
   };
 
@@ -560,7 +576,7 @@ export function ReviewForm({
               <button
                 type="button"
                 onClick={handleRetry}
-                disabled={isRetrying}
+                disabled={pendingAction !== null}
                 className="flex items-center gap-2 rounded-[16px] border border-border bg-surface px-4 py-2 text-sm font-bold shadow-sm hover:bg-gray-50 disabled:opacity-50"
               >
                 <RefreshCw size={16} className={isRetrying ? "animate-spin" : ""} />
@@ -570,7 +586,7 @@ export function ReviewForm({
             <button
               type="button"
               onClick={handleDelete}
-              disabled={isDeleting}
+              disabled={pendingAction !== null}
               className="flex items-center gap-2 rounded-[16px] border border-red-200 bg-red-50 px-4 py-2 text-sm font-bold text-red-500 shadow-sm hover:bg-red-100 disabled:opacity-50"
             >
               <Trash2 size={16} />
@@ -589,7 +605,7 @@ export function ReviewForm({
               {canRetry ? (
                 <button
                   onClick={handleRetry}
-                  disabled={isRetrying}
+                  disabled={pendingAction !== null}
                   className="flex items-center gap-2 rounded-[16px] bg-primary px-6 py-3 font-bold text-white shadow-sm hover:bg-primary-dark disabled:opacity-50"
                 >
                   <RefreshCw size={18} className={isRetrying ? "animate-spin" : ""} />
@@ -601,7 +617,8 @@ export function ReviewForm({
                   setManualMode(true);
                   setIsDetailsExpanded(true);
                 }}
-                className="rounded-[16px] border border-border bg-white px-6 py-3 font-bold text-foreground shadow-sm hover:bg-gray-50"
+                disabled={pendingAction !== null}
+                className="rounded-[16px] border border-border bg-white px-6 py-3 font-bold text-foreground shadow-sm hover:bg-gray-50 disabled:opacity-50"
               >
                 กรอกข้อมูลด้วยตนเอง
               </button>
@@ -610,9 +627,14 @@ export function ReviewForm({
         )}
 
         {/* Loading Overlay */}
-        {(isSubmitting || isDeleting || isRetrying) && (
-          <div className="fixed inset-x-4 top-4 z-50 mx-auto max-w-xl rounded-[16px] border border-primary/20 bg-white px-4 py-3 text-sm font-bold text-primary shadow-lg">
-            <p aria-live="polite" aria-busy="true">กำลังโหลดข้อมูล...</p>
+        {pendingAction && (
+          <div role="status" className="fixed inset-x-4 top-4 z-50 mx-auto max-w-xl rounded-[16px] border border-primary/20 bg-white px-4 py-3 text-sm font-bold text-primary shadow-lg">
+            <p aria-live="polite" aria-busy="true">
+              {pendingAction === "confirming" && "กำลังยืนยันรายการ..."}
+              {pendingAction === "deleting" && "กำลังลบเอกสาร..."}
+              {pendingAction === "reprocessing" && "กำลังประมวลผลสลิปใหม่..."}
+              {pendingAction === "saving" && "กำลังบันทึกข้อมูล..."}
+            </p>
           </div>
         )}
 
@@ -1763,13 +1785,14 @@ export function ReviewForm({
                     <button
                       type="button"
                       onClick={() => router.push("/today")}
-                      className="flex-1 rounded-[16px] border border-border bg-white py-3.5 text-center text-sm font-bold hover:bg-gray-50"
+                      disabled={pendingAction !== null}
+                      className="flex-1 rounded-[16px] border border-border bg-white py-3.5 text-center text-sm font-bold hover:bg-gray-50 disabled:opacity-50"
                     >
                       ยกเลิก
                     </button>
                     <button
                       type="submit"
-                      disabled={isSubmitting}
+                      disabled={pendingAction !== null}
                       aria-busy={isSubmitting}
                       className="flex-[2] rounded-[16px] bg-primary py-3.5 text-center text-sm font-bold text-white shadow-md hover:bg-primary-dark disabled:opacity-50"
                     >
@@ -1782,6 +1805,28 @@ export function ReviewForm({
           </div>
         )}
       </div>
+      <ConfirmDialog
+        open={isDeleteDialogOpen}
+        title="ลบเอกสารนี้หรือไม่"
+        body="เอกสารและข้อมูลที่ยังไม่ได้ยืนยันจะถูกลบ และไม่สามารถกู้คืนได้"
+        confirmLabel="ลบเอกสาร"
+        cancelLabel="ยกเลิก"
+        confirmPending={isDeleting}
+        pendingLabel="กำลังลบเอกสาร..."
+        onConfirm={executeDelete}
+        onCancel={() => setIsDeleteDialogOpen(false)}
+      />
+      <ConfirmDialog
+        open={isReprocessDialogOpen}
+        title="ประมวลผลสลิปใหม่หรือไม่"
+        body="ข้อมูลที่คุณแก้ไขในหน้านี้อาจถูกแทนที่ด้วยผลการอ่านใหม่"
+        confirmLabel="ประมวลผลใหม่"
+        cancelLabel="ยกเลิก"
+        confirmPending={isRetrying}
+        pendingLabel="กำลังประมวลผลสลิปใหม่..."
+        onConfirm={executeRetry}
+        onCancel={() => setIsReprocessDialogOpen(false)}
+      />
     </AppShell>
   );
 }

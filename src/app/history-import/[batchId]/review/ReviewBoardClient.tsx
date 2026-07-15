@@ -2,6 +2,7 @@
 
 import React, { useState, useTransition, useMemo, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { ConfirmDialog } from "@/components/feedback/ConfirmDialog";
 import { confirmBatchAction, deleteBatchAction } from "@/app/actions/history-import";
 import { formatThaiDateCompact, formatThaiDateTime } from "@/lib/finance/date";
 import type { ImportBatch, ImportRow, Debt } from "@/types/domain";
@@ -19,6 +20,11 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const batchContext = batch.originalFilename || batch.id;
+
+  const [isDeleteBatchOpen, setIsDeleteBatchOpen] = useState(false);
+  const [deletePending, setDeletePending] = useState(false);
+  const [isUnresolvedDialogOpen, setIsUnresolvedDialogOpen] = useState(false);
+  const [unresolvedCount, setUnresolvedCount] = useState(0);
 
   const [rows, setRows] = useState<ImportRow[]>(initialRows);
   const [expandedRowId, setExpandedRowId] = useState<string | null>(() => {
@@ -352,28 +358,36 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
   };
 
   // Delete/Cancel Batch
-  const handleDeleteBatch = async () => {
-    if (!window.confirm("คุณต้องการลบชุดนำเข้านี้ใช่หรือไม่? ไฟล์ที่อัปโหลดและรายการชั่วคราวจะถูกลบทั้งหมด")) {
-      return;
-    }
+  const handleDeleteBatch = () => {
+    setIsDeleteBatchOpen(true);
+  };
+
+  const executeDeleteBatch = async () => {
+    setIsDeleteBatchOpen(false);
+    setDeletePending(true);
     const res = await deleteBatchAction(batch.id);
     if (res.ok) {
       router.push("/settings/data");
     } else {
       setErrorMsg(res.message || "ลบชุดข้อมูลล้มเหลว");
+      setDeletePending(false);
     }
   };
 
   // Confirm Import Commit
-  const handleConfirmImport = async () => {
+  const handleConfirmImport = () => {
     setErrorMsg(null);
-    const unresolvedCount = rows.filter(r => r.reviewStatus !== "invalid" && !excludedRowIds.has(r.id) && r.importDecision === "unresolved").length;
-    if (unresolvedCount > 0) {
-      if (!window.confirm(`มีอีก ${unresolvedCount} รายการที่ยังไม่ได้เลือกผลการตรวจสอบ คุณต้องการข้ามรายการที่เหลือและนำเข้ารายการที่ระบุไว้ใช่หรือไม่?`)) {
-        return;
-      }
+    const count = rows.filter(r => r.reviewStatus !== "invalid" && !excludedRowIds.has(r.id) && r.importDecision === "unresolved").length;
+    if (count > 0) {
+      setUnresolvedCount(count);
+      setIsUnresolvedDialogOpen(true);
+    } else {
+      executeConfirmImport();
     }
+  };
 
+  const executeConfirmImport = () => {
+    setIsUnresolvedDialogOpen(false);
     const payload = rows
       .filter(r => r.reviewStatus !== "invalid")
       .filter(r => {
@@ -927,7 +941,7 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
       <div className="mt-6 flex flex-col gap-2 border-t border-border pt-4">
         <button
           onClick={handleConfirmImport}
-          disabled={isPending}
+          disabled={isPending || deletePending}
           className="flex min-h-12 w-full items-center justify-center rounded-xl bg-primary text-sm font-bold text-white shadow hover:bg-primary-dark disabled:opacity-50"
         >
           {isPending ? "กำลังบันทึกธุรกรรม..." : `ยืนยันการนำเข้าทั้งหมด (${includedCount} รายการ)`}
@@ -935,12 +949,38 @@ export function ReviewBoardClient({ batch, initialRows, debts }: ReviewBoardClie
 
         <button
           onClick={handleDeleteBatch}
+          disabled={isPending || deletePending}
           aria-label={`ยกเลิกนำเข้าและลบชุด ${batchContext}`}
-          className="flex min-h-11 w-full items-center justify-center rounded-xl bg-rose-50 text-xs font-bold text-rose-600 hover:bg-rose-100"
+          className="flex min-h-11 w-full items-center justify-center rounded-xl bg-rose-50 text-xs font-bold text-rose-600 hover:bg-rose-100 disabled:opacity-50"
         >
-          ยกเลิกนำเข้าและลบชุดนี้
+          {deletePending ? "กำลังลบชุดข้อมูล..." : "ยกเลิกนำเข้าและลบชุดนี้"}
         </button>
       </div>
+
+      <ConfirmDialog
+        open={isDeleteBatchOpen}
+        title="ลบชุดข้อมูลนำเข้านี้หรือไม่"
+        body="ไฟล์ที่อัปโหลดและรายการชั่วคราวจะถูกลบทั้งหมด และไม่สามารถกู้คืนได้"
+        confirmLabel="ลบชุดข้อมูล"
+        cancelLabel="ยกเลิก"
+        confirmPending={deletePending}
+        pendingLabel="กำลังลบชุดข้อมูล..."
+        onConfirm={executeDeleteBatch}
+        onCancel={() => setIsDeleteBatchOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={isUnresolvedDialogOpen}
+        title="ข้ามรายการที่เหลือและนำเข้าหรือไม่"
+        body={`มีอีก ${unresolvedCount} รายการที่ยังไม่ได้เลือกผลการตรวจสอบ คุณต้องการข้ามรายการที่เหลือและนำเข้ารายการที่ระบุไว้ใช่หรือไม่?`}
+        confirmLabel="นำเข้า"
+        cancelLabel="ยกเลิก"
+        confirmPending={isPending}
+        pendingLabel="กำลังบันทึกธุรกรรม..."
+        tone="primary"
+        onConfirm={executeConfirmImport}
+        onCancel={() => setIsUnresolvedDialogOpen(false)}
+      />
     </div>
   );
 }
