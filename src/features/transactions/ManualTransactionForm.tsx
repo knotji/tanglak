@@ -10,7 +10,11 @@ import { LoadingButton } from "@/components/feedback/LoadingButton";
 import { AccountSelector } from "@/features/accounts/AccountSelector";
 import { DEBT_ERROR_UNLINKED_PAYMENT_TH } from "@/lib/finance/debt-guards";
 import { parseRequiredMoney } from "@/lib/finance/money-guards";
-import { getBangkokDateTimeLocalOf, getBangkokNowDateTimeLocalString } from "@/lib/finance/date";
+import {
+  formatBangkokDateTimeLocalThai,
+  getBangkokDateTimeLocalOf,
+  getBangkokNowDateTimeLocalString,
+} from "@/lib/finance/date";
 import {
   EXPENSE_CATEGORIES,
   INCOME_CATEGORIES,
@@ -65,7 +69,7 @@ export function ManualTransactionForm({
     defaultValues: {
       type: transaction?.type ?? "expense",
       amount: transaction ? String(transaction.amountSatang / 100) : "",
-      label: transaction?.merchant ?? "",
+      label: transaction?.merchant || transaction?.note || "",
       category:
         transaction?.category ??
         ((transaction?.type ?? "expense") === "income" ? DEFAULT_INCOME_CATEGORY_LABEL : DEFAULT_EXPENSE_CATEGORY_LABEL),
@@ -76,6 +80,7 @@ export function ManualTransactionForm({
     },
   });
   const selectedType = useWatch({ control, name: "type" });
+  const selectedDate = useWatch({ control, name: "date" });
 
   useEffect(() => {
     const saved = window.localStorage.getItem("tanglak.transactionDraft");
@@ -150,19 +155,18 @@ export function ManualTransactionForm({
 
         <label className="space-y-1 text-sm">
           <span className="font-medium">ชื่อรายการ</span>
-          {transaction ? (
-            <div className="min-h-11 w-full rounded-[16px] border border-border bg-muted/30 px-3 flex items-center text-sm text-text-secondary font-bold truncate">
-              {transaction.merchant || transaction.note || "รายการ"}
-            </div>
-          ) : (
-            <input className="min-h-11 w-full rounded-[16px] border border-border bg-white px-3" placeholder="GrabFood" {...register("label")} name="label" />
-          )}
+          <input className="min-h-11 w-full rounded-[16px] border border-border bg-white px-3" placeholder="GrabFood" {...register("label")} name="label" />
         </label>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="space-y-1 text-sm">
             <span className="font-medium">วันและเวลา</span>
             <input type="datetime-local" className="min-h-11 w-full rounded-[16px] border border-border bg-white px-3" {...register("date")} name="date" />
+            {selectedDate ? (
+              <span className="block text-[11px] font-medium text-text-secondary">
+                {formatBangkokDateTimeLocalThai(selectedDate)} (เวลาไทย)
+              </span>
+            ) : null}
           </label>
           {selectedType !== "transfer" ? (
             <label className="space-y-1 text-sm">
