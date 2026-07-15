@@ -597,7 +597,10 @@ export function ReviewForm({
                 </button>
               ) : null}
               <button
-                onClick={() => setManualMode(true)}
+                onClick={() => {
+                  setManualMode(true);
+                  setIsDetailsExpanded(true);
+                }}
                 className="rounded-[16px] border border-border bg-white px-6 py-3 font-bold text-foreground shadow-sm hover:bg-gray-50"
               >
                 กรอกข้อมูลด้วยตนเอง
@@ -1120,17 +1123,10 @@ export function ReviewForm({
                         คำนวณยอดเงินจ่ายจริงอัตโนมัติ
                       </button>
                       <div className="flex items-center gap-2">
-                        <label htmlFor={reviewFieldId("totalPaid")} className="text-xs font-bold text-text-secondary">ยอดรวมจ่ายจริง:</label>
-                        <input
-                          id={reviewFieldId("totalPaid")}
-                          type="number"
-                          step="0.01"
-                          name="totalPaid"
-                          className="w-28 rounded-[12px] border border-border bg-white p-2 text-sm font-extrabold text-primary text-right"
-                          value={totalPaid}
-                          onChange={(e) => setTotalPaid(e.target.value)}
-                          required
-                        />
+                        <span className="text-xs font-bold text-text-secondary">ยอดรวมจ่ายจริง:</span>
+                        <output className="min-w-28 rounded-[12px] border border-border bg-white p-2 text-right text-sm font-extrabold text-primary">
+                          {totalPaid || "0"}
+                        </output>
                       </div>
                     </div>
 

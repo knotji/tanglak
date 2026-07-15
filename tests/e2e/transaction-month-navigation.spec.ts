@@ -35,7 +35,7 @@ async function addTransaction(
   await page.getByLabel("ประเภท").selectOption(type);
   await page.getByLabel("จำนวนเงิน").fill(amount);
   await page.getByLabel("ชื่อรายการ").fill(label);
-  await page.getByLabel("วันที่").fill(date);
+  await page.getByLabel("วันและเวลา").fill(`${date}T12:00`);
   await page.getByRole("button", { name: "เพิ่มรายการ", exact: true }).click();
   await expect(page.getByText(label)).toBeVisible();
 }
