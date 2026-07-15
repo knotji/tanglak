@@ -600,4 +600,59 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
     // Verify fields are still loaded
     await expect(page.locator("input[name='employer']")).toHaveValue("Acme Corp");
   });
+
+  test("Merchant Category Learning Phase 1 integration", async ({ page }) => {
+    // 1. Log in as user A
+    await page.goto("/auth");
+    await page.getByLabel("อีเมล").fill(email);
+    await page.getByLabel("รหัสผ่าน", { exact: true }).fill(password);
+    await page.locator("form").getByRole("button", { name: "เข้าสู่ระบบ" }).click();
+    await expect(page).toHaveURL(/\/today/);
+
+    // 2. Delete existing GrabFood transaction from previous tests to prevent duplicate detection
+    await page.goto("/transactions");
+    const existingGrabFood = page.getByRole("button", { name: "เปิดรายละเอียดรายการ GrabFood" });
+    if ((await existingGrabFood.count()) > 0) {
+      await existingGrabFood.first().click();
+      await page.getByRole("button", { name: "ลบรายการนี้" }).click();
+      await page.getByRole("button", { name: "ลบรายการนี้" }).click();
+      await expect(page.getByText("฿185")).toHaveCount(0);
+    }
+
+    // 3. Seed 3 manual transactions for "GrabFood " with category "ช้อปปิ้ง"
+    for (let i = 1; i <= 3; i++) {
+      await page.getByRole("button", { name: "+ เพิ่มรายการ" }).click();
+      await page.getByLabel("จำนวนเงิน").fill((100 + i).toString());
+      await page.getByLabel("ชื่อรายการ").fill("GrabFood ");
+      await page.getByLabel("หมวดหมู่").selectOption("ช้อปปิ้ง");
+      await page.getByRole("button", { name: "เพิ่มรายการ", exact: true }).click();
+      // Wait until the transaction item is visible in the list by its unique amount
+      await expect(page.getByText(`฿${100 + i}`)).toBeVisible();
+    }
+
+    // 4. Go to /upload and upload "delivery_grab.jpg" (which triggers GrabFood merchant mock)
+    await page.goto("/upload");
+    const fileChooserPromise = page.waitForEvent("filechooser");
+    await page.getByRole("button", { name: "ใบเสร็จ/ค่าอาหาร" }).click();
+    const fileChooser = await fileChooserPromise;
+    await fileChooser.setFiles({
+      name: "delivery_grab.jpg",
+      mimeType: "image/jpeg",
+      buffer: Buffer.from("mock-delivery-data"),
+    });
+
+    await page.getByRole("button", { name: "อ่านสลิป" }).click();
+
+    // 4. Autopilot should execute automatically because of high confidence,
+    // and it should apply the learned category "ช้อปปิ้ง" (Shopping) instead of the default "อาหารและเครื่องดื่ม" (Food)
+    await expect(page).toHaveURL(/\/upload\/result\//);
+    await expect(page.getByText("TangLak จัดการให้แล้ว")).toBeVisible();
+    await expect(page.getByText("ช้อปปิ้ง").first()).toBeVisible();
+
+    // 5. Navigate to /transactions and verify that the edit form displays the correct category
+    await page.goto("/transactions");
+    await page.getByRole("button", { name: "เปิดรายละเอียดรายการ GrabFood" }).first().click();
+    await page.getByRole("button", { name: "แก้ไขรายการ" }).click();
+    await expect(page.getByLabel("หมวดหมู่")).toHaveValue("ช้อปปิ้ง");
+  });
 });

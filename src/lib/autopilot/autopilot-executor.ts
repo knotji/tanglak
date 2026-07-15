@@ -18,7 +18,7 @@ import { decideAutopilotAction, type AutopilotPolicyInput } from "./autopilot-po
 import { buildDeterministicExplanation } from "./autopilot-explanations";
 import { createAutopilotActionRecord, finalizeAutopilotActionRecord } from "./autopilot-audit";
 import { setTransactionCategoryProvenance } from "./autopilot-provenance";
-import type { AutopilotConfidence, AutopilotDecision, AutopilotTransactionSnapshot } from "./autopilot-types";
+import type { AutopilotConfidence, AutopilotDecision, AutopilotTransactionSnapshot, CategorySource } from "./autopilot-types";
 
 export type ExecuteAutopilotActionInput = {
   userId: string;
@@ -28,6 +28,7 @@ export type ExecuteAutopilotActionInput = {
   /** This user's candidate transactions to check the proposal against for duplicates (e.g. this month's transactions). Required for create_transaction. */
   candidateTransactions?: Transaction[];
   possibleOwnAccountTransfer?: boolean;
+  categorySource?: CategorySource;
 };
 
 export type ExecuteAutopilotActionResult = {
@@ -209,7 +210,7 @@ export async function executeAutopilotAction(input: ExecuteAutopilotActionInput)
     // (every other caller has no concept of AI category provenance and
     // must not be forced to pass it), so they're applied in this focused
     // follow-up write via autopilot-provenance.ts instead.
-    await setTransactionCategoryProvenance(userId, transaction.id, "ai", categoryConfidenceValue);
+    await setTransactionCategoryProvenance(userId, transaction.id, input.categorySource ?? "ai", categoryConfidenceValue);
 
     const resultingState = snapshotTransaction({ ...transaction, category: categoryLabel });
     await finalizeAutopilotActionRecord({

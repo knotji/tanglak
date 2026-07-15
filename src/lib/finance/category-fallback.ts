@@ -16,15 +16,27 @@
  * would otherwise also match as a substring.
  */
 
-import { ALL_CATEGORIES, getCategoryById, DEFAULT_EXPENSE_CATEGORY_ID, type CategoryDefinition } from "./categories";
+import { ALL_CATEGORIES, getCategoryById, getCategoryByLabel, resolveCategoryFromLegacyLabel, DEFAULT_EXPENSE_CATEGORY_ID, type CategoryDefinition } from "./categories";
+
+export type LearnedCategoryMatch = {
+  categoryLabel: string;
+  supportCount: number;
+  eligibleTransactionCount: number;
+  agreementRatio: number;
+  latestOccurredAt: string | null;
+};
 
 export type MerchantRuleMatch = {
   category: CategoryDefinition;
   matchedHint: string;
 };
 
-function normalize(text: string): string {
+export function normalizeMerchant(text: string): string {
   return text.trim().toLowerCase();
+}
+
+function normalize(text: string): string {
+  return normalizeMerchant(text);
 }
 
 /**
@@ -88,7 +100,17 @@ export function categorizeStatementDescription(description: string | undefined |
  * actions (src/app/actions/documents.ts) in place of a single hardcoded
  * category string per document type.
  */
-export function resolveExpenseCategoryLabel(merchant: string | undefined | null, fallbackCategoryId: string): string {
+export function resolveExpenseCategoryLabel(
+  merchant: string | undefined | null,
+  fallbackCategoryId: string,
+  learnedMatch?: LearnedCategoryMatch | null
+): string {
+  if (learnedMatch) {
+    const canonical = getCategoryByLabel(learnedMatch.categoryLabel) ?? resolveCategoryFromLegacyLabel(learnedMatch.categoryLabel);
+    if (canonical?.active) {
+      return canonical.label;
+    }
+  }
   const merchantMatch = categorizeByMerchantRule(merchant);
   if (merchantMatch) return merchantMatch.category.label;
   return (getCategoryById(fallbackCategoryId) ?? getCategoryById(DEFAULT_EXPENSE_CATEGORY_ID)!).label;
@@ -97,13 +119,14 @@ export function resolveExpenseCategoryLabel(merchant: string | undefined | null,
 export type ExtractedCategoryResolution = {
   category: CategoryDefinition;
   /** Where the final category came from -- for internal debugging/observability, per Part C. */
-  source: "ai" | "rule" | "default";
+  source: "ai" | "rule" | "default" | "learned";
+  learnedMatch?: LearnedCategoryMatch | null;
 };
 
 /**
  * Resolves the AI extraction's category suggestion into a guaranteed-valid
- * canonical category (Part C: "AI must select only from active canonical
- * categories. AI must never invent category IDs or labels"). This is the
+ * canonical category (Part C: "AI must select only from active catalog
+ * entries. AI must never invent category IDs or labels"). This is the
  * actual enforcement point -- the AI schema's `categoryId` field is
  * intentionally unconstrained (see schemas.ts) so a hallucinated value
  * never fails validation for the whole document; this function is what
@@ -118,7 +141,15 @@ export function resolveExtractedCategory(input: {
   merchant?: string | null;
   description?: string | null;
   defaultCategoryId: string;
+  learnedMatch?: LearnedCategoryMatch | null;
 }): ExtractedCategoryResolution {
+  if (input.learnedMatch) {
+    const canonical = getCategoryByLabel(input.learnedMatch.categoryLabel) ?? resolveCategoryFromLegacyLabel(input.learnedMatch.categoryLabel);
+    if (canonical?.active) {
+      return { category: canonical, source: "learned", learnedMatch: input.learnedMatch };
+    }
+  }
+
   const aiCategory = input.categoryId ? getCategoryById(input.categoryId) : undefined;
   if (aiCategory?.active) {
     return { category: aiCategory, source: "ai" };
