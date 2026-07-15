@@ -181,18 +181,48 @@ describe("determineNextAction — single highest-priority action", () => {
     expect(action.title).toContain("เกินงบ");
   });
 
-  it("prioritizes an unbudgeted-spending category above a near-limit category", () => {
+  it("prioritizes an unbudgeted-spending category above unreviewed items", () => {
     const action = determineNextAction(
       {
         debts: [],
         hasBudget: true,
         unbudgetedCategoryLabel: "อื่น ๆ",
-        nearLimitCategoryLabel: "เดินทาง",
+        unreviewedCount: 5,
         hasAnyTransaction: true,
       },
       TODAY,
     );
     expect(action.title).toContain("อื่น ๆ");
+    expect(action.title).not.toContain("รอตรวจสอบ");
+  });
+
+  it("surfaces unreviewed items when there is no budget violation", () => {
+    const action = determineNextAction(
+      {
+        debts: [],
+        hasBudget: true,
+        unreviewedCount: 5,
+        hasAnyTransaction: true,
+      },
+      TODAY,
+    );
+    expect(action.title).toBe("มีรายการรอตรวจสอบ");
+    expect(action.body).toContain("5 รายการ");
+    expect(action.actionHref).toBe("/transactions");
+  });
+
+  it("prioritizes unreviewed items above a near-limit category", () => {
+    const action = determineNextAction(
+      {
+        debts: [],
+        hasBudget: true,
+        unreviewedCount: 5,
+        nearLimitCategoryLabel: "เดินทาง",
+        hasAnyTransaction: true,
+      },
+      TODAY,
+    );
+    expect(action.title).toBe("มีรายการรอตรวจสอบ");
     expect(action.title).not.toContain("เดินทาง");
   });
 

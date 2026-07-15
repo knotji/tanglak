@@ -107,7 +107,7 @@ export default async function OverviewPage() {
               ) : null}
               {budgetSummary.unbudgetedSpentTotalSatang > 0 ? (
                 <p className="mt-1 text-xs text-text-secondary">
-                  ค่าใช้จ่ายในหมวดที่ยังไม่ได้ตั้งงบ {formatTHB(budgetSummary.unbudgetedSpentTotalSatang)}
+                  รายจ่ายในหมวดที่ยังไม่ได้ตั้งงบ {formatTHB(budgetSummary.unbudgetedSpentTotalSatang)}
                 </p>
               ) : null}
             </>
@@ -115,48 +115,6 @@ export default async function OverviewPage() {
             <p className="mt-2 text-sm text-text-secondary">ยังไม่ได้ตั้งงบเดือนนี้</p>
           )}
         </section>
-
-        <section className="rounded-[16px] border border-border bg-surface p-4" aria-label="ภาระหนี้">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold text-foreground">ภาระหนี้</h2>
-            <Link href="/debts" className="text-sm font-bold text-primary">
-              ดูรายการหนี้
-            </Link>
-          </div>
-          {debts.length ? (
-            <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
-              <div>
-                <p className="text-text-secondary">ยอดคงเหลือรวม</p>
-                <MoneyAmount satang={totalOutstanding} className="mt-1 block text-lg font-bold" />
-              </div>
-              <div>
-                <p className="text-text-secondary">ขั้นต่ำที่ยังขาด</p>
-                <MoneyAmount
-                  satang={totalMinimumDue}
-                  className={`mt-1 block text-lg font-bold ${totalMinimumDue > 0 ? "text-debt" : ""}`}
-                />
-              </div>
-            </div>
-          ) : (
-            <p className="mt-2 text-sm text-text-secondary">ไม่มีหนี้ที่ต้องติดตาม</p>
-          )}
-        </section>
-
-        {insights.length > 0 && (
-          <section className="rounded-[16px] border border-border bg-surface p-4 flex flex-col gap-3" aria-label="การเปลี่ยนแปลงที่น่าสนใจ">
-            <h2 className="text-sm font-bold text-foreground">การเปลี่ยนแปลงที่น่าสนใจ</h2>
-            <div className="flex flex-col gap-2">
-              {insights.map((insight) => (
-                <div
-                  key={insight.id}
-                  className={`rounded-xl border p-3 text-xs leading-5 ${INSIGHT_TONE[insight.type] ?? INSIGHT_TONE.info}`}
-                >
-                  {insight.message}
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
 
         {categoriesWithSpend.length ? (
           <section className="rounded-[16px] border border-border bg-surface p-4" aria-label="หมวดที่ใช้จริง">
@@ -177,6 +135,46 @@ export default async function OverviewPage() {
           </section>
         ) : (
           <EmptyState title="ข้อมูลยังไม่พอ" body="เริ่มจากเพิ่มรายรับหรือรายจ่ายอย่างน้อย 1 รายการ" />
+        )}
+
+        {insights.length > 0 && (
+          <section className="rounded-[16px] border border-border bg-surface p-4 flex flex-col gap-3" aria-label="การเปลี่ยนแปลงที่น่าสนใจ">
+            <h2 className="text-sm font-bold text-foreground">การเปลี่ยนแปลงที่น่าสนใจ</h2>
+            <div className="flex flex-col gap-2">
+              {insights.map((insight) => (
+                <div
+                  key={insight.id}
+                  className={`rounded-xl border p-3 text-xs leading-5 ${INSIGHT_TONE[insight.type] ?? INSIGHT_TONE.info}`}
+                >
+                  {insight.message}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {debts.length > 0 && (
+          <section className="rounded-[16px] border border-border bg-surface p-4" aria-label="ภาระหนี้">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold text-foreground">ภาระหนี้</h2>
+              <Link href="/debts" className="text-sm font-bold text-primary">
+                ดูรายการหนี้
+              </Link>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <p className="text-text-secondary">ยอดคงเหลือรวม</p>
+                <MoneyAmount satang={totalOutstanding} className="mt-1 block text-lg font-bold" />
+              </div>
+              <div>
+                <p className="text-text-secondary">ขั้นต่ำที่ยังขาด</p>
+                <MoneyAmount
+                  satang={totalMinimumDue}
+                  className={`mt-1 block text-lg font-bold ${totalMinimumDue > 0 ? "text-debt" : ""}`}
+                />
+              </div>
+            </div>
+          </section>
         )}
       </AppShell>
     );

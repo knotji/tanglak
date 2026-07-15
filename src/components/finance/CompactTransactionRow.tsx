@@ -1,5 +1,6 @@
 import { CategoryIcon } from "@/components/CategoryIcon";
 import { MoneyAmount } from "@/components/MoneyAmount";
+import { formatStandardDateTime } from "@/lib/finance/date";
 import type { Transaction, TransactionType } from "@/types/domain";
 import { IncomeExpenseIndicator } from "./IncomeExpenseIndicator";
 
@@ -8,7 +9,7 @@ function transactionTone(type: TransactionType) {
 }
 
 function shouldShowSign(type: TransactionType) {
-  return type === "income" || type === "refund";
+  return type === "income" || type === "refund" || type === "transfer";
 }
 
 export function CompactTransactionRow({
@@ -21,13 +22,7 @@ export function CompactTransactionRow({
   onAction?: (transaction: Transaction) => void;
 }) {
   const description = transaction.merchant ?? transaction.note ?? "รายการ";
-  const dateTime = new Intl.DateTimeFormat("th-TH-u-ca-gregory", {
-    timeZone: "Asia/Bangkok",
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(transaction.occurredAt));
+  const dateTime = formatStandardDateTime(transaction.occurredAt);
 
   return (
     <article className="flex max-w-full items-center gap-3 overflow-hidden border-b border-border py-3 last:border-b-0">

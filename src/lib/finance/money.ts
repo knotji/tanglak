@@ -27,7 +27,8 @@ export function formatTHB(satang: number, options: { showPositiveSign?: boolean 
   const normalized = normalizeSatang(satang);
   const sign = normalized < 0 ? "-" : options.showPositiveSign && normalized > 0 ? "+" : "";
   const amount = new Intl.NumberFormat("th-TH", {
-    maximumFractionDigits: normalized % 100 === 0 ? 0 : 2,
+    minimumFractionDigits: normalized % 100 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
   }).format(Math.abs(satangToBaht(normalized)));
 
   return `${sign}฿${amount}`;

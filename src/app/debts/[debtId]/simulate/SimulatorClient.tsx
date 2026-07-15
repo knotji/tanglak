@@ -344,7 +344,7 @@ export function SimulatorClient({
             </label>
 
             <label className="space-y-1.5 text-xs font-bold text-text-secondary">
-              ค่าใช้จ่ายทั่วไปเดือนนี้ (บาท)
+              รายจ่ายทั่วไปเดือนนี้ (บาท)
               <input
                 type="text"
                 value={spending}

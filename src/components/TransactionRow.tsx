@@ -1,5 +1,6 @@
 import { CategoryIcon } from "@/components/CategoryIcon";
 import { MoneyAmount } from "@/components/MoneyAmount";
+import { formatStandardDateTime } from "@/lib/finance/date";
 import type { Transaction } from "@/types/domain";
 
 export function TransactionRow({
@@ -18,14 +19,8 @@ export function TransactionRow({
       : isTransfer
         ? "neutral"
         : "expense";
-  // Signed amount fed to MoneyAmount itself (not a separately-colored raw
-  // "+"/"-" text node next to it) -- see MoneyFlowRow.tsx for why that
-  // split ends up rendering the sign and the digits in different colors.
   const signedSatang = isIncoming || isTransfer ? transaction.amountSatang : -transaction.amountSatang;
-  const time = new Intl.DateTimeFormat("th-TH", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(transaction.occurredAt));
+  const timeLabel = formatStandardDateTime(transaction.occurredAt);
   const actionContext = transaction.merchant ?? transaction.note ?? "รายการ";
 
   return (
@@ -41,14 +36,14 @@ export function TransactionRow({
           {transaction.merchant ?? transaction.note ?? "รายการ"}
         </p>
         <p className="mt-0.5 text-xs font-medium text-text-secondary">
-          {time}
+          {timeLabel}
           {transaction.type === "debt_payment" ? " · จ่ายหนี้" : ""}
         </p>
       </div>
       <MoneyAmount
         satang={signedSatang}
         tone={tone}
-        showSign={isIncoming}
+        showSign={isIncoming || isTransfer}
         className="shrink-0 text-sm font-bold"
       />
     </button>

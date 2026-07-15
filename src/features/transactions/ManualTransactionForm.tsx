@@ -10,6 +10,7 @@ import { LoadingButton } from "@/components/feedback/LoadingButton";
 import { AccountSelector } from "@/features/accounts/AccountSelector";
 import { DEBT_ERROR_UNLINKED_PAYMENT_TH } from "@/lib/finance/debt-guards";
 import { parseRequiredMoney } from "@/lib/finance/money-guards";
+import { getBangkokDateTimeLocalOf, getBangkokNowDateTimeLocalString } from "@/lib/finance/date";
 import {
   EXPENSE_CATEGORIES,
   INCOME_CATEGORIES,
@@ -30,23 +31,13 @@ const schema = z.object({
   label: z.string().min(1, "ใส่ชื่อรายการ"),
   category: z.string().optional(),
   date: z.string().min(1),
+  note: z.string().optional(),
   sourceAccountId: z.string().optional(),
   debtId: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof schema>;
 
-/**
- * Category options for the given transaction type, from the canonical
- * catalog (src/lib/finance/categories.ts) -- income transactions offer
- * income categories, everything else (expense/debt_payment/refund) offers
- * the full expense catalog (including "debt" and "other", per the existing
- * budget-matching convention where a debt_payment counts toward a "debt"
- * budget category). If the transaction being edited has a legacy category
- * value that doesn't resolve to any canonical category, it's kept as an
- * extra option so editing never silently discards unrecognized historical
- * data (Part G: "do not silently delete category information").
- */
 function categoryOptionsFor(type: FormValues["type"], existingLegacyLabel?: string) {
   const catalog = type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
   const labels = catalog.map((category) => category.label);
@@ -75,22 +66,15 @@ export function ManualTransactionForm({
       type: transaction?.type ?? "expense",
       amount: transaction ? String(transaction.amountSatang / 100) : "",
       label: transaction?.merchant ?? "",
-      // A fresh transaction defaults to the generic "other"/"other_income"
-      // category rather than silently guessing a specific one -- the user
-      // picks a real category from the visible select below. An existing
-      // transaction keeps its own saved category exactly as-is (including
-      // an unrecognized legacy value, via categoryOptionsFor above).
       category:
         transaction?.category ??
         ((transaction?.type ?? "expense") === "income" ? DEFAULT_INCOME_CATEGORY_LABEL : DEFAULT_EXPENSE_CATEGORY_LABEL),
-      date: transaction?.occurredAt.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+      date: transaction ? getBangkokDateTimeLocalOf(transaction.occurredAt) : getBangkokNowDateTimeLocalString(),
+      note: transaction?.note ?? "",
       sourceAccountId: transaction?.sourceAccountId ?? "",
       debtId: transaction?.debtId ?? "",
     },
   });
-  // Derived from the form's own live "type" field (not a separately
-  // synced useState) so it never needs an effect to stay in sync when the
-  // form is reset from a saved draft or after a successful save.
   const selectedType = useWatch({ control, name: "type" });
 
   useEffect(() => {
@@ -108,7 +92,8 @@ export function ManualTransactionForm({
         amount: "",
         label: "",
         category: DEFAULT_EXPENSE_CATEGORY_LABEL,
-        date: new Date().toISOString().slice(0, 10),
+        date: getBangkokNowDateTimeLocalString(),
+        note: "",
         debtId: "",
       });
       onSaved?.();
@@ -141,82 +126,101 @@ export function ManualTransactionForm({
       className="rounded-[16px] border border-border bg-surface p-4"
     >
       {transaction ? <input type="hidden" name="id" value={transaction.id} /> : null}
-      <div className="grid grid-cols-2 gap-3">
-        <label className="space-y-1 text-sm">
-          <span className="font-medium">ประเภท</span>
-          <select
-            className="min-h-11 w-full rounded-[16px] border border-border bg-white px-3"
-            {...register("type")}
-            name="type"
-          >
-            <option value="expense">รายจ่าย</option>
-            <option value="income">รายรับ</option>
-            <option value="debt_payment">ชำระหนี้</option>
-            <option value="transfer">โอนบัญชีตัวเอง</option>
-            <option value="refund">เงินคืน</option>
-          </select>
-        </label>
-        <label className="space-y-1 text-sm">
-          <span className="font-medium">จำนวนเงิน</span>
-          <input inputMode="decimal" className="min-h-11 w-full rounded-[16px] border border-border bg-white px-3" placeholder="189" {...register("amount")} name="amount" />
-        </label>
-        <label className="space-y-1 text-sm">
-          <span className="font-medium">ชื่อรายการ</span>
-          <input className="min-h-11 w-full rounded-[16px] border border-border bg-white px-3" placeholder="GrabFood" {...register("label")} name="label" />
-        </label>
-        <label className="space-y-1 text-sm">
-          <span className="font-medium">วันที่</span>
-          <input type="date" className="min-h-11 w-full rounded-[16px] border border-border bg-white px-3" {...register("date")} name="date" />
-        </label>
-        {selectedType !== "transfer" ? (
-          <label className="col-span-2 space-y-1 text-sm">
-            <span className="font-medium">หมวดหมู่</span>
+      <div className="flex flex-col gap-4">
+        <div className="grid grid-cols-2 gap-3">
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">ประเภท</span>
             <select
               className="min-h-11 w-full rounded-[16px] border border-border bg-white px-3"
-              {...register("category")}
-              name="category"
-              aria-label="หมวดหมู่"
+              {...register("type")}
+              name="type"
             >
-              {categoryOptionsFor(selectedType, transaction?.category).map((label) => (
-                <option key={label} value={label}>
-                  {label}
+              <option value="expense">รายจ่าย</option>
+              <option value="income">รายรับ</option>
+              <option value="debt_payment">ชำระหนี้</option>
+              <option value="transfer">โอนบัญชีตัวเอง</option>
+              <option value="refund">เงินคืน</option>
+            </select>
+          </label>
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">จำนวนเงิน</span>
+            <input inputMode="decimal" className="min-h-11 w-full rounded-[16px] border border-border bg-white px-3 font-bold text-primary" placeholder="189" {...register("amount")} name="amount" />
+          </label>
+        </div>
+
+        <label className="space-y-1 text-sm">
+          <span className="font-medium">ชื่อรายการ</span>
+          {transaction ? (
+            <div className="min-h-11 w-full rounded-[16px] border border-border bg-muted/30 px-3 flex items-center text-sm text-text-secondary font-bold truncate">
+              {transaction.merchant || transaction.note || "รายการ"}
+            </div>
+          ) : (
+            <input className="min-h-11 w-full rounded-[16px] border border-border bg-white px-3" placeholder="GrabFood" {...register("label")} name="label" />
+          )}
+        </label>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">วันและเวลา</span>
+            <input type="datetime-local" className="min-h-11 w-full rounded-[16px] border border-border bg-white px-3" {...register("date")} name="date" />
+          </label>
+          {selectedType !== "transfer" ? (
+            <label className="space-y-1 text-sm">
+              <span className="font-medium">หมวดหมู่</span>
+              <select
+                className="min-h-11 w-full rounded-[16px] border border-border bg-white px-3"
+                {...register("category")}
+                name="category"
+                aria-label="หมวดหมู่"
+              >
+                {categoryOptionsFor(selectedType, transaction?.category).map((label) => (
+                  <option key={label} value={label}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+        </div>
+
+        <label className="space-y-1 text-sm">
+          <span className="font-medium">บันทึกเพิ่มเติม</span>
+          <textarea
+            className="w-full rounded-[16px] border border-border bg-white p-3 text-sm min-h-[80px]"
+            placeholder="รายละเอียดเพิ่มเติม..."
+            {...register("note")}
+            name="note"
+          />
+        </label>
+
+        {accounts.length ? (
+          <label className="block space-y-1 text-sm">
+            <span className="font-medium">บัญชี</span>
+            <AccountSelector accounts={accounts} name="sourceAccountId" defaultValue={transaction?.sourceAccountId} />
+          </label>
+        ) : null}
+        {selectedType === "debt_payment" ? (
+          <label className="block space-y-1 text-sm">
+            <span className="font-medium">หนี้ที่เกี่ยวข้อง</span>
+            <select
+              className="min-h-11 w-full rounded-[16px] border border-border bg-white px-3"
+              {...register("debtId")}
+              name="debtId"
+              required
+            >
+              <option value="">เลือกหนี้</option>
+              {debts.map((debt) => (
+                <option key={debt.id} value={debt.id}>
+                  {debt.name}
                 </option>
               ))}
             </select>
           </label>
         ) : null}
+        {selectedType === "transfer" ? (
+          <input type="hidden" value={TRANSFERS_CATEGORY_LABEL} {...register("category")} name="category" />
+        ) : null}
       </div>
-      {accounts.length ? (
-        <label className="mt-3 block space-y-1 text-sm">
-          <span className="font-medium">บัญชี</span>
-          <AccountSelector accounts={accounts} name="sourceAccountId" defaultValue={transaction?.sourceAccountId} />
-        </label>
-      ) : null}
-      {selectedType === "debt_payment" ? (
-        <label className="mt-3 block space-y-1 text-sm">
-          <span className="font-medium">หนี้ที่เกี่ยวข้อง</span>
-          <select
-            className="min-h-11 w-full rounded-[16px] border border-border bg-white px-3"
-            {...register("debtId")}
-            name="debtId"
-            required
-          >
-            <option value="">เลือกหนี้</option>
-            {debts.map((debt) => (
-              <option key={debt.id} value={debt.id}>
-                {debt.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      ) : null}
-      {selectedType === "transfer" ? (
-        // Own-account transfers aren't user-categorized (see the
-        // "transfers" catalog entry) -- submit its canonical label so the
-        // transaction still has a sensible category string, without
-        // showing a picker the user would have nothing meaningful to pick.
-        <input type="hidden" value={TRANSFERS_CATEGORY_LABEL} {...register("category")} name="category" />
-      ) : null}
       {formState.errors.amount || formState.errors.label ? (
         <p className="mt-3 text-sm text-overdue">กรอกข้อมูลขั้นต่ำให้ครบก่อนบันทึก</p>
       ) : null}

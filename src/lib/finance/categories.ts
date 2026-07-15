@@ -324,14 +324,14 @@ export const EXPENSE_CATEGORIES: readonly CategoryDefinition[] = [
   },
   {
     id: "work",
-    label: "ค่าใช้จ่ายเกี่ยวกับงาน",
+    label: "รายจ่ายเกี่ยวกับงาน",
     labelEn: "Work Expenses",
     kind: "expense",
     icon: "briefcase",
     order: 20,
     budgetable: true,
     active: true,
-    aliases: ["งาน", "ค่าใช้จ่ายงาน", "work"],
+    aliases: ["งาน", "รายจ่ายงาน", "work"],
   },
   {
     id: "transfers",

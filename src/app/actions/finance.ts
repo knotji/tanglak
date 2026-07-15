@@ -26,6 +26,7 @@ import {
   DEBT_ERROR_MINIMUM_ABOVE_OUTSTANDING_TH,
   DEBT_ERROR_UNLINKED_PAYMENT_TH,
 } from "@/lib/finance/debt-guards";
+import { bangkokDateTimeLocalToInstant } from "@/lib/finance/date";
 
 export type FinanceActionState = {
   ok: boolean;
@@ -39,6 +40,7 @@ const transactionSchema = z.object({
   label: z.string().min(1),
   category: z.string().optional(),
   date: z.string().min(1),
+  note: z.string().optional(),
   sourceAccountId: z.string().optional(),
   debtId: z.string().optional(),
 });
@@ -60,6 +62,7 @@ const debtSchema = z.object({
 const paymentSchema = z.object({
   debtId: z.string().min(1),
   amount: z.string().min(1),
+  note: z.string().optional(),
 });
 
 const debtPaymentUpdateSchema = z.object({
@@ -96,11 +99,12 @@ export async function saveTransactionAction(
   const input = {
     type: parsed.data.type,
     amountSatang: amountResult.satang!,
-    occurredAt: `${parsed.data.date}T12:00:00+07:00`,
+    occurredAt: parsed.data.date.includes("T") ? bangkokDateTimeLocalToInstant(parsed.data.date) : `${parsed.data.date}T12:00:00+07:00`,
     merchant: parsed.data.label,
     category: parsed.data.category,
     sourceAccountId: parsed.data.sourceAccountId || undefined,
     debtId,
+    note: parsed.data.note,
   };
 
   try {
@@ -214,7 +218,7 @@ export async function addDebtPaymentAction(
   if (!amountResult.ok) return { ok: false, message: amountResult.error };
 
   try {
-    await addDebtPayment(user.id, parsed.data.debtId, amountResult.satang!);
+    await addDebtPayment(user.id, parsed.data.debtId, amountResult.satang!, undefined, parsed.data.note);
     revalidateFinance();
     return { ok: true, message: "บันทึกการชำระแล้ว" };
   } catch (error) {
@@ -238,7 +242,7 @@ export async function updateDebtPaymentAction(
       type: "debt_payment",
       debtId: parsed.data.debtId,
       amountSatang: amountResult.satang!,
-      occurredAt: `${parsed.data.date}T12:00:00+07:00`,
+      occurredAt: parsed.data.date.includes("T") ? bangkokDateTimeLocalToInstant(parsed.data.date) : `${parsed.data.date}T12:00:00+07:00`,
       note: parsed.data.note,
     });
     revalidateFinance();

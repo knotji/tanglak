@@ -669,6 +669,7 @@ export async function addDebtPayment(
   debtId: string,
   amountSatang: number,
   occurredAt?: string,
+  note?: string,
 ) {
   // A debt payment must be a real, positive payment (Category A) — zero and
   // negative amounts are rejected here before anything is persisted.
@@ -682,6 +683,7 @@ export async function addDebtPayment(
     occurredAt: paidAt,
     merchant: `ชำระ ${debt.name}`,
     debtId,
+    note,
   });
 
   if (!isMockAuthEnabled()) {
@@ -1228,6 +1230,48 @@ export async function listDuplicateCandidates(
   const { data, error } = await query;
   if (error) handlePostgrestError(error);
   return (data ?? []).map(mapTransaction);
+}
+
+/**
+ * Global count of items needing user attention: unconfirmed transactions
+ * (from any month), pending slip extractions, and history-import batches
+ * waiting for review. This is the canonical source for the "Attention"
+ * stats and nudges on the Today dashboard (P2 Finding: must be global,
+ * not month-scoped).
+ */
+export async function countPendingAttentionItems(userId: string): Promise<number> {
+  if (isMockAuthEnabled()) {
+    const state = getMockState();
+    const txCount = state.transactions.filter(
+      (t) => t.userId === userId && (t.status === "needs_review" || t.status === "draft"),
+    ).length;
+    const docCount = state.documents.filter(
+      (d) => d.userId === userId && (d.status === "review_ready" || d.status === "needs_review"),
+    ).length;
+    const batchCount = state.importBatches.filter((b) => b.userId === userId && b.status === "needs_review").length;
+    return txCount + docCount + batchCount;
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const [txs, docs, batches] = await Promise.all([
+    supabase
+      .from("transactions")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .in("status", ["needs_review", "draft"]),
+    supabase
+      .from("documents")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .in("status", ["review_ready", "needs_review"]),
+    supabase
+      .from("import_batches")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("status", "needs_review"),
+  ]);
+
+  return (txs.count ?? 0) + (docs.count ?? 0) + (batches.count ?? 0);
 }
 
 // === History Import Batches Repository ===

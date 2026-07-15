@@ -1,10 +1,44 @@
 import { describe, expect, it } from "vitest";
 import {
   bangkokDateTimeLocalToInstant,
+  formatThaiDateLabel,
   formatThaiDateTimeLabel,
   isLikelyInferredNoonTimestamp,
   parseWallClockComponents,
+  formatThaiDateCompact,
+  formatThaiDateFull,
+  formatThaiDateTime,
 } from "@/lib/finance/date";
+
+describe("formatThaiDateCompact", () => {
+  it("formats a date to compact Thai string", () => {
+    const date = new Date("2026-07-14T11:51:00+07:00");
+    expect(formatThaiDateCompact(date)).toBe("14 ก.ค.");
+  });
+
+  it("handles ISO strings", () => {
+    expect(formatThaiDateCompact("2026-07-14T11:51:00+07:00")).toBe("14 ก.ค.");
+  });
+});
+
+describe("formatThaiDateFull", () => {
+  it("formats a date to full Thai string", () => {
+    const date = new Date("2026-07-14T11:51:00+07:00");
+    expect(formatThaiDateFull(date)).toBe("14 ก.ค. 2026");
+  });
+});
+
+describe("formatThaiDateTime", () => {
+  it("formats a date to Thai date and time string", () => {
+    const date = new Date("2026-07-14T11:51:00+07:00");
+    expect(formatThaiDateTime(date)).toBe("14 ก.ค. 2026 เวลา 11:51");
+  });
+
+  it("ensures 24-hour cycle is used", () => {
+    const date = new Date("2026-07-14T23:51:00+07:00");
+    expect(formatThaiDateTime(date)).toBe("14 ก.ค. 2026 เวลา 23:51");
+  });
+});
 
 describe("parseWallClockComponents", () => {
   it("parses a well-formed datetime-local value", () => {
@@ -32,6 +66,17 @@ describe("parseWallClockComponents", () => {
 
   it("rejects an out-of-range time (e.g. hour 25)", () => {
     expect(parseWallClockComponents("2026-07-11T25:00")).toBeNull();
+  });
+});
+
+describe("formatThaiDateLabel", () => {
+  it('formats "2026-07-14" as "14 ก.ค. 2026"', () => {
+    expect(formatThaiDateLabel("2026-07-14")).toBe("14 ก.ค. 2026");
+  });
+
+  it("throws for invalid date keys", () => {
+    expect(() => formatThaiDateLabel("not-a-date")).toThrow();
+    expect(() => formatThaiDateLabel("2025-02-30")).toThrow();
   });
 });
 

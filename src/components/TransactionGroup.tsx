@@ -1,14 +1,11 @@
 import { MoneyAmount } from "@/components/MoneyAmount";
 import { TransactionRow } from "@/components/TransactionRow";
 import type { Transaction } from "@/types/domain";
-import { getBangkokTodayString } from "@/lib/finance/date";
+import { getBangkokTodayString, formatThaiDateCompact } from "@/lib/finance/date";
 
 function dayLabel(date: string) {
   const value = new Date(date);
-  const formatted = new Intl.DateTimeFormat("th-TH", {
-    day: "numeric",
-    month: "short",
-  }).format(value);
+  const formatted = formatThaiDateCompact(value);
   const todayStr = getBangkokTodayString();
   return date.startsWith(todayStr) ? `วันนี้ · ${formatted}` : formatted;
 }

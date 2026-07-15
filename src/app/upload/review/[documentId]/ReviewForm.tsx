@@ -496,36 +496,42 @@ export function ReviewForm({
   };
 
   const getSummaryData = () => {
+    const safeFormatAmount = (value: string) => {
+      const num = Number(value);
+      if (!value || isNaN(num)) return "฿0.00";
+      return formatTHB(num * 100);
+    };
+
     switch (docType) {
       case "salary_slip":
         return {
           merchant: employer || "ไม่ระบุชื่อบริษัท",
-          amount: netIncome ? formatTHB(Number(netIncome) * 100) : "฿0.00",
+          amount: safeFormatAmount(netIncome),
           date: paymentDate ? formatStandardDateTime(paymentDate) : "ไม่ระบุวันที่",
         };
       case "receipt":
       case "delivery_receipt":
         return {
           merchant: merchant || "ไม่ระบุร้านค้า",
-          amount: totalPaid ? formatTHB(Number(totalPaid) * 100) : "฿0.00",
+          amount: safeFormatAmount(totalPaid),
           date: occurredAt ? formatStandardDateTime(occurredAt) : "ไม่ระบุวันที่",
         };
       case "transfer_slip":
         return {
           merchant: destinationName || "ไม่ระบุผู้รับ",
-          amount: transferAmount ? formatTHB(Number(transferAmount) * 100) : "฿0.00",
+          amount: safeFormatAmount(transferAmount),
           date: transferDate ? formatStandardDateTime(transferDate) : "ไม่ระบุวันที่",
         };
       case "debt_statement":
         return {
           merchant: creditor || "ไม่ระบุเจ้าหนี้",
-          amount: amountDue ? formatTHB(Number(amountDue) * 100) : "฿0.00",
+          amount: safeFormatAmount(amountDue),
           date: dueDate ? formatStandardDateTime(dueDate) : "ไม่ระบุวันที่",
         };
       default:
         return {
           merchant: merchant || "ไม่ระบุรายการ",
-          amount: totalPaid ? formatTHB(Number(totalPaid) * 100) : "฿0.00",
+          amount: safeFormatAmount(totalPaid),
           date: occurredAt ? formatStandardDateTime(occurredAt) : "ไม่ระบุวันที่",
         };
     }

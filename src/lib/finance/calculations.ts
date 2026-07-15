@@ -235,7 +235,7 @@ export function calculateHistoricalInsights(transactions: Transaction[]): Histor
   if (recurringTotalSatang > 0) {
     insights.push({
       id: "recurring-exp",
-      message: `พบค่าใช้จ่ายประจำประมาณ ฿${(recurringTotalSatang / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })} ต่อเดือน`,
+      message: `พบรายจ่ายประจำประมาณ ฿${(recurringTotalSatang / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })} ต่อเดือน`,
       type: "info",
     });
   }

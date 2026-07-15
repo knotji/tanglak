@@ -44,6 +44,14 @@ test.describe("finance UI overhaul", () => {
     await expect(page.getByText("฿0.00")).toHaveCount(0);
   });
 
+  test("today dashboard shows daily context (days remaining)", async ({ page }) => {
+    await signUp(page, "ผู้ใช้ดูวันเหลือ");
+    await page.goto("/today");
+
+    await expect(page.getByText("เหลืออีก")).toBeVisible();
+    await expect(page.getByText(/วัน$/)).toBeVisible();
+  });
+
   test("today dashboard offers a scan/upload action reachable without the bottom nav", async ({ page }) => {
     await signUp(page, "ผู้ใช้สแกน");
     await page.goto("/today");
@@ -60,7 +68,13 @@ test.describe("finance UI overhaul", () => {
 
     await expect(page.getByText("เหลือใช้จริงเดือนนี้")).toBeVisible();
     await expect(page.getByText("สถานะงบประมาณ")).toBeVisible();
-    await expect(page.getByText("ภาระหนี้")).toBeVisible();
+  });
+
+  test("overview hides debt section when there is no debt", async ({ page }) => {
+    await signUp(page, "ผู้ใช้ไม่มีหนี้");
+    await page.goto("/overview");
+
+    await expect(page.getByText("ภาระหนี้")).not.toBeVisible();
   });
 
   test("budget month selector supports previous, next, and return-to-current-month controls", async ({ page }) => {
