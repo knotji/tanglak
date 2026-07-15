@@ -20,12 +20,23 @@ import { remainingToMinimum } from "@/lib/finance/calculations";
 import { formatTHB } from "@/lib/finance/money";
 import { getBangkokMonthString } from "@/lib/finance/date";
 import { buildMonthlyDebtSummary } from "@/lib/finance/debt-summary";
+import { portfolioStrategyLabel, type PortfolioRecommendation } from "@/lib/finance/portfolio-recommendation";
 import type { Debt, Transaction } from "@/types/domain";
 
 type SheetState = "create" | "edit" | "payment" | null;
 type ConfirmState = { kind: "close" | "delete"; debt: Debt } | null;
 
-export function DebtsClient({ debts, transactions = [] }: { debts: Debt[]; transactions?: Transaction[] }) {
+export function DebtsClient({
+  debts,
+  transactions = [],
+  strategyRecommendation,
+  activeDebtCount = debts.filter((debt) => debt.status === "active").length,
+}: {
+  debts: Debt[];
+  transactions?: Transaction[];
+  strategyRecommendation?: PortfolioRecommendation | null;
+  activeDebtCount?: number;
+}) {
   const router = useRouter();
   const { showToast } = useToast();
   const [open, setOpen] = useState<SheetState>(null);
@@ -139,6 +150,26 @@ export function DebtsClient({ debts, transactions = [] }: { debts: Debt[]; trans
               เพราะแต่ละหน้านับด้วยเงื่อนไขต่างกัน
             </p>
           </section>
+          {activeDebtCount >= 2 ? (
+            <section className="rounded-[16px] border border-primary/20 bg-primary-soft/40 p-5" aria-label="แผนปิดหนี้หลายก้อน">
+              <p className="text-sm font-bold text-primary">วางแผนปิดหนี้หลายก้อน</p>
+              <h2 className="mt-1 text-xl font-bold text-foreground">
+                {strategyRecommendation?.focusDebtId
+                  ? `แนะนำ${portfolioStrategyLabel(strategyRecommendation.recommendedStrategy)}`
+                  : "เทียบปิดก้อนเล็กก่อนกับลดดอกเบี้ยก่อน"}
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-text-secondary">
+                {strategyRecommendation?.reason ??
+                  "ลองเทียบลำดับปิดหนี้แบบ Snowball และ Avalanche โดยไม่บันทึกหรือแก้ไขข้อมูลหนี้จริง"}
+              </p>
+              <Link
+                href="/debts/strategy"
+                className="mt-4 flex min-h-11 items-center justify-center rounded-[16px] bg-primary px-4 text-sm font-bold text-white"
+              >
+                ดูแผนปิดหนี้
+              </Link>
+            </section>
+          ) : null}
           <NextActionCard title={`ยังขาดขั้นต่ำ ${formatTHB(remainingMinimum)}`} body="ดูหนี้ที่ใกล้ครบกำหนดก่อน" />
         </>
       ) : null}

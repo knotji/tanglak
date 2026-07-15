@@ -1,5 +1,6 @@
 import { daysUntilDue, isOverdue, remainingToMinimum } from "@/lib/finance/calculations";
 import { formatTHB } from "@/lib/finance/money";
+import { portfolioStrategyLabel, type PortfolioRecommendation } from "@/lib/finance/portfolio-recommendation";
 import type { Debt } from "@/types/domain";
 
 export type NextAction = {
@@ -19,6 +20,7 @@ export type NextActionInput = {
   unbudgetedCategoryLabel?: string;
   hasAnyTransaction: boolean;
   unreviewedCount?: number;
+  portfolioRecommendation?: PortfolioRecommendation | null;
 };
 
 /**
@@ -155,6 +157,19 @@ export function determineNextAction(input: NextActionInput, today: Date = new Da
       actionHref: "/budget",
       tone: "debt",
     };
+  }
+
+  if (input.portfolioRecommendation?.focusDebtId) {
+    const focusDebt = input.debts.find((debt) => debt.id === input.portfolioRecommendation?.focusDebtId);
+    if (focusDebt) {
+      return {
+        title: `ลองโฟกัส ${focusDebt.name}`,
+        body: `${portfolioStrategyLabel(input.portfolioRecommendation.recommendedStrategy)}: ${input.portfolioRecommendation.reason}`,
+        action: "ดูแผนปิดหนี้",
+        actionHref: "/debts/strategy",
+        tone: "debt",
+      };
+    }
   }
 
   if (!input.hasAnyTransaction) {

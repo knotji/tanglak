@@ -5,10 +5,10 @@ const email = `test-${Date.now()}@example.test`;
 const password = "password123";
 let userDocId = "";
 
-async function loginAndCompleteOnboarding(page: import("@playwright/test").Page) {
+async function loginAndCompleteOnboarding(page: import("@playwright/test").Page, userEmail = email) {
   await page.goto("/auth");
   await page.getByRole("button", { name: "สมัครใหม่" }).click();
-  await page.getByLabel("อีเมล").fill(email);
+  await page.getByLabel("อีเมล").fill(userEmail);
   await page.getByLabel("รหัสผ่าน", { exact: true }).fill(password);
   await page.getByLabel("ยืนยันรหัสผ่าน", { exact: true }).fill(password);
   await page.getByRole("button", { name: "สร้างบัญชี" }).click();
@@ -477,11 +477,7 @@ test.describe.serial("Gemini Document Upload & Review Flow", () => {
   });
 
   test("retry reuses the existing failed document and navigates to review on success", async ({ page }) => {
-    await page.goto("/auth");
-    await page.getByLabel("อีเมล").fill(email);
-    await page.getByLabel("รหัสผ่าน", { exact: true }).fill(password);
-    await page.locator("form").getByRole("button", { name: "เข้าสู่ระบบ" }).click();
-    await expect(page).toHaveURL(/\/today/);
+    await loginAndCompleteOnboarding(page, `retry-${Date.now()}@example.test`);
 
     await page.goto("/upload");
     const fileChooserPromise = page.waitForEvent("filechooser");

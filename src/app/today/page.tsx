@@ -11,8 +11,10 @@ import { CompactTransactionRow } from "@/components/finance/CompactTransactionRo
 import { requireCompletedOnboarding } from "@/lib/auth/onboarding";
 import { requireUser } from "@/lib/auth/session";
 import { listDebts, countPendingAttentionItems } from "@/lib/data/finance-repository";
+import { buildDebtPortfolioComparison, filterActiveDebts } from "@/lib/debt/portfolio-strategy";
 import { getMonthlyFinanceSnapshot } from "@/lib/finance/monthly-snapshot";
 import { determineNextAction } from "@/lib/finance/next-action";
+import { recommendFocusDebt } from "@/lib/finance/portfolio-recommendation";
 import { timePage } from "@/lib/observability/timing";
 import { getBangkokTodayString, getBangkokMonthString, getBangkokDateOf, getBangkokMonthRange } from "@/lib/finance/date";
 import { daysUntilDue } from "@/lib/finance/calculations";
@@ -55,6 +57,9 @@ export default async function TodayPage() {
       (c: CategorySummary) => c.status === "no_budget" && c.unbudgetedSpentSatang > 0,
     );
     const nearLimitCategory = budgetSummary.categories.find((c: CategorySummary) => c.status === "near_limit");
+    const activeDebts = filterActiveDebts(debts);
+    const portfolioRecommendation =
+      activeDebts.length >= 2 ? recommendFocusDebt(buildDebtPortfolioComparison(activeDebts, 0)) : null;
 
     const nextAction = determineNextAction({
       debts,
@@ -64,6 +69,7 @@ export default async function TodayPage() {
       nearLimitCategoryLabel: nearLimitCategory?.label,
       hasAnyTransaction: transactions.length > 0,
       unreviewedCount: pendingAttentionCount,
+      portfolioRecommendation,
     });
 
     const { endDate } = getBangkokMonthRange(month);

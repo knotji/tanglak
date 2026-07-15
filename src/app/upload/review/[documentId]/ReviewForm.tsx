@@ -371,6 +371,13 @@ export function ReviewForm({
   const [debtActionType, setDebtActionType] = useState<"create" | "update" | "">("");
   const [existingDebtId, setExistingDebtId] = useState<string>("");
   const reviewFieldId = (field: string) => `review-${doc.id}-${docType}-${field}`;
+  const receiptTotalPaidValidation =
+    (docType === "receipt" || docType === "delivery_receipt") && totalPaid
+      ? parseOptionalMoney(totalPaid, "nonnegative")
+      : { ok: true as const };
+  const receiptTotalPaidError = receiptTotalPaidValidation.ok
+    ? null
+    : receiptTotalPaidValidation.error;
 
   // Confidence Calculation
   const confidence = extraction?.confidence ?? 1.0;
@@ -1021,8 +1028,14 @@ export function ReviewForm({
                           className="w-full rounded-[12px] border border-border bg-white p-3 text-sm font-extrabold text-primary"
                           value={totalPaid}
                           onChange={(e) => setTotalPaid(e.target.value)}
+                          aria-describedby={receiptTotalPaidError ? reviewFieldId("totalPaidError") : undefined}
                           required
                         />
+                        {receiptTotalPaidError && formError !== receiptTotalPaidError ? (
+                          <p id={reviewFieldId("totalPaidError")} role="alert" className="mt-1 text-xs font-semibold text-red-700">
+                            {receiptTotalPaidError}
+                          </p>
+                        ) : null}
                       </div>
                     </div>
 

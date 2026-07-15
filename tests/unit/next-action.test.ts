@@ -240,6 +240,99 @@ describe("determineNextAction — single highest-priority action", () => {
     expect(action.title).toContain("ใกล้เต็มงบ");
   });
 
+  it("lets due debt urgency outrank a portfolio recommendation", () => {
+    const action = determineNextAction(
+      {
+        debts: [debt({ id: "urgent", dueDate: "2026-07-15" }), debt({ id: "focus", amountPaidThisCycleSatang: 1_000_00 })],
+        hasBudget: true,
+        hasAnyTransaction: true,
+        portfolioRecommendation: {
+          recommendedStrategy: "avalanche",
+          focusDebtId: "focus",
+          estimatedInterestSavingSatang: 1_000_00,
+          reason: "แนะนำลดดอกเบี้ยก่อน",
+        },
+      },
+      TODAY,
+    );
+
+    expect(action.title).toBe("ครบกำหนดชำระวันนี้");
+    expect(action.actionHref).toBe("/debts");
+  });
+
+  it("lets overdue debt urgency outrank a portfolio recommendation", () => {
+    const action = determineNextAction(
+      {
+        debts: [debt({ id: "overdue", dueDate: "2026-07-01" }), debt({ id: "focus", amountPaidThisCycleSatang: 1_000_00 })],
+        hasBudget: true,
+        hasAnyTransaction: true,
+        portfolioRecommendation: {
+          recommendedStrategy: "snowball",
+          focusDebtId: "focus",
+          estimatedInterestSavingSatang: 0,
+          reason: "แนะนำปิดก้อนเล็กก่อน",
+        },
+      },
+      TODAY,
+    );
+
+    expect(action.tone).toBe("overdue");
+    expect(action.actionHref).toBe("/debts");
+  });
+
+  it("surfaces portfolio advice below existing higher-priority action tiers", () => {
+    const focus = debt({
+      id: "focus",
+      name: "สินเชื่อดอกสูง",
+      minimumPaymentSatang: 1_000_00,
+      amountPaidThisCycleSatang: 1_000_00,
+      dueDate: "2026-07-25",
+    });
+    const other = debt({
+      id: "other",
+      minimumPaymentSatang: 1_000_00,
+      amountPaidThisCycleSatang: 1_000_00,
+      dueDate: "2026-07-25",
+    });
+    const action = determineNextAction(
+      {
+        debts: [focus, other],
+        hasBudget: true,
+        hasAnyTransaction: true,
+        portfolioRecommendation: {
+          recommendedStrategy: "avalanche",
+          focusDebtId: "focus",
+          estimatedInterestSavingSatang: 1_000_00,
+          reason: "แนะนำลดดอกเบี้ยก่อน เพราะคาดว่าจะลดดอกเบี้ยรวมได้",
+        },
+      },
+      TODAY,
+    );
+
+    expect(action.title).toContain("สินเชื่อดอกสูง");
+    expect(action.body).toContain("ลดดอกเบี้ยก่อน");
+    expect(action.actionHref).toBe("/debts/strategy");
+  });
+
+  it("does not surface portfolio advice when the recommendation is missing or has no focus debt", () => {
+    const paidMinimum = debt({
+      minimumPaymentSatang: 1_000_00,
+      amountPaidThisCycleSatang: 1_000_00,
+      dueDate: "2026-07-25",
+    });
+    const action = determineNextAction(
+      {
+        debts: [paidMinimum],
+        hasBudget: true,
+        hasAnyTransaction: true,
+        portfolioRecommendation: null,
+      },
+      TODAY,
+    );
+
+    expect(action.title).toBe("เดือนนี้ยังอยู่ในแผน");
+  });
+
   it("prompts for the first transaction when nothing has been recorded yet", () => {
     const action = determineNextAction(
       {
