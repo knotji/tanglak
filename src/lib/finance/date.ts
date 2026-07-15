@@ -378,6 +378,22 @@ export function getBangkokDateTimeLocalOf(isoInstant: string): string {
   return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
 }
 
+/**
+ * Formats a `datetime-local` input's raw value (`YYYY-MM-DDTHH:mm`, no
+ * offset, already Bangkok wall-clock -- see getBangkokDateTimeLocalOf /
+ * getBangkokNowDateTimeLocalString) as a Thai-readable confirmation string
+ * via the existing formatThaiDateTime convention, e.g.
+ * "15 ก.ค. 2026 เวลา 16:46". Native `datetime-local` controls render in
+ * whatever format the browser/OS locale dictates (often US `MM/DD/YYYY
+ * hh:mm AM/PM`), which is inconsistent with the rest of this Thai-first
+ * app -- this gives users an unambiguous read-out of what will actually be
+ * saved regardless of that native rendering.
+ */
+export function formatBangkokDateTimeLocalThai(value: string): string {
+  if (!parseWallClockComponents(value)) return "";
+  return formatThaiDateTime(bangkokDateTimeLocalToInstant(value));
+}
+
 export type DateTimeParseResult =
   | { ok: true; isoInstant: string; type: "date-only" | "datetime" }
   | { ok: false; error: string };

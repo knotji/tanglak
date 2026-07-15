@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   bangkokDateTimeLocalToInstant,
+  formatBangkokDateTimeLocalThai,
   formatThaiDateLabel,
   formatThaiDateTimeLabel,
   isLikelyInferredNoonTimestamp,
@@ -37,6 +38,17 @@ describe("formatThaiDateTime", () => {
   it("ensures 24-hour cycle is used", () => {
     const date = new Date("2026-07-14T23:51:00+07:00");
     expect(formatThaiDateTime(date)).toBe("14 ก.ค. 2026 เวลา 23:51");
+  });
+});
+
+describe("formatBangkokDateTimeLocalThai", () => {
+  it("formats a datetime-local value as a Thai-readable confirmation string", () => {
+    expect(formatBangkokDateTimeLocalThai("2026-07-15T16:46")).toBe("15 ก.ค. 2026 เวลา 16:46");
+  });
+
+  it("returns an empty string for an empty or malformed value", () => {
+    expect(formatBangkokDateTimeLocalThai("")).toBe("");
+    expect(formatBangkokDateTimeLocalThai("not-a-date")).toBe("");
   });
 });
 
