@@ -69,7 +69,7 @@ describe("accessibility release blockers", () => {
     const transactionRow = readProjectFile("src/components/TransactionRow.tsx");
     const transactionsClient = readProjectFile("src/features/transactions/TransactionsClient.tsx");
     const debtsClient = readProjectFile("src/features/debts/DebtsClient.tsx");
-    const settingsData = readProjectFile("src/app/settings/data/page.tsx");
+    const settingsData = readProjectFile("src/app/settings/data/HistoryImportBatchList.tsx");
 
     // TransactionRow is now a single action button leading to an action sheet
     expect(transactionRow).toContain("aria-label={`เปิดรายละเอียดรายการ ${actionContext}`}");

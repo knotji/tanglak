@@ -4,9 +4,9 @@ import { requireUser } from "@/lib/auth/session";
 import { requireCompletedOnboarding } from "@/lib/auth/onboarding";
 import { getImportBatch, listImportRows } from "@/lib/data/finance-repository";
 import { getImportSummaryTransactionMonth } from "@/lib/import/summary-navigation";
-import { rollbackBatchAction } from "@/app/actions/history-import";
+import { RollbackBatchButton } from "@/app/history-import/[batchId]/summary/RollbackBatchButton";
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 
 export const runtime = "nodejs";
 
@@ -47,12 +47,6 @@ export default async function HistoryImportSummaryPage({ params }: SummaryPagePr
       }
     }
   });
-
-  async function handleRollback() {
-    "use server";
-    await rollbackBatchAction(batchId);
-    redirect("/settings/data");
-  }
 
   return (
     <AppShell>
@@ -125,15 +119,7 @@ export default async function HistoryImportSummaryPage({ params }: SummaryPagePr
             <div className="text-[10px] text-text-secondary text-center leading-4">
               หากชุดข้อมูลเดิมนี้ผิดพลาดหรืออัปโหลดซ้ำ คุณสามารถย้อนคืนธุรกรรมทั้งหมดจากชุดนี้ได้ทุกเมื่อ
             </div>
-            <form action={handleRollback}>
-              <button
-                type="submit"
-                aria-label={`ย้อนกลับ (Rollback) ชุดนำเข้า ${batchContext}`}
-                className="flex min-h-11 w-full items-center justify-center rounded-xl bg-rose-50 text-xs font-bold text-rose-600 hover:bg-rose-100"
-              >
-                ย้อนกลับชุดนำเข้านี้ (Rollback)
-              </button>
-            </form>
+            <RollbackBatchButton batchId={batchId} batchContext={batchContext} />
           </div>
         </div>
       </div>
