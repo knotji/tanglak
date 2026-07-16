@@ -15,8 +15,10 @@ const USER_ID = "mock-user-confirmation";
 const repositoryMocks = vi.hoisted(() => ({
   createTransaction: vi.fn(),
   updateDocument: vi.fn(),
+  listRecentConfirmedTransactions: vi.fn(),
   originalCreateTransaction: undefined as unknown as typeof import("@/lib/data/finance-repository").createTransaction,
   originalUpdateDocument: undefined as unknown as typeof import("@/lib/data/finance-repository").updateDocument,
+  originalListRecentConfirmedTransactions: undefined as unknown as typeof import("@/lib/data/finance-repository").listRecentConfirmedTransactions,
 }));
 
 const provenanceMocks = vi.hoisted(() => ({
@@ -48,12 +50,15 @@ vi.mock("@/lib/data/finance-repository", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/data/finance-repository")>();
   repositoryMocks.originalCreateTransaction = original.createTransaction;
   repositoryMocks.originalUpdateDocument = original.updateDocument;
+  repositoryMocks.originalListRecentConfirmedTransactions = original.listRecentConfirmedTransactions;
   repositoryMocks.createTransaction.mockImplementation(original.createTransaction);
   repositoryMocks.updateDocument.mockImplementation(original.updateDocument);
+  repositoryMocks.listRecentConfirmedTransactions.mockImplementation(original.listRecentConfirmedTransactions);
   return {
     ...original,
     createTransaction: repositoryMocks.createTransaction,
     updateDocument: repositoryMocks.updateDocument,
+    listRecentConfirmedTransactions: repositoryMocks.listRecentConfirmedTransactions,
   };
 });
 
@@ -149,6 +154,8 @@ beforeEach(() => {
   repositoryMocks.createTransaction.mockImplementation(repositoryMocks.originalCreateTransaction);
   repositoryMocks.updateDocument.mockReset();
   repositoryMocks.updateDocument.mockImplementation(repositoryMocks.originalUpdateDocument);
+  repositoryMocks.listRecentConfirmedTransactions.mockReset();
+  repositoryMocks.listRecentConfirmedTransactions.mockImplementation(repositoryMocks.originalListRecentConfirmedTransactions);
   provenanceMocks.setTransactionCategoryProvenance.mockReset();
   provenanceMocks.setTransactionCategoryProvenance.mockResolvedValue({ applied: true });
   sessionMocks.isMockAuthEnabled.mockReset();
@@ -459,6 +466,117 @@ describe("confirmDocumentAction idempotency and provenance failure handling", ()
       expect(result.ok).toBe(true);
       expect(repositoryMocks.createTransaction).toHaveBeenCalledTimes(1);
       expect(repositoryMocks.createTransaction.mock.calls[0][1].documentId).toBe(doc.id);
+    });
+
+    it("receipt confirmation falls back when category-learning candidates hit stale 42703 provenance schema", async () => {
+      const doc = await seedDocument("receipt");
+      const schemaError = new Error("The Autopilot database migration is missing. Please apply migration 202607130001_autopilot_action_audit_log.sql.");
+      schemaError.name = "DatabaseError";
+      Object.defineProperty(schemaError, "code", { value: "42703" });
+      repositoryMocks.listRecentConfirmedTransactions.mockRejectedValueOnce(schemaError);
+      const logSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+      const result = await confirmDocumentAction(doc.id, receiptFormData({ merchant: "Corner Shop" }));
+
+      expect(result.ok).toBe(true);
+      expect(repositoryMocks.createTransaction).toHaveBeenCalledTimes(1);
+      expect(repositoryMocks.createTransaction.mock.calls[0][1]).toMatchObject({
+        type: "expense",
+        amountSatang: 25_000,
+        occurredAt: "2026-07-15T09:30:00+07:00",
+        documentId: doc.id,
+      });
+      expect((await getDocument(USER_ID, doc.id))?.status).toBe("confirmed");
+      expect(provenanceMocks.setTransactionCategoryProvenance).not.toHaveBeenCalled();
+      const serializedLog = JSON.stringify(logSpy.mock.calls);
+      expect(serializedLog).toContain("Document category-learning lookup unavailable");
+      expect(serializedLog).toContain("category-learning-lookup");
+      expect(serializedLog).toContain("42703");
+      expect(serializedLog).toContain("deterministic-category");
+      expect(serializedLog).not.toContain("transaction-create");
+      expect(serializedLog).not.toContain("250");
+      expect(serializedLog).not.toContain("Corner Shop");
+    });
+
+    it("receipt confirmation falls back when category-learning candidates hit PGRST204 schema cache", async () => {
+      const doc = await seedDocument("receipt");
+      repositoryMocks.listRecentConfirmedTransactions.mockRejectedValueOnce({
+        code: "PGRST204",
+        message: 'Could not find column "category_confidence" in schema cache for relation "transactions"',
+      });
+      const logSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+      const result = await confirmDocumentAction(doc.id, receiptFormData({ merchant: "Corner Shop" }));
+
+      expect(result.ok).toBe(true);
+      expect(repositoryMocks.createTransaction).toHaveBeenCalledTimes(1);
+      expect(repositoryMocks.createTransaction.mock.calls[0][1].documentId).toBe(doc.id);
+      expect((await getDocument(USER_ID, doc.id))?.status).toBe("confirmed");
+      expect(JSON.stringify(logSpy.mock.calls)).toContain("PGRST204");
+    });
+
+    it("does not swallow arbitrary category-learning candidate lookup errors", async () => {
+      const doc = await seedDocument("receipt");
+      repositoryMocks.listRecentConfirmedTransactions.mockRejectedValueOnce(new Error("RLS denied candidate lookup"));
+      const logSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+      const result = await confirmDocumentAction(doc.id, receiptFormData({ merchant: "Corner Shop" }));
+
+      expect(result.ok).toBe(false);
+      expect(repositoryMocks.createTransaction).not.toHaveBeenCalled();
+      expect((await getDocument(USER_ID, doc.id))?.status).toBe("needs_review");
+      const serializedLog = JSON.stringify(logSpy.mock.calls);
+      expect(serializedLog).toContain("category-learning-lookup");
+      expect(serializedLog).not.toContain("Document category-learning lookup unavailable");
+    });
+
+    it("transfer-slip expense confirmation falls back on stale category-learning schema", async () => {
+      const doc = await seedDocument("transfer_slip");
+      repositoryMocks.listRecentConfirmedTransactions.mockRejectedValueOnce({
+        code: "42703",
+        message: 'column "category_source" of relation "transactions" does not exist',
+      });
+
+      const result = await confirmDocumentAction(doc.id, transferExpenseFormData({ destinationName: "Corner Shop" }));
+
+      expect(result.ok).toBe(true);
+      expect(repositoryMocks.createTransaction).toHaveBeenCalledTimes(1);
+      expect(repositoryMocks.createTransaction.mock.calls[0][1]).toMatchObject({
+        type: "expense",
+        documentId: doc.id,
+      });
+      expect((await getDocument(USER_ID, doc.id))?.status).toBe("confirmed");
+    });
+
+    it("generic expense confirmation falls back on stale category-learning schema", async () => {
+      const doc = await seedDocument("other");
+      repositoryMocks.listRecentConfirmedTransactions.mockRejectedValueOnce({
+        code: "PGRST204",
+        message: 'Could not find column "category_source" in schema cache for relation "transactions"',
+      });
+
+      const result = await confirmDocumentAction(doc.id, genericExpenseFormData({ merchant: "Corner Shop" }));
+
+      expect(result.ok).toBe(true);
+      expect(repositoryMocks.createTransaction).toHaveBeenCalledTimes(1);
+      expect(repositoryMocks.createTransaction.mock.calls[0][1]).toMatchObject({
+        type: "expense",
+        documentId: doc.id,
+      });
+      expect((await getDocument(USER_ID, doc.id))?.status).toBe("confirmed");
+    });
+
+    it("non-expense confirmation paths do not fetch category-learning candidates", async () => {
+      const transferDoc = await seedDocument("transfer_slip");
+      const genericDoc = await seedDocument("other");
+
+      const transferResult = await confirmDocumentAction(transferDoc.id, transferExpenseFormData({ type: "transfer" }));
+      const genericResult = await confirmDocumentAction(genericDoc.id, genericExpenseFormData({ type: "income" }));
+
+      expect(transferResult.ok).toBe(true);
+      expect(genericResult.ok).toBe(true);
+      expect(repositoryMocks.listRecentConfirmedTransactions).not.toHaveBeenCalled();
+      expect(repositoryMocks.createTransaction).toHaveBeenCalledTimes(2);
     });
 
     it("required document_id missing/error is not silently ignored, logs transaction-idempotency-lookup", async () => {

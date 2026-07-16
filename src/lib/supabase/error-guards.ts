@@ -1,3 +1,35 @@
+const AUTOPILOT_MISSING_MIGRATION_MESSAGE =
+  "The Autopilot database migration is missing. Please apply migration 202607130001_autopilot_action_audit_log.sql.";
+
+function safeText(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function getErrorField(error: unknown, field: "code" | "message" | "name"): unknown {
+  if (!error || typeof error !== "object" || !(field in error)) return undefined;
+  return (error as Record<typeof field, unknown>)[field];
+}
+
+/**
+ * True only for stale-schema failures involving optional category-learning
+ * provenance columns on public.transactions. Required columns and unrelated
+ * database failures must continue to fail closed.
+ */
+export function isOptionalCategoryProvenanceSchemaError(error: unknown): boolean {
+  const code = safeText(getErrorField(error, "code"));
+  if (code !== "42703" && code !== "PGRST204") return false;
+
+  const message = safeText(getErrorField(error, "message"));
+  if (getErrorField(error, "name") === "DatabaseError" && message === AUTOPILOT_MISSING_MIGRATION_MESSAGE) {
+    return true;
+  }
+
+  const isTransactionTable = message.includes('"transactions"');
+  const isAutopilotColumn =
+    message.includes("category_source") || message.includes("category_confidence");
+  return isTransactionTable && isAutopilotColumn;
+}
+
 /**
  * Guard for PostgreSQL undefined-column errors (42703) or PostgREST schema cache
  * errors (PGRST204) specifically involving autopilot-related columns on the
@@ -16,7 +48,7 @@ export function handlePostgrestError(error: { code: string; message: string }): 
     message.includes("category_source") || message.includes("category_confidence");
 
   const errMessage = (isMissingColumnError && isTransactionTable && isAutopilotColumn)
-    ? "The Autopilot database migration is missing. Please apply migration 202607130001_autopilot_action_audit_log.sql."
+    ? AUTOPILOT_MISSING_MIGRATION_MESSAGE
     : message;
 
   const err = new Error(errMessage);
