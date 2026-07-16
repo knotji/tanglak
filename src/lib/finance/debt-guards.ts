@@ -21,15 +21,18 @@ export const DEBT_ERROR_UNLINKED_PAYMENT_TH = "กรุณาเลือกห
 export const DEBT_ERROR_NOT_ACTIVE_TH = "หนี้นี้ไม่ได้อยู่ในสถานะที่ชำระได้ (ปิด/พัก/ลบไปแล้ว) จึงบันทึกการชำระเพิ่มไม่ได้";
 
 /**
- * Locked rule: only a debt in `active` status may receive a new payment.
- * `paid_off`, `paused`, `deleted`, and any other non-`active` status are all
- * rejected -- never silently allowed through, never auto-reopened. Mirrors
- * the same check enforced atomically inside the `record_debt_payment`
- * Postgres RPC (see supabase/migrations/202607140003_atomic_debt_payment_rpc.sql)
+ * Locked rule: only a debt in `active` or `overdue` status may receive a new
+ * payment. An overdue debt is still open (just past its due date), matching
+ * `ACTIVE_DEBT_STATUSES` in src/lib/reconciliation/likely-debt-payment.ts,
+ * which already treats `overdue` as payable. `paid_off`, `paused`,
+ * `deleted`, and any other status are all rejected -- never silently
+ * allowed through, never auto-reopened. Mirrors the same check enforced
+ * atomically inside the `record_debt_payment` Postgres RPC (see
+ * supabase/migrations/202607140004_fix_debt_payment_race_and_status.sql)
  * for the mock-auth code path.
  */
 export function assertDebtActiveForPayment(status: string | undefined): void {
-  if (status !== "active") {
+  if (status !== "active" && status !== "overdue") {
     throw new Error(DEBT_ERROR_NOT_ACTIVE_TH);
   }
 }

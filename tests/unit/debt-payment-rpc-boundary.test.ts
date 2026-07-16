@@ -4,18 +4,18 @@ import { DEBT_ERROR_NOT_ACTIVE_TH, DEBT_ERROR_NOT_FOUND_TH } from "@/lib/finance
 
 /**
  * Exercises the non-mock-auth code path of `addDebtPayment`: the whole
- * payment write is now a single `record_debt_payment` RPC call (see
- * supabase/migrations/202607140003_atomic_debt_payment_rpc.sql), replacing
- * the previous three independent Supabase round-trips (insert transaction,
- * insert debt_payments, recalculate). A real Postgres instance isn't
- * available in this test environment, so these tests verify the
- * application-layer contract instead: exactly one write call reaches the
- * database, and a failure from that single call never triggers any further
- * write call -- there is no code path left in the TypeScript layer that
- * could itself leave a half-written payment. The actual rollback-on-error
- * guarantee is provided by Postgres's function transaction semantics,
- * documented in the migration and exercised at the database level (see the
- * PR description's manual verification checklist).
+ * payment write is a single `record_debt_payment` RPC call (see
+ * supabase/migrations/202607140004_fix_debt_payment_race_and_status.sql),
+ * which returns the fully committed transaction and debt rows directly. A
+ * real Postgres instance isn't available in this test environment, so
+ * these tests verify the application-layer contract instead: exactly one
+ * write call reaches the database, the returned committed rows are mapped
+ * directly with no separate post-commit read for the primary payment
+ * (eliminating the "payment committed but a later read failed, so it was
+ * reported as failed" class of bug), and a failure from the RPC call is
+ * always mapped to safe Thai copy. The RPC's own rollback and idempotency
+ * race-safety guarantees are provided by Postgres itself (locking the debt
+ * row before checking for a replay), documented in the migration.
  */
 
 vi.mock("@/lib/auth/session", async (importOriginal) => {
@@ -31,27 +31,48 @@ vi.mock("@/lib/supabase/server", () => ({
 
 type FakeResult = { data: unknown; error: { message: string } | null };
 
-function makeQueryBuilder(result: FakeResult) {
-  const builder = {
-    select: () => builder,
-    eq: () => builder,
-    neq: () => builder,
-    maybeSingle: () => Promise.resolve(result),
-  };
+/**
+ * A single query-builder chain can be awaited in two different shapes by
+ * this codebase: terminated explicitly with `.maybeSingle()`/`.single()`
+ * (a single row), or awaited directly with no terminal call (a plain
+ * array, e.g. recalculateDebtPaidThisCycle's `.select("amount_satang")`
+ * sum query). `singleResult` serves the former; `arrayResult` (via the
+ * builder's own `.then`) serves the latter.
+ */
+function makeQueryBuilder(singleResult: FakeResult, arrayResult: FakeResult = { data: [], error: null }) {
+  const builder: Record<string, unknown> = {};
+  for (const method of ["select", "update", "insert", "eq", "neq", "gte", "lt", "order", "limit"]) {
+    builder[method] = () => builder;
+  }
+  builder.maybeSingle = () => Promise.resolve(singleResult);
+  builder.single = () => Promise.resolve(singleResult);
+  builder.then = (onResolve: (value: FakeResult) => unknown, onReject?: (reason: unknown) => unknown) =>
+    Promise.resolve(arrayResult).then(onResolve, onReject);
   return builder;
 }
 
 function makeFakeSupabase(options: {
   rpcResult: FakeResult;
-  transactionRow?: Record<string, unknown>;
-  debtRow?: Record<string, unknown>;
+  updatedTransactionRow?: Record<string, unknown>;
+  debtRowForRecalculation?: Record<string, unknown>;
 }) {
   const fromSpy = vi.fn((table: string) => {
     if (table === "transactions") {
-      return makeQueryBuilder({ data: options.transactionRow ?? null, error: null });
+      // Covers both updateTransaction's own single-row reads/writes and
+      // recalculateDebtPaidThisCycle's plain array sum query (reusing the
+      // same amount so the recalculated total stays a known value).
+      const row = options.updatedTransactionRow ?? fakeTransactionRow();
+      return makeQueryBuilder(
+        { data: row, error: null },
+        { data: [{ amount_satang: row.amount_satang }], error: null },
+      );
     }
     if (table === "debts") {
-      return makeQueryBuilder({ data: options.debtRow ?? null, error: null });
+      // Reached via updateTransaction's ownership re-check and
+      // recalculateDebtPaidThisCycle's own debt lookup/update when a note
+      // is applied post-commit -- not part of the primary payment write.
+      const row = options.debtRowForRecalculation ?? fakeDebtRow();
+      return makeQueryBuilder({ data: row, error: null });
     }
     throw new Error(`unexpected table in test: ${table}`);
   });
@@ -124,11 +145,19 @@ function fakeDebtRow(overrides: Record<string, unknown> = {}) {
 }
 
 describe("addDebtPayment (non-mock path): single atomic RPC call", () => {
-  it("performs the write as exactly one record_debt_payment RPC call", async () => {
+  it("performs the write as exactly one record_debt_payment RPC call and maps the committed rows directly (no post-commit read)", async () => {
     const fake = makeFakeSupabase({
-      rpcResult: { data: [{ transaction_id: "tx-1", already_recorded: false }], error: null },
-      transactionRow: fakeTransactionRow(),
-      debtRow: fakeDebtRow(),
+      rpcResult: {
+        data: [
+          {
+            transaction_id: "tx-1",
+            already_recorded: false,
+            transaction_row: fakeTransactionRow(),
+            debt_row: fakeDebtRow(),
+          },
+        ],
+        error: null,
+      },
     });
     createSupabaseServerClientMock.mockResolvedValue(fake);
 
@@ -144,11 +173,65 @@ describe("addDebtPayment (non-mock path): single atomic RPC call", () => {
       p_occurred_at: "2026-07-10T12:00:00+07:00",
       p_idempotency_key: "doc-key-1",
     });
+    // No follow-up SELECT for the primary payment write -- the committed
+    // rows came straight back from the RPC call itself.
+    expect(fake.from).not.toHaveBeenCalled();
     expect(transaction.id).toBe("tx-1");
+    expect(transaction.debtId).toBe(DEBT_ID);
     expect(debt.id).toBe(DEBT_ID);
+    expect(debt.amountPaidThisCycleSatang).toBe(50000);
   });
 
-  it("throws a safe Thai message and performs no further reads when the RPC rejects an inactive debt", async () => {
+  it("still applies an explicit note as a separate write after a fresh payment, without discarding the committed row", async () => {
+    const fake = makeFakeSupabase({
+      rpcResult: {
+        data: [
+          {
+            transaction_id: "tx-1",
+            already_recorded: false,
+            transaction_row: fakeTransactionRow(),
+            debt_row: fakeDebtRow(),
+          },
+        ],
+        error: null,
+      },
+      updatedTransactionRow: fakeTransactionRow({ note: "จ่ายผ่านแอปธนาคาร" }),
+    });
+    createSupabaseServerClientMock.mockResolvedValue(fake);
+
+    const { transaction } = await addDebtPayment(USER_ID, DEBT_ID, 500_00, "2026-07-10T12:00:00+07:00", {
+      note: "จ่ายผ่านแอปธนาคาร",
+    });
+
+    expect(fake.from).toHaveBeenCalledWith("transactions");
+    expect(transaction.note).toBe("จ่ายผ่านแอปธนาคาร");
+  });
+
+  it("does not re-apply a note on an idempotent replay (already_recorded)", async () => {
+    const fake = makeFakeSupabase({
+      rpcResult: {
+        data: [
+          {
+            transaction_id: "tx-1",
+            already_recorded: true,
+            transaction_row: fakeTransactionRow(),
+            debt_row: fakeDebtRow(),
+          },
+        ],
+        error: null,
+      },
+    });
+    createSupabaseServerClientMock.mockResolvedValue(fake);
+
+    await addDebtPayment(USER_ID, DEBT_ID, 500_00, "2026-07-10T12:00:00+07:00", {
+      idempotencyKey: "doc-key-1",
+      note: "จ่ายผ่านแอปธนาคาร",
+    });
+
+    expect(fake.from).not.toHaveBeenCalled();
+  });
+
+  it("throws a safe Thai message and performs no further calls when the RPC rejects an inactive debt", async () => {
     const fake = makeFakeSupabase({
       rpcResult: { data: null, error: { message: "debt is not active" } },
     });
@@ -173,7 +256,7 @@ describe("addDebtPayment (non-mock path): single atomic RPC call", () => {
     expect(fake.from).not.toHaveBeenCalled();
   });
 
-  it("never leaks a raw/unknown Postgres error message to the caller", async () => {
+  it("never leaks a raw/unknown Postgres error message to the caller (e.g. a residual unique-constraint race)", async () => {
     const fake = makeFakeSupabase({
       rpcResult: { data: null, error: { message: 'duplicate key value violates unique constraint "debt_payments_pkey"' } },
     });

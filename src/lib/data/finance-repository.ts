@@ -703,9 +703,9 @@ const RECORD_DEBT_PAYMENT_GENERIC_ERROR_TH = "บันทึกการชำ�
 
 /**
  * Maps a known `record_debt_payment` RPC failure (see
- * supabase/migrations/202607140003_atomic_debt_payment_rpc.sql) to the same
- * safe Thai copy the rest of the debt-payment write path already uses --
- * never surfaces the raw Postgres exception message to the client.
+ * supabase/migrations/202607140004_fix_debt_payment_race_and_status.sql) to
+ * the same safe Thai copy the rest of the debt-payment write path already
+ * uses -- never surfaces the raw Postgres exception message to the client.
  */
 function mapRecordDebtPaymentError(error: { message: string }): Error {
   switch (error.message) {
@@ -736,10 +736,13 @@ function mapRecordDebtPaymentError(error: { message: string }): Error {
  * The whole operation (transaction insert + debt_payments insert + cycle
  * recalculation) is performed as a single atomic unit -- see
  * `record_debt_payment` in
- * supabase/migrations/202607140003_atomic_debt_payment_rpc.sql. A failure at
- * any step rolls back every write this call made; the caller never observes
- * a half-written payment (a confirmed transaction with no matching
- * debt_payments row, or a stale paid-this-cycle total).
+ * supabase/migrations/202607140004_fix_debt_payment_race_and_status.sql. A
+ * failure at any step rolls back every write this call made; the caller
+ * never observes a half-written payment (a confirmed transaction with no
+ * matching debt_payments row, or a stale paid-this-cycle total). The RPC
+ * returns the fully committed transaction and debt rows directly, so this
+ * function never needs a separate post-commit read that could itself fail
+ * and cause an already-successful payment to be reported as failed.
  */
 export async function addDebtPayment(
   userId: string,
@@ -770,19 +773,17 @@ export async function addDebtPayment(
   });
   if (error) throw mapRecordDebtPaymentError(error);
   const row = (Array.isArray(data) ? data[0] : data) as
-    | { transaction_id: string; already_recorded: boolean }
+    | { transaction_id: string; already_recorded: boolean; transaction_row: unknown; debt_row: unknown }
     | undefined;
-  if (!row) throw new Error(RECORD_DEBT_PAYMENT_GENERIC_ERROR_TH);
+  if (!row || !row.transaction_row || !row.debt_row) throw new Error(RECORD_DEBT_PAYMENT_GENERIC_ERROR_TH);
+
+  let transaction = mapTransaction(row.transaction_row as Parameters<typeof mapTransaction>[0]);
+  const updatedDebt = mapDebt(row.debt_row as Parameters<typeof mapDebt>[0]);
 
   if (note !== undefined && !row.already_recorded) {
-    await updateTransaction(userId, row.transaction_id, { note });
+    transaction = await updateTransaction(userId, transaction.id, { note });
   }
 
-  const [transaction, updatedDebt] = await Promise.all([
-    getTransactionById(userId, row.transaction_id),
-    getDebtRecordForUser(userId, debtId, { includeDeleted: true }),
-  ]);
-  if (!transaction || !updatedDebt) throw new Error(RECORD_DEBT_PAYMENT_GENERIC_ERROR_TH);
   return { debt: updatedDebt, transaction };
 }
 
