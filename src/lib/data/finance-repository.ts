@@ -22,7 +22,7 @@ import {
   TRANSACTION_OCCURRED_AT_REQUIRED_TH,
 } from "@/lib/finance/date";
 import { logSafeError } from "@/lib/observability/safe-diagnostics";
-import type { Debt, Transaction, FinanceDocument, DocumentExtraction, ImportBatch, ImportRow, Account, MonthlyBudget, BudgetCategory } from "@/types/domain";
+import type { Debt, Transaction, FinanceDocument, DocumentExtraction, ImportBatch, ImportRow, MonthlyBudget, BudgetCategory } from "@/types/domain";
 
 export const DOCUMENT_PROCESSING_LEASE_MS = 2 * 60 * 1000;
 
@@ -1687,46 +1687,6 @@ export async function listImportRows(userId: string, importBatchId: string): Pro
   return (data ?? []).map(mapImportRow);
 }
 
-export async function updateImportRow(
-  userId: string,
-  id: string,
-  input: Partial<Omit<ImportRow, "id" | "userId" | "importBatchId" | "createdAt" | "updatedAt">>,
-): Promise<ImportRow> {
-  if (isMockAuthEnabled()) {
-    const state = getMockState();
-    const idx = state.importRows.findIndex((r) => r.id === id && r.userId === userId);
-    if (idx < 0) throw new Error("Staging row not found");
-    state.importRows[idx] = {
-      ...state.importRows[idx],
-      ...input,
-      updatedAt: new Date().toISOString(),
-    } as ImportRow;
-    return state.importRows[idx];
-  }
-
-  const supabase = await createSupabaseServerClient();
-  const payload: Record<string, unknown> = {};
-  if (input.reviewStatus !== undefined) payload.review_status = input.reviewStatus;
-  if (input.importDecision !== undefined) payload.import_decision = input.importDecision;
-  if (input.suggestedTransactionType !== undefined) payload.suggested_transaction_type = input.suggestedTransactionType;
-  if (input.suggestedCategory !== undefined) payload.suggested_category = input.suggestedCategory;
-  if (input.suggestedDebtId !== undefined) payload.suggested_debt_id = input.suggestedDebtId;
-  if (input.createdTransactionId !== undefined) payload.created_transaction_id = input.createdTransactionId;
-  if (input.amountSatang !== undefined) payload.amount_satang = input.amountSatang;
-  if (input.merchant !== undefined) payload.merchant = input.merchant;
-  if (input.description !== undefined) payload.description = input.description;
-
-  const { data, error } = await supabase
-    .from("import_rows")
-    .update(payload)
-    .eq("id", id)
-    .eq("user_id", userId)
-    .select("*")
-    .single();
-  if (error) throw new Error(error.message);
-  return mapImportRow(data);
-}
-
 // === History Staging Batch Commit Logic ===
 
 function isRowResolved(row: ImportRow): boolean {
@@ -2178,72 +2138,6 @@ export async function rollbackImportBatch(userId: string, batchId: string): Prom
     throw new Error(error.message);
   }
 }
-
-export async function listAccounts(userId: string): Promise<Account[]> {
-  if (isMockAuthEnabled()) {
-    const state = getMockState();
-    if (state.accounts.length === 0) {
-      state.accounts = [
-        { id: "acc-1", userId, name: "KBank Savings", isOwnedByUser: true, accountLastFour: "1234" },
-        { id: "acc-2", userId, name: "SCB Easy", isOwnedByUser: true, accountLastFour: "4321" },
-        { id: "acc-3", userId, name: "KTC Credit Card", isOwnedByUser: true, accountLastFour: "8888" },
-      ];
-    }
-    return state.accounts.filter((account) => account.userId === userId);
-  }
-
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("accounts")
-    .select("*")
-    .eq("user_id", userId);
-  if (error) throw new Error(error.message);
-  return (data ?? []).map((row: Record<string, unknown>) => ({
-    id: row.id as string,
-    name: row.name as string,
-    isOwnedByUser: row.is_owned_by_user as boolean,
-    accountLastFour: (row.account_last_four as string | null) ?? undefined,
-  }));
-}
-
-export async function createAccount(
-  userId: string,
-  input: { name: string; isOwnedByUser?: boolean; accountLastFour?: string },
-): Promise<Account> {
-  if (isMockAuthEnabled()) {
-    const state = getMockState();
-    const acc: Account = {
-      id: crypto.randomUUID(),
-      userId,
-      name: input.name,
-      isOwnedByUser: input.isOwnedByUser ?? true,
-      accountLastFour: input.accountLastFour,
-    };
-    state.accounts.push(acc);
-    return acc;
-  }
-
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("accounts")
-    .insert({
-      user_id: userId,
-      name: input.name,
-      is_owned_by_user: input.isOwnedByUser ?? true,
-      account_last_four: input.accountLastFour,
-    })
-    .select("*")
-    .single();
-  if (error) throw new Error(error.message);
-  return {
-    id: data.id,
-    userId: data.user_id,
-    name: data.name,
-    isOwnedByUser: data.is_owned_by_user,
-    accountLastFour: data.account_last_four ?? undefined,
-  };
-}
-
 
 // === Monthly Budget Repository ===
 

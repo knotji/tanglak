@@ -3,8 +3,6 @@
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/session";
 import { undoAutopilotAction } from "@/lib/autopilot/autopilot-undo";
-import { listRecentAutopilotActions, getAutopilotActionRecord } from "@/lib/autopilot/autopilot-audit";
-import type { AutopilotActionRecord } from "@/lib/autopilot/autopilot-types";
 
 export type UndoActionState = { ok: boolean; message: string };
 
@@ -26,14 +24,4 @@ export async function undoAutopilotActionForUser(auditRecordId: string): Promise
   revalidatePath("/transactions");
   revalidatePath("/today");
   return { ok: true, message: "ยกเลิกรายการที่ระบบสร้างให้เรียบร้อยแล้ว" };
-}
-
-export async function getAutopilotActionForUser(auditRecordId: string): Promise<AutopilotActionRecord | null> {
-  const user = await requireUser();
-  return getAutopilotActionRecord(user.id, auditRecordId);
-}
-
-export async function listRecentAutopilotActivity(limit = 10): Promise<AutopilotActionRecord[]> {
-  const user = await requireUser();
-  return listRecentAutopilotActions(user.id, limit);
 }

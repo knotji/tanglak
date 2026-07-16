@@ -1,7 +1,6 @@
 import type { DetectedLayout, ParsedPdfRow } from "./types";
 
 export const MIN_LAYOUT_CONFIDENCE = 0.4;
-export const MIN_ROW_COUNT_FOR_TRUST = 1;
 
 export interface ParserConfidenceSummary {
   layoutConfidence: number;
