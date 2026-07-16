@@ -1,7 +1,39 @@
 import { describe, it, expect } from "vitest";
-import { handlePostgrestError } from "@/lib/supabase/error-guards";
+import { handlePostgrestError, isOptionalCategoryProvenanceSchemaError } from "@/lib/supabase/error-guards";
 
 describe("handlePostgrestError", () => {
+  describe("isOptionalCategoryProvenanceSchemaError", () => {
+    it("classifies only optional category provenance schema errors", () => {
+      expect(isOptionalCategoryProvenanceSchemaError({
+        code: "42703",
+        message: 'column "category_source" of relation "transactions" does not exist',
+      })).toBe(true);
+      expect(isOptionalCategoryProvenanceSchemaError({
+        code: "PGRST204",
+        message: 'Could not find column "category_confidence" in schema cache for relation "transactions"',
+      })).toBe(true);
+      expect(isOptionalCategoryProvenanceSchemaError({
+        code: "42703",
+        message: 'column "document_id" of relation "transactions" does not exist',
+      })).toBe(false);
+      expect(isOptionalCategoryProvenanceSchemaError({
+        code: "42501",
+        message: "permission denied for table transactions",
+      })).toBe(false);
+    });
+
+    it("classifies the rewritten DatabaseError emitted by handlePostgrestError", () => {
+      try {
+        handlePostgrestError({
+          code: "42703",
+          message: 'column "category_source" of relation "transactions" does not exist',
+        });
+      } catch (error) {
+        expect(isOptionalCategoryProvenanceSchemaError(error as Error)).toBe(true);
+      }
+    });
+  });
+
   describe("PostgreSQL 42703 (undefined column)", () => {
     it("detects missing category_source on transactions table and returns actionable message", () => {
       const error = {

@@ -35,6 +35,7 @@ import { getCategoryById } from "@/lib/finance/categories";
 import { runSlipImportAutopilot } from "@/lib/autopilot/autopilot-slip-integration";
 import { resolveLearnedCategoryForMerchant, computeLearnedCategoryConfidence } from "@/lib/finance/category-learning";
 import { setTransactionCategoryProvenance } from "@/lib/autopilot/autopilot-provenance";
+import { isOptionalCategoryProvenanceSchemaError } from "@/lib/supabase/error-guards";
 
 export type DocumentActionState = {
   ok: boolean;
@@ -52,6 +53,7 @@ const MAX_FILE_SIZE = 15_000_000; // 15MB
 
 type DocumentConfirmStage =
   | "transaction-idempotency-lookup"
+  | "category-learning-lookup"
   | "transaction-create"
   | "category-provenance"
   | "transaction-items"
@@ -303,6 +305,26 @@ export async function confirmDocumentAction(
     }
   }
 
+  async function resolveOptionalLearnedCategory(merchant: string | undefined | null) {
+    stage = "category-learning-lookup";
+    try {
+      const candidateTransactions = await listRecentConfirmedTransactions(user.id);
+      return resolveLearnedCategoryForMerchant(candidateTransactions, merchant);
+    } catch (error) {
+      if (!isOptionalCategoryProvenanceSchemaError(error)) {
+        throw error;
+      }
+      logSafeError("Document category-learning lookup unavailable", {
+        operation: "document.confirm",
+        stage,
+        documentId,
+        error,
+        fallback: "deterministic-category",
+      });
+      return null;
+    }
+  }
+
   async function confirmDocumentStatus() {
     stage = "document-status";
     await updateDocument(user.id, confirmedDocumentId, { status: "confirmed" });
@@ -333,8 +355,6 @@ export async function confirmDocumentAction(
       revalidateConfirmedDocument();
       return { ok: true, message: "บันทึกข้อมูลเรียบร้อยแล้ว" };
     }
-
-    stage = "transaction-create";
 
     if (documentType === "salary_slip") {
       const employer = formData.get("employer") as string;
@@ -372,6 +392,7 @@ export async function confirmDocumentAction(
       const note = `สลิปเงินเดือนงวด: ${payPeriod || "-"}\nรายรับรวมก่อนหัก: ${grossIncome || "0"} บาท\nภาษี: ${tax || "0"} บาท\nประกันสังคม: ${socialSecurity || "0"} บาท`;
 
       // Create transaction
+      stage = "transaction-create";
       await createTransaction(user.id, {
         type: "income",
         amountSatang: netIncomeSatang,
@@ -400,10 +421,9 @@ export async function confirmDocumentAction(
       if (!totalPaidResult.ok) return { ok: false, message: totalPaidResult.error };
       const totalPaidSatang = totalPaidResult.satang!;
 
-      // Create transaction
-      const candidateTransactions = await listRecentConfirmedTransactions(user.id);
-      const learnedMatch = resolveLearnedCategoryForMerchant(candidateTransactions, merchant);
+      const learnedMatch = await resolveOptionalLearnedCategory(merchant);
 
+      stage = "transaction-create";
       const transaction = await createTransaction(user.id, {
         type: "expense",
         amountSatang: totalPaidSatang,
@@ -504,14 +524,15 @@ export async function confirmDocumentAction(
         // document id is a stable, naturally-unique key for this
         // confirmation -- a retried/duplicate confirm of the same document
         // replays the original payment instead of recording it twice.
+        stage = "transaction-create";
         await addDebtPayment(user.id, debtId, amountSatang, occurredAtInstant, {
           idempotencyKey: `document:${documentId}`,
         });
       } else {
         // Create normal transfer or expense transaction
-        const candidateTransactions = await listRecentConfirmedTransactions(user.id);
-        const learnedMatch = txType === "expense" ? resolveLearnedCategoryForMerchant(candidateTransactions, destinationName) : null;
+        const learnedMatch = txType === "expense" ? await resolveOptionalLearnedCategory(destinationName) : null;
 
+        stage = "transaction-create";
         const transaction = await createTransaction(user.id, {
           type: txType,
           amountSatang,
@@ -607,8 +628,10 @@ export async function confirmDocumentAction(
         if (!existingDebtId) {
           return { ok: false, message: "กรุณาระบุบัญชีหนี้สินที่จะอัปเดต" };
         }
+        stage = "transaction-create";
         await updateDebt(user.id, existingDebtId, inputPayload);
       } else {
+        stage = "transaction-create";
         await createDebt(user.id, {
           ...inputPayload,
           paymentMode: "variable_monthly",
@@ -631,9 +654,9 @@ export async function confirmDocumentAction(
       const totalPaidResult = parseRequiredMoney(totalPaid, txType === "debt_payment" ? "positive" : "nonnegative");
       if (!totalPaidResult.ok) return { ok: false, message: totalPaidResult.error };
 
-      const candidateTransactions = await listRecentConfirmedTransactions(user.id);
-      const learnedMatch = txType === "expense" ? resolveLearnedCategoryForMerchant(candidateTransactions, merchant) : null;
+      const learnedMatch = txType === "expense" ? await resolveOptionalLearnedCategory(merchant) : null;
 
+      stage = "transaction-create";
       const transaction = await createTransaction(user.id, {
         type: txType,
         amountSatang: totalPaidResult.satang!,

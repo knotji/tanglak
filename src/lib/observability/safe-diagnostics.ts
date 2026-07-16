@@ -11,6 +11,7 @@ type SafeDiagnosticInput = {
   durationMs?: unknown;
   attemptCount?: unknown;
   missingFields?: unknown;
+  fallback?: unknown;
 };
 
 export type SafeDiagnostic = Record<string, string | number>;
@@ -71,6 +72,7 @@ export function createSafeDiagnostic(input: SafeDiagnosticInput): SafeDiagnostic
   const durationMs = safeNumber(input.durationMs);
   const attemptCount = safeNumber(input.attemptCount);
   const missingFields = safeStringList(input.missingFields);
+  const fallback = safeString(input.fallback, 80);
   const code = errorCode(input.errorCode, input.error);
   const devMessage = sanitizedDevelopmentMessage(input.error);
 
@@ -84,6 +86,7 @@ export function createSafeDiagnostic(input: SafeDiagnosticInput): SafeDiagnostic
   if (durationMs !== undefined) diagnostic.durationMs = durationMs;
   if (attemptCount !== undefined) diagnostic.attemptCount = attemptCount;
   if (missingFields) diagnostic.missingFields = missingFields;
+  if (fallback) diagnostic.fallback = fallback;
   if (input.error !== undefined) diagnostic.errorName = errorName(input.error);
   if (code) diagnostic.errorCode = code;
   if (devMessage) diagnostic.errorMessage = devMessage;
