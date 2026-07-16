@@ -11,6 +11,7 @@ import {
   updateDocument,
   deleteDocument,
   createTransaction,
+  getTransactionByDocumentId,
   createDebt,
   updateDebt,
   addDebtPayment,
@@ -48,6 +49,14 @@ export type DocumentActionState = {
 const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
 const ALLOWED_EXTENSIONS = ["jpg", "jpeg", "png", "webp", "pdf"];
 const MAX_FILE_SIZE = 15_000_000; // 15MB
+
+type DocumentConfirmStage =
+  | "transaction-idempotency-lookup"
+  | "transaction-create"
+  | "category-provenance"
+  | "transaction-items"
+  | "document-status"
+  | "revalidation";
 
 export async function sanitizeFilename(originalName: string): Promise<string> {
   const parts = originalName.split(".");
@@ -275,7 +284,58 @@ export async function confirmDocumentAction(
     return { ok: false, message: "กรุณาระบุประเภทเอกสาร" };
   }
 
+  const confirmedDocumentId = doc.id;
+  let stage: DocumentConfirmStage = "transaction-idempotency-lookup";
+
+  async function applyLearnedProvenance(transactionId: string, confidenceScore: number) {
+    stage = "category-provenance";
+    try {
+      await setTransactionCategoryProvenance(user.id, transactionId, "learned_rule", confidenceScore);
+    } catch (error) {
+      logSafeError("Document confirmation provenance metadata failed", {
+        operation: "document.confirm",
+        stage,
+        documentId,
+        error,
+      });
+    } finally {
+      stage = "transaction-create";
+    }
+  }
+
+  async function confirmDocumentStatus() {
+    stage = "document-status";
+    await updateDocument(user.id, confirmedDocumentId, { status: "confirmed" });
+  }
+
+  function revalidateConfirmedDocument() {
+    if (isMockAuthEnabled()) return;
+    stage = "revalidation";
+    try {
+      revalidatePath("/transactions");
+      revalidatePath("/debts");
+      revalidatePath("/overview");
+      revalidatePath("/today");
+    } catch (error) {
+      logSafeError("Document confirmation revalidation failed", {
+        operation: "document.confirm",
+        stage,
+        documentId,
+        error,
+      });
+    }
+  }
+
   try {
+    const existingTransaction = await getTransactionByDocumentId(user.id, confirmedDocumentId);
+    if (existingTransaction) {
+      await confirmDocumentStatus();
+      revalidateConfirmedDocument();
+      return { ok: true, message: "บันทึกข้อมูลเรียบร้อยแล้ว" };
+    }
+
+    stage = "transaction-create";
+
     if (documentType === "salary_slip") {
       const employer = formData.get("employer") as string;
       const payPeriod = formData.get("payPeriod") as string;
@@ -319,6 +379,7 @@ export async function confirmDocumentAction(
         merchant: employer || "รายได้เงินเดือน",
         category: getCategoryById("salary")!.label,
         note: `${note}\n\nบันทึกจากผู้ใช้: ${formData.get("note") || "-"}`,
+        documentId: confirmedDocumentId,
       });
 
     } else if (documentType === "receipt" || documentType === "delivery_receipt") {
@@ -356,17 +417,19 @@ export async function confirmDocumentAction(
         category: resolveExpenseCategoryLabel(merchant, documentType === "delivery_receipt" ? "food" : "other", learnedMatch),
         paymentMethod,
         note: `${documentType === "delivery_receipt" ? "ชำระเงินค่าอาหาร/บริการส่ง" : ""}\n${formData.get("note") || ""}`,
+        documentId: confirmedDocumentId,
       });
 
       if (learnedMatch) {
         const confidenceTier = computeLearnedCategoryConfidence(learnedMatch);
         const confidenceScore = confidenceTier === "high" ? 0.9 : confidenceTier === "medium" ? 0.6 : 0.3;
-        await setTransactionCategoryProvenance(user.id, transaction.id, "learned_rule", confidenceScore);
+        await applyLearnedProvenance(transaction.id, confidenceScore);
       }
 
       // Insert transaction items if present
       if (itemsJson) {
         try {
+          stage = "transaction-items";
           const items = JSON.parse(itemsJson) as Array<{ name: string; quantity?: number; amount?: number }>;
           if (Array.isArray(items) && !isMockAuthEnabled()) {
             const rows = items.map((item) => {
@@ -383,15 +446,18 @@ export async function confirmDocumentAction(
               };
             });
             const supabase = await createSupabaseServerClient();
-            await supabase.from("transaction_items").insert(rows);
+            const { error } = await supabase.from("transaction_items").insert(rows);
+            if (error) throw error;
           }
         } catch (e) {
           logSafeError("Failed to save transaction items", {
             operation: "document.confirm",
-            stage: "transaction-items",
+            stage,
             documentId,
             error: e,
           });
+        } finally {
+          stage = "transaction-create";
         }
       }
 
@@ -456,12 +522,13 @@ export async function confirmDocumentAction(
               ? getCategoryById("transfers")!.label
               : resolveExpenseCategoryLabel(destinationName, "other", learnedMatch),
           note: `เลขอ้างอิง: ${referenceNumber || "-"}\nธนาคาร: ${bank || "-"}\nโอนจาก: xxxx-${accountLastFour || "-"}\nไปยัง: xxxx-${destinationAccountLastFour || "-"}`,
+          documentId: confirmedDocumentId,
         });
 
         if (txType === "expense" && learnedMatch) {
           const confidenceTier = computeLearnedCategoryConfidence(learnedMatch);
           const confidenceScore = confidenceTier === "high" ? 0.9 : confidenceTier === "medium" ? 0.6 : 0.3;
-          await setTransactionCategoryProvenance(user.id, transaction.id, "learned_rule", confidenceScore);
+          await applyLearnedProvenance(transaction.id, confidenceScore);
         }
       }
 
@@ -576,31 +643,25 @@ export async function confirmDocumentAction(
         category: resolveExpenseCategoryLabel(merchant, "other", learnedMatch),
         paymentMethod,
         source: "manual",
-        documentId: doc.id,
+        documentId: confirmedDocumentId,
       });
 
       if (txType === "expense" && learnedMatch) {
         const confidenceTier = computeLearnedCategoryConfidence(learnedMatch);
         const confidenceScore = confidenceTier === "high" ? 0.9 : confidenceTier === "medium" ? 0.6 : 0.3;
-        await setTransactionCategoryProvenance(user.id, transaction.id, "learned_rule", confidenceScore);
+        await applyLearnedProvenance(transaction.id, confidenceScore);
       }
     }
 
     // 5. Update document status to confirmed
-    await updateDocument(user.id, doc.id, { status: "confirmed" });
-
-    if (!isMockAuthEnabled()) {
-      revalidatePath("/transactions");
-      revalidatePath("/debts");
-      revalidatePath("/overview");
-      revalidatePath("/today");
-    }
+    await confirmDocumentStatus();
+    revalidateConfirmedDocument();
 
     return { ok: true, message: "บันทึกข้อมูลเรียบร้อยแล้ว" };
   } catch (error) {
     logSafeError("Document confirmation failed", {
       operation: "document.confirm",
-      stage: "commit",
+      stage,
       documentId,
       error,
     });
