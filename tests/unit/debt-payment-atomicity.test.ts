@@ -55,7 +55,6 @@ describe("addDebtPayment: server-side active-only enforcement", () => {
   it.each([
     ["paid_off" as const],
     ["paused" as const],
-    ["overdue" as const],
   ])("rejects a payment against a %s debt without writing anything", async (status) => {
     const debt = await seedDebt();
     setDebtStatus(debt.id, status);
@@ -65,6 +64,15 @@ describe("addDebtPayment: server-side active-only enforcement", () => {
       DEBT_ERROR_NOT_ACTIVE_TH,
     );
     expect(getMockState().transactions).toEqual(before);
+  });
+
+  it("accepts a payment against an overdue debt (still open, just past due date)", async () => {
+    const debt = await seedDebt();
+    setDebtStatus(debt.id, "overdue");
+
+    const { transaction, debt: updatedDebt } = await addDebtPayment(USER_ID, debt.id, 500_00, "2026-07-10T12:00:00+07:00");
+    expect(transaction.type).toBe("debt_payment");
+    expect(updatedDebt.amountPaidThisCycleSatang).toBe(500_00);
   });
 
   it("rejects a payment against a deleted debt without writing anything", async () => {
