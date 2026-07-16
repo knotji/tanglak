@@ -7,6 +7,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { saveDebtAction } from "@/app/actions/finance";
 import { LoadingButton } from "@/components/feedback/LoadingButton";
+import { getBangkokTodayString } from "@/lib/finance/date";
 import { parseOptionalMoney, parseRequiredMoney } from "@/lib/finance/money-guards";
 import {
   isValidDueDate,
@@ -48,7 +49,7 @@ export function ManualDebtForm({
       outstanding: debt?.outstandingBalanceSatang ? String(debt.outstandingBalanceSatang / 100) : "",
       amount: debt?.amountDueSatang ? String(debt.amountDueSatang / 100) : "",
       minimum: debt?.minimumPaymentSatang ? String(debt.minimumPaymentSatang / 100) : "",
-      dueDate: debt?.dueDate ?? new Date().toISOString().slice(0, 10),
+      dueDate: debt?.dueDate ?? getBangkokTodayString(),
       recurringDueDay: debt?.recurringDueDay ? String(debt.recurringDueDay) : "",
       paymentMode: debt?.paymentMode ?? "variable_monthly",
       interestRateAnnual: debt?.interestRateAnnual !== undefined ? String(debt.interestRateAnnual) : "",
@@ -70,7 +71,7 @@ export function ManualDebtForm({
         outstanding: "",
         amount: "",
         minimum: "",
-        dueDate: new Date().toISOString().slice(0, 10),
+        dueDate: getBangkokTodayString(),
         recurringDueDay: "",
         paymentMode: "variable_monthly",
         interestRateAnnual: "",

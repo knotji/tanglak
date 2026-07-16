@@ -137,6 +137,13 @@ describe("mocked Supabase repository isolation and debt recalculation", () => {
       minimumPaymentSatang: 100000,
       dueDate: "2026-07-18",
     });
+    // createDebt now derives a cycle window from dueDate when the caller
+    // doesn't supply one explicitly (see debt-cycle-derivation.test.ts), so
+    // simulate a legacy debt predating that feature -- one whose cycle
+    // fields are still null -- by clearing them directly in the mock store.
+    const stored = getMockState().debts.find((item) => item.id === debt.id)!;
+    stored.cycleStartDate = undefined;
+    stored.cycleEndDate = undefined;
     await createTransaction("user-a", {
       type: "debt_payment",
       amountSatang: 90000,
