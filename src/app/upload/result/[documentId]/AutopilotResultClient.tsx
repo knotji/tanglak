@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Undo2 } from "lucide-react";
+import { AppShell } from "@/components/AppShell";
 import { formatTHB } from "@/lib/finance/money";
 import { undoAutopilotActionForUser } from "@/app/actions/autopilot";
 import type { Transaction } from "@/types/domain";
@@ -35,7 +36,7 @@ export function AutopilotResultClient({
   };
 
   return (
-    <div className="mx-auto flex max-w-md flex-col gap-4 p-5">
+    <AppShell>
       <div className="rounded-[16px] border border-border bg-surface p-6 text-center shadow-sm">
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary-soft text-primary">
           <CheckCircle2 size={28} aria-hidden />
@@ -102,6 +103,6 @@ export function AutopilotResultClient({
           </button>
         </div>
       </div>
-    </div>
+    </AppShell>
   );
 }
