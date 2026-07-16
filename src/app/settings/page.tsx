@@ -72,13 +72,6 @@ export default async function SettingsPage() {
           </div>
         </SettingsSection>
 
-        <SettingsSection title="ขั้นสูง">
-          <SettingsLink href="/settings/data" label="ประวัติการนำเข้า" detail="สถานะไทยและ rollback" />
-          <div className="px-4 py-3 text-sm leading-6 text-text-secondary">
-            พื้นที่นี้เก็บประวัติชุดข้อมูลเดิมเพื่อการตรวจสอบและย้อนกลับเท่านั้น การใช้งานประจำวันให้สแกนสลิปหรือเพิ่มรายการเอง
-          </div>
-        </SettingsSection>
-
         <SettingsSection title="การแจ้งเตือน">
           <SettingsLink href="/onboarding?edit=1" label="วันเตือนที่ต้องการ" detail="แก้ไขได้จากโปรไฟล์" />
         </SettingsSection>

@@ -72,7 +72,7 @@ export function StrategyClient({ debts }: StrategyClientProps) {
       {debts.length < 2 ? (
         <div className="rounded-[16px] border border-border bg-surface p-5">
           <p className="text-sm font-bold text-primary">ยังเปรียบเทียบกลยุทธ์ไม่ได้</p>
-          <h2 className="mt-2 text-xl font-bold text-foreground">ต้องมีหนี้ที่ยัง active อย่างน้อย 2 ก้อน</h2>
+          <h2 className="mt-2 text-xl font-bold text-foreground">ต้องมีหนี้ที่ยังไม่ปิดอย่างน้อย 2 ก้อน</h2>
           <p className="mt-2 text-sm leading-6 text-text-secondary">
             เพิ่มหรือเปิดดูหนี้ที่ยังต้องจัดการก่อน แล้วค่อยกลับมาเทียบ Snowball กับ Avalanche
           </p>

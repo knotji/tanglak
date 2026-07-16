@@ -107,7 +107,7 @@ describe("StrategyClient", () => {
     mockUsePathname.mockReturnValue("/debts/strategy");
     const { container, root } = render(<StrategyClient debts={[activeDebt({ id: "only-debt" })]} />);
 
-    expect(container.textContent).toContain("active");
+    expect(container.textContent).toContain("ยังไม่ปิด");
     expect(container.querySelector('a[href="/debts"]')).toBeTruthy();
     expect(container.querySelector("form")).toBeNull();
     expect(container.querySelector('button[type="submit"]')).toBeNull();

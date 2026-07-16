@@ -64,9 +64,9 @@ test.describe("slip-first upload and debt planning pivot", () => {
     await signUp(page, "ผู้ใช้ตั้งค่า");
     await page.goto("/settings");
 
-    await expect(page.getByText("ขั้นสูง")).toBeVisible();
+    await expect(page.getByRole("link", { name: "ข้อมูลที่เคยบันทึก" })).toBeVisible();
     await expect(page.getByRole("link", { name: "การนำเข้ารายการแบบเดิม" })).toHaveCount(0);
-    await expect(page.getByText(/พื้นที่นี้เก็บประวัติชุดข้อมูลเดิม/)).toBeVisible();
+    await expect(page.getByText(/ไฟล์ถูกใช้เพื่ออ่านข้อมูลการเงินเท่านั้น/)).toBeVisible();
   });
 
   test("settings/data page leads with slip upload and manual entry, not statement import (F-011)", async ({ page }) => {
