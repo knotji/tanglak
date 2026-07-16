@@ -13,6 +13,8 @@ import {
 import type { Transaction } from "@/types/domain";
 
 export type SpendForecast = {
+  isAvailable: boolean;
+  unavailableReason?: "no_budget" | "budget_exhausted" | "invalid_period";
   trailingWindowDaysUsed: number;
   trailingSpendSatang: number;
   averageDailySpendSatang: number;
@@ -23,7 +25,7 @@ export type SpendForecast = {
   projectedBudgetVarianceSatang: number;
   onTrackToExceedBudget: boolean;
   projectedBudgetExhaustionDate: string | null;
-  daysEarlyOrLate: number | null;
+  daysBeforeMonthEnd: number | null;
 };
 
 const DEFAULT_TRAILING_WINDOW_DAYS = 7;
@@ -69,8 +71,19 @@ export function buildSpendForecast(
   todayKey: string,
   trailingWindowDays = DEFAULT_TRAILING_WINDOW_DAYS,
 ): SpendForecast {
+  // 1. Invalid Period Check
   if (!isValidMonthQuery(month) || !isValidDateKey(todayKey) || !todayKey.startsWith(`${month}-`)) {
-    return emptyForecast(budgetSummary);
+    return emptyForecast(budgetSummary, "invalid_period");
+  }
+
+  // 2. No Budget Check
+  if (!budgetSummary.hasBudget || budgetSummary.plannedTotalSatang === 0) {
+    return emptyForecast(budgetSummary, "no_budget");
+  }
+
+  // 3. Budget Exhausted Check
+  if (budgetSummary.remainingTotalSatang <= 0) {
+    return emptyForecast(budgetSummary, "budget_exhausted");
   }
 
   const { startDate, endDate } = getBangkokMonthRange(month);
@@ -89,27 +102,36 @@ export function buildSpendForecast(
     if (transactionDate < windowStart || transactionDate > todayKey) return sum;
     return sum + transactionSpendDelta(transaction);
   }, 0);
+
+  // Deterministically round down daily average satang to integer
   const averageDailySpendSatang = Math.max(0, Math.floor(trailingSpendSatang / trailingWindowDaysUsed));
   const remainingDaysInMonth = Math.max(0, daysBetween(todayKey, endDate));
   const projectedAdditionalSpendSatang = averageDailySpendSatang * remainingDaysInMonth;
   const projectedMonthEndSpendSatang = budgetSummary.spentTotalSatang + projectedAdditionalSpendSatang;
   const remainingBudgetSatang = budgetSummary.remainingTotalSatang;
-  const projectedBudgetVarianceSatang = budgetSummary.plannedTotalSatang - projectedMonthEndSpendSatang;
-  const onTrackToExceedBudget =
-    budgetSummary.hasBudget &&
-    budgetSummary.plannedTotalSatang > 0 &&
-    remainingBudgetSatang > 0 &&
-    averageDailySpendSatang > 0 &&
-    projectedBudgetVarianceSatang < 0;
 
-  const projectedBudgetExhaustionDate = averageDailySpendSatang > 0 && remainingBudgetSatang > 0
-    ? addDays(todayKey, Math.ceil(remainingBudgetSatang / averageDailySpendSatang))
-    : null;
-  const daysEarlyOrLate = projectedBudgetExhaustionDate
-    ? daysBetween(projectedBudgetExhaustionDate, endDate)
-    : null;
+  // projectedBudgetVarianceSatang > 0 = คาดว่าเกินงบ, < 0 = คาดว่าเหลืองบ
+  const projectedBudgetVarianceSatang = projectedMonthEndSpendSatang - budgetSummary.plannedTotalSatang;
+
+  // onTrackToExceedBudget is true ONLY when projected spend is strictly above total budget
+  const onTrackToExceedBudget = projectedMonthEndSpendSatang > budgetSummary.plannedTotalSatang;
+
+  let projectedBudgetExhaustionDate: string | null = null;
+  let daysBeforeMonthEnd: number | null = null;
+
+  if (averageDailySpendSatang > 0 && remainingBudgetSatang > 0 && onTrackToExceedBudget) {
+    const daysUntilExhaustion = Math.ceil(remainingBudgetSatang / averageDailySpendSatang);
+    projectedBudgetExhaustionDate = addDays(todayKey, daysUntilExhaustion);
+
+    // 0 = พอดีสิ้นเดือน, positive = คาดว่าหมดก่อนสิ้นเดือนกี่วัน
+    const diff = daysBetween(projectedBudgetExhaustionDate, endDate);
+    if (diff >= 0) {
+      daysBeforeMonthEnd = diff;
+    }
+  }
 
   return {
+    isAvailable: true,
     trailingWindowDaysUsed,
     trailingSpendSatang,
     averageDailySpendSatang,
@@ -120,12 +142,18 @@ export function buildSpendForecast(
     projectedBudgetVarianceSatang,
     onTrackToExceedBudget,
     projectedBudgetExhaustionDate,
-    daysEarlyOrLate,
+    daysBeforeMonthEnd,
   };
 }
 
-function emptyForecast(budgetSummary: BudgetSummary): SpendForecast {
+function emptyForecast(
+  budgetSummary: BudgetSummary,
+  reason: "no_budget" | "budget_exhausted" | "invalid_period",
+): SpendForecast {
+  const projectedBudgetVarianceSatang = budgetSummary.spentTotalSatang - budgetSummary.plannedTotalSatang;
   return {
+    isAvailable: false,
+    unavailableReason: reason,
     trailingWindowDaysUsed: 0,
     trailingSpendSatang: 0,
     averageDailySpendSatang: 0,
@@ -133,9 +161,9 @@ function emptyForecast(budgetSummary: BudgetSummary): SpendForecast {
     projectedAdditionalSpendSatang: 0,
     projectedMonthEndSpendSatang: budgetSummary.spentTotalSatang,
     remainingBudgetSatang: budgetSummary.remainingTotalSatang,
-    projectedBudgetVarianceSatang: budgetSummary.plannedTotalSatang - budgetSummary.spentTotalSatang,
+    projectedBudgetVarianceSatang,
     onTrackToExceedBudget: false,
     projectedBudgetExhaustionDate: null,
-    daysEarlyOrLate: null,
+    daysBeforeMonthEnd: null,
   };
 }

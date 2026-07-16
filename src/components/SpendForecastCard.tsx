@@ -5,17 +5,15 @@ import type { SpendForecast } from "@/lib/finance/spend-forecast";
 
 export function shouldShowSpendForecast(forecast: SpendForecast, month: string, todayKey: string) {
   return (
+    forecast.isAvailable &&
     todayKey.startsWith(`${month}-`) &&
-    forecast.onTrackToExceedBudget &&
-    forecast.remainingBudgetSatang > 0 &&
-    forecast.averageDailySpendSatang > 0
+    forecast.onTrackToExceedBudget
   );
 }
 
-function formatExhaustionTiming(daysEarlyOrLate: number) {
-  if (daysEarlyOrLate > 0) return `เร็วกว่าสิ้นเดือนประมาณ ${daysEarlyOrLate} วัน`;
-  if (daysEarlyOrLate < 0) return `ช้ากว่าสิ้นเดือนประมาณ ${Math.abs(daysEarlyOrLate)} วัน`;
-  return "พอดีกับสิ้นเดือน";
+function formatExhaustionTiming(daysBeforeMonthEnd: number) {
+  if (daysBeforeMonthEnd === 0) return "พอดีกับสิ้นเดือน";
+  return `เร็วกว่าสิ้นเดือนประมาณ ${daysBeforeMonthEnd} วัน`;
 }
 
 export function SpendForecastCard({
@@ -43,14 +41,14 @@ export function SpendForecastCard({
         จากการใช้จ่ายช่วง {forecast.trailingWindowDaysUsed} วันที่ผ่านมา คาดว่าจะใช้เพิ่มอีกประมาณ{" "}
         {formatTHB(forecast.projectedAdditionalSpendSatang)} ภายในสิ้นเดือน
       </p>
-      {forecast.projectedBudgetExhaustionDate && forecast.daysEarlyOrLate !== null ? (
+      {forecast.projectedBudgetExhaustionDate && forecast.daysBeforeMonthEnd !== null ? (
         <p className="mt-2 text-sm leading-6 text-text-secondary">
           คาดว่างบจะหมดประมาณวันที่ {formatThaiDateLabel(forecast.projectedBudgetExhaustionDate)}{" "}
-          {formatExhaustionTiming(forecast.daysEarlyOrLate)}
+          {formatExhaustionTiming(forecast.daysBeforeMonthEnd)}
         </p>
       ) : null}
       <p className="mt-2 text-sm font-bold text-amber-800">
-        อาจเกินงบประมาณ {formatTHB(Math.abs(forecast.projectedBudgetVarianceSatang))}
+        อาจเกินงบประมาณ {formatTHB(forecast.projectedBudgetVarianceSatang)}
       </p>
       <p className="mt-2 text-xs leading-5 text-text-secondary">
         เป็นการประมาณจากพฤติกรรมล่าสุด ยอดจริงอาจเปลี่ยนได้

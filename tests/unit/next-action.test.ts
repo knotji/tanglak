@@ -20,6 +20,7 @@ function debt(overrides: Partial<Debt> = {}): Debt {
 const TODAY = new Date(Date.UTC(2026, 6, 15)); // 2026-07-15, fixed reference point
 
 const exceedingForecast = {
+  isAvailable: true,
   trailingWindowDaysUsed: 7,
   trailingSpendSatang: 7_000,
   averageDailySpendSatang: 1_000,
@@ -27,10 +28,10 @@ const exceedingForecast = {
   projectedAdditionalSpendSatang: 16_000,
   projectedMonthEndSpendSatang: 40_000,
   remainingBudgetSatang: 5_000,
-  projectedBudgetVarianceSatang: -11_000,
+  projectedBudgetVarianceSatang: 11_000,
   onTrackToExceedBudget: true,
   projectedBudgetExhaustionDate: "2026-07-20",
-  daysEarlyOrLate: 11,
+  daysBeforeMonthEnd: 11,
 };
 
 describe("determineNextAction — single highest-priority action", () => {
@@ -447,11 +448,24 @@ describe("determineNextAction — single highest-priority action", () => {
       TODAY,
     );
 
-    expect(action.title).toBe("ระวังงบหมดก่อนสิ้นเดือน");
-    expect(action.body).toContain("7 วันที่ผ่านมา");
-    expect(action.body).toContain("฿110");
+    expect(action.title).toBe("งบมีแนวโน้มหมดก่อนสิ้นเดือน");
+    expect(action.body).toContain("คาดว่างบอาจหมดก่อนสิ้นเดือนประมาณ 11 วัน");
     expect(action.action).toBe("ดูและปรับงบ");
     expect(action.actionHref).toBe("/budget");
+  });
+
+  it("lets no-transactions-yet alert outrank a spend forecast", () => {
+    const action = determineNextAction(
+      {
+        debts: [],
+        hasBudget: true,
+        hasAnyTransaction: false,
+        spendForecast: exceedingForecast,
+      },
+      TODAY,
+    );
+
+    expect(action.title).toBe("เริ่มจากบันทึกรายการแรก");
   });
 
   it("does not surface spend forecast advice when forecast is on track or missing", () => {

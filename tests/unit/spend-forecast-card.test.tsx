@@ -17,6 +17,7 @@ vi.mock("next/link", () => ({
 
 function forecast(overrides: Partial<SpendForecast> = {}): SpendForecast {
   return {
+    isAvailable: true,
     trailingWindowDaysUsed: 7,
     trailingSpendSatang: 70_000,
     averageDailySpendSatang: 10_000,
@@ -24,10 +25,10 @@ function forecast(overrides: Partial<SpendForecast> = {}): SpendForecast {
     projectedAdditionalSpendSatang: 160_000,
     projectedMonthEndSpendSatang: 560_000,
     remainingBudgetSatang: 50_000,
-    projectedBudgetVarianceSatang: -60_000,
+    projectedBudgetVarianceSatang: 60_000,
     onTrackToExceedBudget: true,
     projectedBudgetExhaustionDate: "2026-07-20",
-    daysEarlyOrLate: 11,
+    daysBeforeMonthEnd: 11,
     ...overrides,
   };
 }
@@ -74,7 +75,7 @@ describe("SpendForecastCard", () => {
   it("renders month-end timing copy when exhaustion lands exactly on the final day", () => {
     const { container, root } = render(
       <SpendForecastCard
-        forecast={forecast({ projectedBudgetExhaustionDate: "2026-07-31", daysEarlyOrLate: 0 })}
+        forecast={forecast({ projectedBudgetExhaustionDate: "2026-07-31", daysBeforeMonthEnd: 0 })}
         month="2026-07"
         todayKey="2026-07-15"
       />,
@@ -86,8 +87,7 @@ describe("SpendForecastCard", () => {
 
   it("hides when the forecast is not actionable for Today", () => {
     expect(shouldShowSpendForecast(forecast({ onTrackToExceedBudget: false }), "2026-07", "2026-07-15")).toBe(false);
-    expect(shouldShowSpendForecast(forecast({ remainingBudgetSatang: 0 }), "2026-07", "2026-07-15")).toBe(false);
-    expect(shouldShowSpendForecast(forecast({ averageDailySpendSatang: 0 }), "2026-07", "2026-07-15")).toBe(false);
+    expect(shouldShowSpendForecast(forecast({ isAvailable: false }), "2026-07", "2026-07-15")).toBe(false);
     expect(shouldShowSpendForecast(forecast(), "2026-07", "2026-08-01")).toBe(false);
 
     const { container, root } = render(

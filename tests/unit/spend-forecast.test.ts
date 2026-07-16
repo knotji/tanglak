@@ -76,13 +76,14 @@ describe("buildSpendForecast", () => {
       "2026-07-15",
     );
 
+    expect(forecast.isAvailable).toBe(true);
     expect(forecast.trailingWindowDaysUsed).toBe(7);
     expect(forecast.trailingSpendSatang).toBe(1_400);
     expect(forecast.averageDailySpendSatang).toBe(200);
     expect(forecast.remainingDaysInMonth).toBe(16);
     expect(forecast.projectedAdditionalSpendSatang).toBe(3_200);
     expect(forecast.projectedMonthEndSpendSatang).toBe(54_600);
-    expect(forecast.projectedBudgetVarianceSatang).toBe(-1_600);
+    expect(forecast.projectedBudgetVarianceSatang).toBe(1_600); // 54600 - 53000 = 1600 (positive means over budget)
     expect(forecast.onTrackToExceedBudget).toBe(true);
   });
 
@@ -90,9 +91,10 @@ describe("buildSpendForecast", () => {
     const transactions = [tx({ id: "one", occurredAt: "2026-07-15T12:00:00+07:00", amountSatang: 1_000 })];
     const forecast = buildSpendForecast(transactions, summary(transactions), "2026-07", "2026-07-15");
 
+    expect(forecast.isAvailable).toBe(true);
     expect(forecast.trailingWindowDaysUsed).toBe(7);
     expect(forecast.trailingSpendSatang).toBe(1_000);
-    expect(forecast.averageDailySpendSatang).toBe(142);
+    expect(forecast.averageDailySpendSatang).toBe(142); // floor(1000 / 7)
     expect(forecast.projectedAdditionalSpendSatang).toBe(2_272);
   });
 
@@ -103,6 +105,7 @@ describe("buildSpendForecast", () => {
     ];
     const forecast = buildSpendForecast(transactions, summary(transactions), "2026-07", "2026-07-03");
 
+    expect(forecast.isAvailable).toBe(true);
     expect(forecast.trailingWindowDaysUsed).toBe(3);
     expect(forecast.trailingSpendSatang).toBe(1_500);
     expect(forecast.averageDailySpendSatang).toBe(500);
@@ -112,6 +115,7 @@ describe("buildSpendForecast", () => {
     const transactions = [tx({ occurredAt: "2026-07-01T12:00:00+07:00", amountSatang: 777 })];
     const forecast = buildSpendForecast(transactions, summary(transactions), "2026-07", "2026-07-01");
 
+    expect(forecast.isAvailable).toBe(true);
     expect(forecast.trailingWindowDaysUsed).toBe(1);
     expect(forecast.trailingSpendSatang).toBe(777);
     expect(forecast.averageDailySpendSatang).toBe(777);
@@ -184,7 +188,7 @@ describe("buildSpendForecast", () => {
     expect(buildSpendForecast(aprilTransactions, aprilSummary, "2026-04", "2026-04-15").remainingDaysInMonth).toBe(15);
   });
 
-  it("computes exhaustion date and days early or late against the month end", () => {
+  it("computes exhaustion date and days before month end when budget is projected to run out early", () => {
     const transactions = [tx({ occurredAt: "2026-07-15T12:00:00+07:00", amountSatang: 20_000 })];
     const forecast = buildSpendForecast(
       transactions,
@@ -194,12 +198,13 @@ describe("buildSpendForecast", () => {
       1,
     );
 
+    expect(forecast.isAvailable).toBe(true);
     expect(forecast.remainingBudgetSatang).toBe(5_000);
     expect(forecast.projectedBudgetExhaustionDate).toBe("2026-07-16");
-    expect(forecast.daysEarlyOrLate).toBe(15);
+    expect(forecast.daysBeforeMonthEnd).toBe(15); // End of month is 2026-07-31, so 31 - 16 = 15 days before month end
   });
 
-  it("returns negative daysEarlyOrLate when budget would last past month end", () => {
+  it("returns null exhaustion date and daysBeforeMonthEnd when budget would last past month end", () => {
     const transactions = [tx({ occurredAt: "2026-07-15T12:00:00+07:00", amountSatang: 100 })];
     const forecast = buildSpendForecast(
       transactions,
@@ -210,39 +215,48 @@ describe("buildSpendForecast", () => {
     );
 
     expect(forecast.onTrackToExceedBudget).toBe(false);
-    expect(forecast.projectedBudgetExhaustionDate).toBe("2026-10-22");
-    expect(forecast.daysEarlyOrLate).toBe(-83);
+    expect(forecast.projectedBudgetExhaustionDate).toBeNull();
+    expect(forecast.daysBeforeMonthEnd).toBeNull();
   });
 
-  it("does not show exceed risk for no budget, zero budget, remaining <= 0, exact boundary, or one-satang-under budget", () => {
+  it("returns isAvailable false and correct reasons for no budget, zero budget, and remaining <= 0", () => {
     const transactions = [tx({ occurredAt: "2026-07-15T12:00:00+07:00", amountSatang: 1_000 })];
 
-    expect(buildSpendForecast(transactions, summary(transactions, { budget: null, categories: [] }), "2026-07", "2026-07-15").onTrackToExceedBudget).toBe(false);
-    expect(buildSpendForecast(transactions, summary(transactions, { categories: [category({ amountSatang: 0 })] }), "2026-07", "2026-07-15").onTrackToExceedBudget).toBe(false);
-    expect(buildSpendForecast(transactions, summary(transactions, { categories: [category({ amountSatang: 500 })] }), "2026-07", "2026-07-15").onTrackToExceedBudget).toBe(false);
-    expect(buildSpendForecast(transactions, summary(transactions, { categories: [category({ amountSatang: 17_000 })] }), "2026-07", "2026-07-15", 1).projectedBudgetVarianceSatang).toBe(0);
-    expect(buildSpendForecast(transactions, summary(transactions, { categories: [category({ amountSatang: 17_001 })] }), "2026-07", "2026-07-15", 1).onTrackToExceedBudget).toBe(false);
+    const fNoBudget = buildSpendForecast(transactions, summary(transactions, { budget: null, categories: [] }), "2026-07", "2026-07-15");
+    expect(fNoBudget.isAvailable).toBe(false);
+    expect(fNoBudget.unavailableReason).toBe("no_budget");
+
+    const fZeroBudget = buildSpendForecast(transactions, summary(transactions, { categories: [category({ amountSatang: 0 })] }), "2026-07", "2026-07-15");
+    expect(fZeroBudget.isAvailable).toBe(false);
+    expect(fZeroBudget.unavailableReason).toBe("no_budget");
+
+    const fExhaustedBudget = buildSpendForecast(transactions, summary(transactions, { categories: [category({ amountSatang: 500 })] }), "2026-07", "2026-07-15");
+    expect(fExhaustedBudget.isAvailable).toBe(false);
+    expect(fExhaustedBudget.unavailableReason).toBe("budget_exhausted");
   });
 
-  it("sets exceed risk when projected spend is over budget by one satang", () => {
+  it("handles exact budget boundaries and ±1 satang scenarios", () => {
     const transactions = [tx({ occurredAt: "2026-07-15T12:00:00+07:00", amountSatang: 1_000 })];
-    const forecast = buildSpendForecast(
-      transactions,
-      summary(transactions, { categories: [category({ amountSatang: 16_999 })] }),
-      "2026-07",
-      "2026-07-15",
-      1,
-    );
 
-    expect(forecast.projectedBudgetVarianceSatang).toBe(-1);
-    expect(forecast.onTrackToExceedBudget).toBe(true);
+    const exact = buildSpendForecast(transactions, summary(transactions, { categories: [category({ amountSatang: 17_000 })] }), "2026-07", "2026-07-15", 1);
+    expect(exact.projectedBudgetVarianceSatang).toBe(0);
+    expect(exact.onTrackToExceedBudget).toBe(false);
+
+    const under = buildSpendForecast(transactions, summary(transactions, { categories: [category({ amountSatang: 17_001 })] }), "2026-07", "2026-07-15", 1);
+    expect(under.projectedBudgetVarianceSatang).toBe(-1);
+    expect(under.onTrackToExceedBudget).toBe(false);
+
+    const over = buildSpendForecast(transactions, summary(transactions, { categories: [category({ amountSatang: 16_999 })] }), "2026-07", "2026-07-15", 1);
+    expect(over.projectedBudgetVarianceSatang).toBe(1);
+    expect(over.onTrackToExceedBudget).toBe(true);
   });
 
-  it("returns an unavailable forecast for invalid month/today mismatch", () => {
+  it("returns an unavailable forecast with invalid_period for invalid month/today mismatch", () => {
     const transactions = [tx({ amountSatang: 1_000 })];
     const forecast = buildSpendForecast(transactions, summary(transactions), "2026-07", "2026-08-01");
 
-    expect(forecast.trailingWindowDaysUsed).toBe(0);
+    expect(forecast.isAvailable).toBe(false);
+    expect(forecast.unavailableReason).toBe("invalid_period");
     expect(forecast.onTrackToExceedBudget).toBe(false);
   });
 
