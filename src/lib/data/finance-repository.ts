@@ -167,6 +167,9 @@ function validateDebtInput(input: Partial<DebtInput>, existing?: Debt): void {
 const TRANSACTION_COLUMNS =
   "id, user_id, type, status, amount_satang, currency, occurred_at, merchant, category_label, category_source, category_confidence, source_account_id, destination_account_id, debt_id, document_id, reference_number, payment_method, account_last_four, destination_account_last_four, bank, source, confidence, note, import_batch_id, import_row_id, is_historical, updated_at";
 
+const DOCUMENT_TRANSACTION_COLUMNS =
+  "id, user_id, type, status, amount_satang, currency, occurred_at, merchant, category_label, source_account_id, destination_account_id, debt_id, document_id, reference_number, payment_method, account_last_four, destination_account_last_four, bank, source, confidence, note, import_batch_id, import_row_id, is_historical, updated_at";
+
 const DEBT_COLUMNS =
   "id, user_id, name, creditor, debt_type, payment_mode, original_amount_satang, outstanding_balance_satang, statement_balance_satang, amount_due_satang, minimum_payment_satang, amount_paid_this_cycle_satang, due_date, recurring_due_day, statement_date, cycle_start_date, cycle_end_date, interest_rate_annual, remaining_installments, credit_limit_satang, status, notes";
 
@@ -244,7 +247,7 @@ export async function getTransactionByDocumentId(userId: string, documentId: str
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from("transactions")
-    .select(TRANSACTION_COLUMNS)
+    .select(DOCUMENT_TRANSACTION_COLUMNS)
     .eq("document_id", documentId)
     .eq("user_id", userId)
     .order("updated_at", { ascending: true })

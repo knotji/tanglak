@@ -15,11 +15,17 @@ export function handlePostgrestError(error: { code: string; message: string }): 
   const isAutopilotColumn =
     message.includes("category_source") || message.includes("category_confidence");
 
-  if (isMissingColumnError && isTransactionTable && isAutopilotColumn) {
-    throw new Error(
-      "The Autopilot database migration is missing. Please apply migration 202607130001_autopilot_action_audit_log.sql.",
-    );
-  }
+  const errMessage = (isMissingColumnError && isTransactionTable && isAutopilotColumn)
+    ? "The Autopilot database migration is missing. Please apply migration 202607130001_autopilot_action_audit_log.sql."
+    : message;
 
-  throw new Error(message);
+  const err = new Error(errMessage);
+  err.name = "DatabaseError";
+  Object.defineProperty(err, "code", {
+    value: error.code,
+    configurable: true,
+    enumerable: true,
+    writable: true,
+  });
+  throw err;
 }

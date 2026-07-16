@@ -51,6 +51,7 @@ const ALLOWED_EXTENSIONS = ["jpg", "jpeg", "png", "webp", "pdf"];
 const MAX_FILE_SIZE = 15_000_000; // 15MB
 
 type DocumentConfirmStage =
+  | "transaction-idempotency-lookup"
   | "transaction-create"
   | "category-provenance"
   | "transaction-items"
@@ -284,7 +285,7 @@ export async function confirmDocumentAction(
   }
 
   const confirmedDocumentId = doc.id;
-  let stage: DocumentConfirmStage = "transaction-create";
+  let stage: DocumentConfirmStage = "transaction-idempotency-lookup";
 
   async function applyLearnedProvenance(transactionId: string, confidenceScore: number) {
     stage = "category-provenance";
@@ -332,6 +333,8 @@ export async function confirmDocumentAction(
       revalidateConfirmedDocument();
       return { ok: true, message: "บันทึกข้อมูลเรียบร้อยแล้ว" };
     }
+
+    stage = "transaction-create";
 
     if (documentType === "salary_slip") {
       const employer = formData.get("employer") as string;

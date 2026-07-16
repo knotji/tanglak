@@ -5,6 +5,7 @@ import {
   createTransaction,
   getDocument,
   listTransactions,
+  getTransactionByDocumentId,
 } from "@/lib/data/finance-repository";
 import { getMockState } from "@/lib/data/mock-store";
 import { TRANSACTION_OCCURRED_AT_REQUIRED_TH } from "@/lib/finance/date";
@@ -22,11 +23,23 @@ const provenanceMocks = vi.hoisted(() => ({
   setTransactionCategoryProvenance: vi.fn(),
 }));
 
+const sessionMocks = vi.hoisted(() => ({
+  isMockAuthEnabled: vi.fn(() => true),
+}));
+
+const supabaseMocks = vi.hoisted(() => ({
+  createSupabaseServerClient: vi.fn(),
+}));
+
+vi.mock("@/lib/supabase/server", () => ({
+  createSupabaseServerClient: () => supabaseMocks.createSupabaseServerClient(),
+}));
+
 vi.mock("@/lib/auth/session", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/auth/session")>();
   return {
     ...original,
-    isMockAuthEnabled: () => true,
+    isMockAuthEnabled: () => sessionMocks.isMockAuthEnabled(),
     requireUser: async () => ({ id: USER_ID, email: "mock-user-confirmation@example.test" }),
   };
 });
@@ -138,6 +151,9 @@ beforeEach(() => {
   repositoryMocks.updateDocument.mockImplementation(repositoryMocks.originalUpdateDocument);
   provenanceMocks.setTransactionCategoryProvenance.mockReset();
   provenanceMocks.setTransactionCategoryProvenance.mockResolvedValue({ applied: true });
+  sessionMocks.isMockAuthEnabled.mockReset();
+  sessionMocks.isMockAuthEnabled.mockReturnValue(true);
+  supabaseMocks.createSupabaseServerClient.mockReset();
 });
 
 afterEach(() => {
@@ -295,5 +311,236 @@ describe("confirmDocumentAction idempotency and provenance failure handling", ()
     expect(repositoryMocks.createTransaction).not.toHaveBeenCalled();
     expect((await listTransactions(USER_ID, "2026-07")).filter((transaction) => transaction.documentId === doc.id)).toHaveLength(0);
     expect((await getDocument(USER_ID, doc.id))?.status).toBe("needs_review");
+  });
+
+  // Helper for mocking Supabase chain
+  function mockSupabaseChain(options: {
+    transactionData?: unknown;
+    transactionError?: unknown;
+    documentData?: unknown;
+    documentError?: unknown;
+  }) {
+    const selectSpy = vi.fn().mockReturnThis();
+    const eqSpy = vi.fn().mockReturnThis();
+    const orderSpy = vi.fn().mockReturnThis();
+    const limitSpy = vi.fn().mockReturnThis();
+
+    let currentTable = "";
+
+    const maybeSingleSpy = vi.fn().mockImplementation(() => {
+      if (currentTable === "documents") {
+        return Promise.resolve({ data: options.documentData ?? null, error: options.documentError ?? null });
+      }
+      return Promise.resolve({ data: options.transactionData ?? null, error: options.transactionError ?? null });
+    });
+
+    const client = {
+      from: vi.fn().mockImplementation((table) => {
+        currentTable = table;
+        return {
+          select: selectSpy,
+          eq: eqSpy,
+          order: orderSpy,
+          limit: limitSpy,
+          maybeSingle: maybeSingleSpy,
+        };
+      }),
+    };
+
+    supabaseMocks.createSupabaseServerClient.mockResolvedValue(client);
+    return { client, selectSpy, eqSpy, orderSpy, limitSpy, maybeSingleSpy };
+  }
+
+  describe("stale schema compatibility and diagnostics regression tests", () => {
+    it("getTransactionByDocumentId query does not request optional category provenance columns", async () => {
+      sessionMocks.isMockAuthEnabled.mockReturnValue(false);
+      const mockTx = {
+        id: "tx-123",
+        user_id: USER_ID,
+        type: "expense",
+        status: "confirmed",
+        amount_satang: 25000,
+        currency: "THB",
+        occurred_at: "2026-07-15T09:30:00+07:00",
+        merchant: "Café",
+        category_label: "Food",
+        document_id: "doc-123",
+        is_historical: false,
+      };
+
+      const { selectSpy, eqSpy } = mockSupabaseChain({ transactionData: mockTx });
+
+      const res = await getTransactionByDocumentId(USER_ID, "doc-123");
+
+      expect(res).not.toBeNull();
+      expect(res?.id).toBe("tx-123");
+      expect(selectSpy).toHaveBeenCalled();
+
+      const queryCols = selectSpy.mock.calls[0][0];
+      expect(queryCols).toContain("document_id");
+      expect(queryCols).not.toContain("category_source");
+      expect(queryCols).not.toContain("category_confidence");
+      expect(eqSpy).toHaveBeenCalledWith("user_id", USER_ID);
+    });
+
+    it("simulates stale provenance schema: minimal document-id lookup succeeds and existing transaction is reused without insert", async () => {
+      const doc = await seedDocument("receipt");
+
+      const docRow = {
+        id: doc.id,
+        user_id: USER_ID,
+        status: "needs_review",
+        document_type: "receipt",
+        storage_bucket: "financial-documents",
+        storage_path: `${USER_ID}/receipt.png`,
+        mime_type: "image/png",
+        file_size_bytes: 10,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const existingTx = {
+        id: "existing-tx-123",
+        user_id: USER_ID,
+        type: "expense",
+        status: "confirmed",
+        amount_satang: 25000,
+        currency: "THB",
+        occurred_at: "2026-07-15T09:30:00+07:00",
+        merchant: "Special Café",
+        category_label: "Food",
+        document_id: doc.id,
+        is_historical: false,
+      };
+
+      sessionMocks.isMockAuthEnabled.mockReturnValue(false);
+      mockSupabaseChain({ transactionData: existingTx, documentData: docRow });
+      repositoryMocks.updateDocument.mockResolvedValue({ ...doc, status: "confirmed" });
+
+      const result = await confirmDocumentAction(doc.id, receiptFormData());
+
+      expect(result.ok).toBe(true);
+      expect(repositoryMocks.createTransaction).not.toHaveBeenCalled();
+    });
+
+    it("no existing transaction: lookup returns null and createTransaction is called once with documentId", async () => {
+      const doc = await seedDocument("receipt");
+
+      const docRow = {
+        id: doc.id,
+        user_id: USER_ID,
+        status: "needs_review",
+        document_type: "receipt",
+        storage_bucket: "financial-documents",
+        storage_path: `${USER_ID}/receipt.png`,
+        mime_type: "image/png",
+        file_size_bytes: 10,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      sessionMocks.isMockAuthEnabled.mockReturnValue(false);
+      mockSupabaseChain({ transactionData: null, documentData: docRow });
+      repositoryMocks.createTransaction.mockResolvedValue({
+        id: "new-tx-456",
+        userId: USER_ID,
+        type: "expense",
+        status: "confirmed",
+        amountSatang: 25000,
+        occurredAt: "2026-07-15T09:30:00+07:00",
+        merchant: "Special Café",
+        documentId: doc.id,
+        isHistorical: false,
+      });
+      repositoryMocks.updateDocument.mockResolvedValue({ ...doc, status: "confirmed" });
+
+      const result = await confirmDocumentAction(doc.id, receiptFormData());
+
+      expect(result.ok).toBe(true);
+      expect(repositoryMocks.createTransaction).toHaveBeenCalledTimes(1);
+      expect(repositoryMocks.createTransaction.mock.calls[0][1].documentId).toBe(doc.id);
+    });
+
+    it("required document_id missing/error is not silently ignored, logs transaction-idempotency-lookup", async () => {
+      const doc = await seedDocument("receipt");
+
+      const docRow = {
+        id: doc.id,
+        user_id: USER_ID,
+        status: "needs_review",
+        document_type: "receipt",
+        storage_bucket: "financial-documents",
+        storage_path: `${USER_ID}/receipt.png`,
+        mime_type: "image/png",
+        file_size_bytes: 10,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const lookupError = {
+        code: "42703",
+        message: 'column "document_id" of relation "transactions" does not exist',
+      };
+
+      sessionMocks.isMockAuthEnabled.mockReturnValue(false);
+      mockSupabaseChain({ transactionData: null, transactionError: lookupError, documentData: docRow });
+
+      const logSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+      const result = await confirmDocumentAction(doc.id, receiptFormData());
+
+      expect(result.ok).toBe(false);
+      expect(repositoryMocks.createTransaction).not.toHaveBeenCalled();
+
+      const serializedLog = JSON.stringify(logSpy.mock.calls);
+      expect(serializedLog).toContain("transaction-idempotency-lookup");
+      expect(serializedLog).toContain("42703");
+      expect(serializedLog).toContain("DatabaseError");
+    });
+
+    it("transaction insert failure is logged under transaction-create stage and document remains needs_review", async () => {
+      const doc = await seedDocument("receipt");
+
+      const docRow = {
+        id: doc.id,
+        user_id: USER_ID,
+        status: "needs_review",
+        document_type: "receipt",
+        storage_bucket: "financial-documents",
+        storage_path: `${USER_ID}/receipt.png`,
+        mime_type: "image/png",
+        file_size_bytes: 10,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      sessionMocks.isMockAuthEnabled.mockReturnValue(false);
+      mockSupabaseChain({ transactionData: null, documentData: docRow });
+
+      const insertError = new Error("Failed to insert transaction");
+      repositoryMocks.createTransaction.mockRejectedValueOnce(insertError);
+
+      const logSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+      const result = await confirmDocumentAction(doc.id, receiptFormData());
+
+      expect(result.ok).toBe(false);
+      expect(repositoryMocks.updateDocument).not.toHaveBeenCalled();
+      expect(provenanceMocks.setTransactionCategoryProvenance).not.toHaveBeenCalled();
+
+      const serializedLog = JSON.stringify(logSpy.mock.calls);
+      expect(serializedLog).toContain("transaction-create");
+    });
+
+    it("financial invariants are preserved during confirmation", async () => {
+      const doc = await seedDocument("receipt");
+      // Keep mock auth enabled (default true) for validation test
+      const fdInvalid = receiptFormData({ totalPaid: "-100" }); // Invalid amount
+
+      const result = await confirmDocumentAction(doc.id, fdInvalid);
+
+      expect(result.ok).toBe(false);
+      expect(repositoryMocks.createTransaction).not.toHaveBeenCalled();
+    });
   });
 });
