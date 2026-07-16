@@ -150,6 +150,47 @@ export function shiftDateKey(dateKey: string, offsetDays: number): string {
   return shifted.toISOString().slice(0, 10);
 }
 
+/**
+ * Shifts a date key by whole calendar months, clamping the day to the
+ * target month's actual length rather than overflowing into a later month
+ * (e.g. 2026-03-31 shifted back 1 month lands on 2026-02-28, not
+ * 2026-03-03 -- a naive `Date.UTC(year, month - 1 + offset, day)` would
+ * silently roll over because February has fewer than 31 days).
+ */
+function shiftDateKeyByMonths(dateKey: string, monthOffset: number): string {
+  if (!isValidDateKey(dateKey)) {
+    throw new Error("Invalid date");
+  }
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const zeroBasedTarget = month - 1 + monthOffset;
+  const targetYear = year + Math.floor(zeroBasedTarget / 12);
+  const targetMonthIndex = ((zeroBasedTarget % 12) + 12) % 12;
+  const daysInTargetMonth = new Date(Date.UTC(targetYear, targetMonthIndex + 1, 0)).getUTCDate();
+  const clampedDay = Math.min(day, daysInTargetMonth);
+  return `${targetYear}-${String(targetMonthIndex + 1).padStart(2, "0")}-${String(clampedDay).padStart(2, "0")}`;
+}
+
+/**
+ * Derives a debt's billing-cycle window from its due date, for use only
+ * when a debt is first created with no explicit cycle_start_date/
+ * cycle_end_date supplied. The cycle ends on the due date itself and
+ * starts the day after the equivalent due date one month earlier (e.g. a
+ * due date of 2026-07-02 yields a cycle of 2026-06-03 through
+ * 2026-07-02) -- this only ever runs once, at debt creation; it is not a
+ * recurring rollover mechanism (there is currently none), and it never
+ * overwrites an existing debt's cycle dates.
+ */
+export function deriveDebtCycleFromDueDate(dueDate: string): { cycleStartDate: string; cycleEndDate: string } {
+  if (!isValidDateKey(dueDate)) {
+    throw new Error("Invalid date");
+  }
+  const previousDueDate = shiftDateKeyByMonths(dueDate, -1);
+  return {
+    cycleStartDate: shiftDateKey(previousDueDate, 1),
+    cycleEndDate: dueDate,
+  };
+}
+
 export function getDebtCycleWindow(
   debt: { cycleStartDate?: string; cycleEndDate?: string },
   fallbackDate: Date = new Date(),

@@ -15,6 +15,7 @@ import {
   DEBT_ERROR_NOT_ACTIVE_TH,
 } from "@/lib/finance/debt-guards";
 import {
+  deriveDebtCycleFromDueDate,
   getBangkokMonthOf,
   getDebtCycleWindow,
   isValidDateKey,
@@ -485,6 +486,23 @@ export async function createDebt(userId: string, input: DebtInput): Promise<Debt
     outstandingBalanceSatang: input.outstandingBalanceSatang ?? input.amountDueSatang,
   });
 
+  // When the caller doesn't supply an explicit cycle window, derive one
+  // from the due date (cycle ends on the due date, starts the day after
+  // the equivalent due date one month earlier) instead of leaving it unset
+  // -- an unset cycle window falls back to the current Bangkok calendar
+  // month (see getDebtCycleWindow), which frequently misaligns with a
+  // real due-date-based billing cycle and can make a payment made just
+  // before the due date -- but in the previous calendar month -- appear
+  // not to count toward "this cycle". This only runs once, at creation;
+  // it never overwrites a caller-supplied cycle window, and it is not a
+  // recurring rollover mechanism.
+  const derivedCycle =
+    !input.cycleStartDate && !input.cycleEndDate && input.dueDate && isValidDateKey(input.dueDate)
+      ? deriveDebtCycleFromDueDate(input.dueDate)
+      : undefined;
+  const effectiveCycleStartDate = input.cycleStartDate ?? derivedCycle?.cycleStartDate;
+  const effectiveCycleEndDate = input.cycleEndDate ?? derivedCycle?.cycleEndDate;
+
   if (isMockAuthEnabled()) {
     const debt: Debt = {
       id: crypto.randomUUID(),
@@ -501,8 +519,8 @@ export async function createDebt(userId: string, input: DebtInput): Promise<Debt
       dueDate: input.dueDate,
       recurringDueDay: input.recurringDueDay,
       statementDate: input.statementDate,
-      cycleStartDate: input.cycleStartDate,
-      cycleEndDate: input.cycleEndDate,
+      cycleStartDate: effectiveCycleStartDate,
+      cycleEndDate: effectiveCycleEndDate,
       interestRateAnnual: input.interestRateAnnual,
       remainingInstallments: input.remainingInstallments,
       creditLimitSatang: input.creditLimitSatang,
@@ -530,8 +548,8 @@ export async function createDebt(userId: string, input: DebtInput): Promise<Debt
       due_date: input.dueDate,
       recurring_due_day: input.recurringDueDay,
       statement_date: input.statementDate,
-      cycle_start_date: input.cycleStartDate,
-      cycle_end_date: input.cycleEndDate,
+      cycle_start_date: effectiveCycleStartDate,
+      cycle_end_date: effectiveCycleEndDate,
       interest_rate_annual: input.interestRateAnnual,
       remaining_installments: input.remainingInstallments,
       credit_limit_satang: input.creditLimitSatang,
