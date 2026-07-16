@@ -1,4 +1,4 @@
-import type { DetectedLayout, ExtractedDocument, ExtractedLine, ExtractedTextItem } from "./types";
+import type { DetectedLayout, ExtractedDocument, ExtractedTextItem } from "./types";
 
 export interface GroupedRow {
   pageNumber: number;
@@ -64,8 +64,4 @@ export function groupContinuationLines(doc: ExtractedDocument, layout: DetectedL
   }
 
   return rows;
-}
-
-export function isLikelyContinuation(line: ExtractedLine): boolean {
-  return !lineStartsWithDate(line.text);
 }

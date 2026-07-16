@@ -1,12 +1,3 @@
-export function formatInstallments(months: number | null): string {
-  if (months === null) return "ไม่ระบุ";
-  return `${months} งวด`;
-}
-
-export function formatPercent(rate: number): string {
-  return `${Number(rate.toFixed(2))}%`;
-}
-
 export function formatThaiDate(dateStr: string): string {
   const date = new Date(dateStr);
   if (isNaN(date.getTime())) return dateStr;

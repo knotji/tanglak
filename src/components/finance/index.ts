@@ -1,6 +1,5 @@
 export { BudgetProgress, calculateBudgetPercentage } from "./BudgetProgress";
 export { BudgetStatusBadge } from "./BudgetStatusBadge";
-export { CashFlowSummary } from "./CashFlowSummary";
 export { CategoryBudgetRow } from "./CategoryBudgetRow";
 export { CompactTransactionRow } from "./CompactTransactionRow";
 export { FinancialAlert } from "./FinancialAlert";
