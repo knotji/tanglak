@@ -101,7 +101,12 @@ export default async function TodayPage() {
               <CompactStat label="เหลืออีก" valueLabel={`${daysRemaining} วัน`} tone="default" />
             )}
             {pendingAttentionCount > 0 ? (
-              <CompactStat label="รอตรวจสอบ" valueLabel={`${pendingAttentionCount} รายการ`} tone="debt" />
+              <CompactStat
+                label="รอตรวจสอบ"
+                valueLabel={`${pendingAttentionCount} รายการ`}
+                tone="debt"
+                href="/transactions"
+              />
             ) : dailyAllowance !== null ? (
               <CompactStat label="เหลืออีก" valueLabel={`${daysRemaining} วัน`} tone="default" />
             ) : (
