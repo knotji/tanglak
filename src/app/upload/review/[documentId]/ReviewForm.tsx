@@ -383,7 +383,7 @@ export function ReviewForm({
   const confidence = extraction?.confidence ?? 1.0;
   const unclearCount = extraction?.unclearFields?.length ?? 0;
   let thaiConfidenceText = "อ่านได้ชัด";
-  let confidenceColor = "bg-green-soft text-primary border-primary/20";
+  let confidenceColor = "bg-green-50 text-green-600 border-green-100";
 
   if (confidence < 0.6 || unclearCount > 0) {
     thaiConfidenceText = "อ่านไม่ครบ";
@@ -740,7 +740,7 @@ export function ReviewForm({
               )}
 
               {extraction && otherUnclearFields.length > 0 && (
-                <div className="rounded-[16px] border border-red-150 bg-red-50/70 p-4 text-sm text-red-800 flex gap-2">
+                <div className="rounded-[16px] border border-red-100 bg-red-50/70 p-4 text-sm text-red-800 flex gap-2">
                   <HelpCircle className="text-red-500 shrink-0" size={18} />
                   <div>
                     <div className="font-bold">ข้อมูลอ่านได้ไม่ครบ (กรุณาตรวจสอบ):</div>
@@ -1530,7 +1530,7 @@ export function ReviewForm({
                                 <option value="credit_card">บัตรเครดิต</option>
                                 <option value="personal_loan">สินเชื่อบุคคล</option>
                                 <option value="installment">ผ่อนสินค้า/จ่ายงวด</option>
-                                <option value="mortgage">บ้าน/ที่อยูอร์ย</option>
+                                <option value="mortgage">บ้าน/ที่อยู่อาศัย</option>
                                 <option value="auto_loan">เช่าซื้อรถยนต์</option>
                                 <option value="buy_now_pay_later">BNPL</option>
                                 <option value="other">อื่น ๆ</option>
@@ -1788,7 +1788,7 @@ export function ReviewForm({
                 )}
 
                 {formError ? (
-                  <p role="alert" className="rounded-[12px] border border-red-150 bg-red-50/70 p-3 text-sm font-semibold text-red-700">
+                  <p role="alert" className="rounded-[12px] border border-red-100 bg-red-50/70 p-3 text-sm font-semibold text-red-700">
                     {formError}
                   </p>
                 ) : null}
