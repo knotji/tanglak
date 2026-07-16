@@ -100,6 +100,6 @@ test("debt strategy page explains when fewer than two active debts exist", async
   });
 
   await page.goto("/debts/strategy");
-  await expect(page.getByRole("heading", { name: "ต้องมีหนี้ที่ยัง active อย่างน้อย 2 ก้อน" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "ต้องมีหนี้ที่ยังไม่ปิดอย่างน้อย 2 ก้อน" })).toBeVisible();
   await expect(page.getByRole("link", { name: "กลับไปหน้าหนี้" })).toHaveAttribute("href", "/debts");
 });
