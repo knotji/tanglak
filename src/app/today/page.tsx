@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { MoneyAmount } from "@/components/MoneyAmount";
 import { CompactTransactionRow } from "@/components/finance/CompactTransactionRow";
+import { SpendForecastCard } from "@/components/SpendForecastCard";
 import { requireCompletedOnboarding } from "@/lib/auth/onboarding";
 import { requireUser } from "@/lib/auth/session";
 import { listDebts, countPendingAttentionItems } from "@/lib/data/finance-repository";
@@ -15,8 +16,14 @@ import { buildDebtPortfolioComparison, filterActiveDebts } from "@/lib/debt/port
 import { getMonthlyFinanceSnapshot } from "@/lib/finance/monthly-snapshot";
 import { determineNextAction } from "@/lib/finance/next-action";
 import { recommendFocusDebt } from "@/lib/finance/portfolio-recommendation";
+import { buildSpendForecast } from "@/lib/finance/spend-forecast";
 import { timePage } from "@/lib/observability/timing";
-import { getBangkokTodayString, getBangkokMonthString, getBangkokDateOf, getBangkokMonthRange } from "@/lib/finance/date";
+import {
+  getBangkokTodayString,
+  getBangkokMonthString,
+  getBangkokDateOf,
+  getBangkokMonthRange,
+} from "@/lib/finance/date";
 import { daysUntilDue } from "@/lib/finance/calculations";
 
 function formatTodayHeading(todayKey: string) {
@@ -60,6 +67,7 @@ export default async function TodayPage() {
     const activeDebts = filterActiveDebts(debts);
     const portfolioRecommendation =
       activeDebts.length >= 2 ? recommendFocusDebt(buildDebtPortfolioComparison(activeDebts, 0)) : null;
+    const spendForecast = buildSpendForecast(transactions, budgetSummary, month, todayKey);
 
     const nextAction = determineNextAction({
       debts,
@@ -70,6 +78,7 @@ export default async function TodayPage() {
       hasAnyTransaction: transactions.length > 0,
       unreviewedCount: pendingAttentionCount,
       portfolioRecommendation,
+      spendForecast,
     });
 
     const { endDate } = getBangkokMonthRange(month);
@@ -111,6 +120,8 @@ export default async function TodayPage() {
         </section>
 
         <NextActionCard {...nextAction} />
+
+        <SpendForecastCard forecast={spendForecast} month={month} todayKey={todayKey} />
 
         <section aria-label="รายการล่าสุด" className="rounded-[16px] border border-border bg-surface px-4 py-1">
           <h2 className="py-3 text-sm font-bold text-foreground">รายการวันนี้</h2>

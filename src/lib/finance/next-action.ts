@@ -1,6 +1,7 @@
 import { daysUntilDue, isOverdue, remainingToMinimum } from "@/lib/finance/calculations";
 import { formatTHB } from "@/lib/finance/money";
 import { portfolioStrategyLabel, type PortfolioRecommendation } from "@/lib/finance/portfolio-recommendation";
+import type { SpendForecast } from "@/lib/finance/spend-forecast";
 import type { Debt } from "@/types/domain";
 
 export type NextAction = {
@@ -21,6 +22,7 @@ export type NextActionInput = {
   hasAnyTransaction: boolean;
   unreviewedCount?: number;
   portfolioRecommendation?: PortfolioRecommendation | null;
+  spendForecast?: SpendForecast | null;
 };
 
 /**
@@ -170,6 +172,17 @@ export function determineNextAction(input: NextActionInput, today: Date = new Da
         tone: "debt",
       };
     }
+  }
+
+  if (input.spendForecast?.onTrackToExceedBudget) {
+    const projectedOverBudgetSatang = Math.abs(input.spendForecast.projectedBudgetVarianceSatang);
+    return {
+      title: "ระวังงบหมดก่อนสิ้นเดือน",
+      body: `จากการใช้จ่ายช่วง ${input.spendForecast.trailingWindowDaysUsed} วันที่ผ่านมา คาดว่าอาจเกินงบประมาณ ${formatTHB(projectedOverBudgetSatang)}`,
+      action: "ดูและปรับงบ",
+      actionHref: "/budget",
+      tone: "debt",
+    };
   }
 
   if (!input.hasAnyTransaction) {
