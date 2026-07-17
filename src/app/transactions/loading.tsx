@@ -22,15 +22,15 @@ export default function TransactionsLoading() {
       <section aria-hidden="true" className="space-y-4">
         {[0, 1, 2].map((group) => (
           <div key={group} className="space-y-2">
-            <div className="h-4 w-24 rounded bg-muted" />
+            <div className="h-4 w-24 animate-pulse rounded bg-muted" />
             {[0, 1].map((row) => (
               <div key={row} className="rounded-[14px] border border-border bg-surface p-4">
                 <div className="flex items-center justify-between gap-4">
                   <div className="min-w-0 flex-1">
-                    <div className="h-4 w-3/4 rounded bg-muted" />
-                    <div className="mt-3 h-3 w-32 rounded bg-muted" />
+                    <div className="h-4 w-3/4 animate-pulse rounded bg-muted" />
+                    <div className="mt-3 h-3 w-32 animate-pulse rounded bg-muted" />
                   </div>
-                  <div className="h-5 w-20 rounded bg-muted" />
+                  <div className="h-5 w-20 animate-pulse rounded bg-muted" />
                 </div>
               </div>
             ))}
