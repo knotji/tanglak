@@ -191,6 +191,50 @@ export function deriveDebtCycleFromDueDate(dueDate: string): { cycleStartDate: s
   };
 }
 
+/**
+ * Advances a debt's stored cycle window forward until its end date is no
+ * longer in the past relative to `today` -- or returns null if the current
+ * window already covers `today` (no rollover needed). A debt that hasn't
+ * been read in months rolls forward directly to the correct cycle in one
+ * call rather than requiring one call per elapsed cycle.
+ *
+ * Each candidate month-offset is computed from the *original*
+ * cycleStartDate/cycleEndDate (via shiftDateKeyByMonths), never by
+ * compounding onto the previous step's already-clamped result. A debt due
+ * on the 31st that rolls through February (clamped to the 28th/29th) must
+ * return to the 31st in March, not stay permanently pinned to 28 the way
+ * repeated `shiftDateKeyByMonths(previousResult, 1)` calls would --
+ * clamping is a property of the target month, re-evaluated fresh every
+ * time against the original day-of-month, not a mutation that should
+ * accumulate.
+ *
+ * This only ever operates on an already-set cycle window (both dates
+ * present) -- a debt with no cycle dates at all still uses the calendar-
+ * month fallback in `getDebtCycleWindow`, which self-corrects every month
+ * on its own and has nothing to roll forward.
+ */
+export function rollDebtCycleForward(
+  cycleStartDate: string,
+  cycleEndDate: string,
+  today: string,
+): { cycleStartDate: string; cycleEndDate: string } | null {
+  if (!isValidDateKey(cycleStartDate) || !isValidDateKey(cycleEndDate) || !isValidDateKey(today)) {
+    throw new Error("Invalid date");
+  }
+  if (today <= cycleEndDate) return null;
+
+  let monthsElapsed = 0;
+  let end = cycleEndDate;
+  while (end < today) {
+    monthsElapsed += 1;
+    end = shiftDateKeyByMonths(cycleEndDate, monthsElapsed);
+  }
+  return {
+    cycleStartDate: shiftDateKeyByMonths(cycleStartDate, monthsElapsed),
+    cycleEndDate: end,
+  };
+}
+
 export function getDebtCycleWindow(
   debt: { cycleStartDate?: string; cycleEndDate?: string },
   fallbackDate: Date = new Date(),
