@@ -14,11 +14,11 @@ export default function DebtsLoading() {
       <DelayedLoadingMessage message="กำลังอัปเดตยอดหนี้..." />
       <div className="rounded-[16px] border border-border bg-surface p-5">
         <div aria-hidden="true">
-          <div className="h-4 w-24 rounded bg-muted" />
-          <div className="mt-3 h-10 w-40 rounded bg-muted" />
+          <div className="h-4 w-24 animate-pulse rounded bg-muted" />
+          <div className="mt-3 h-10 w-40 animate-pulse rounded bg-muted" />
           <div className="mt-5 grid grid-cols-2 gap-3">
-            <div className="h-14 rounded bg-muted" />
-            <div className="h-14 rounded bg-muted" />
+            <div className="h-14 animate-pulse rounded bg-muted" />
+            <div className="h-14 animate-pulse rounded bg-muted" />
           </div>
         </div>
       </div>
@@ -26,13 +26,13 @@ export default function DebtsLoading() {
         {[0, 1].map((index) => (
           <div key={index} className="rounded-[16px] border border-border bg-surface p-4">
             <div className="flex justify-between gap-4">
-              <div className="h-5 w-36 rounded bg-muted" />
-              <div className="h-5 w-20 rounded bg-muted" />
+              <div className="h-5 w-36 animate-pulse rounded bg-muted" />
+              <div className="h-5 w-20 animate-pulse rounded bg-muted" />
             </div>
-            <div className="mt-4 h-2 rounded-full bg-muted" />
+            <div className="mt-4 h-2 animate-pulse rounded-full bg-muted" />
             <div className="mt-4 grid grid-cols-2 gap-3">
-              <div className="h-10 rounded bg-muted" />
-              <div className="h-10 rounded bg-muted" />
+              <div className="h-10 animate-pulse rounded bg-muted" />
+              <div className="h-10 animate-pulse rounded bg-muted" />
             </div>
           </div>
         ))}

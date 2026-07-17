@@ -15,16 +15,16 @@ export default function BudgetLoading() {
     <AppShell contentElement="div">
       <PageHeader title="งบประมาณรายเดือน" subtitle="กำลังโหลดงบประมาณ" />
       <DelayedLoadingMessage message="กำลังสรุปงบเดือนนี้..." />
-      <div aria-hidden="true" className="h-11 rounded-[16px] bg-muted" />
+      <div aria-hidden="true" className="h-11 animate-pulse rounded-[16px] bg-muted" />
       <div aria-hidden="true" className="rounded-[16px] border border-border bg-surface p-4">
-        <div className="h-4 w-32 rounded bg-muted" />
-        <div className="mt-3 h-8 w-40 rounded bg-muted" />
+        <div className="h-4 w-32 animate-pulse rounded bg-muted" />
+        <div className="mt-3 h-8 w-40 animate-pulse rounded bg-muted" />
       </div>
       <section aria-hidden="true" className="flex flex-col gap-2">
         {[0, 1, 2].map((index) => (
           <div key={index} className="rounded-[16px] border border-border bg-surface p-3">
-            <div className="h-4 w-2/3 rounded bg-muted" />
-            <div className="mt-3 h-2.5 rounded-full bg-muted" />
+            <div className="h-4 w-2/3 animate-pulse rounded bg-muted" />
+            <div className="mt-3 h-2.5 animate-pulse rounded-full bg-muted" />
           </div>
         ))}
       </section>
