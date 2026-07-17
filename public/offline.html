@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ออฟไลน์ · ตั้งหลัก</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        padding: 24px;
+        box-sizing: border-box;
+        background: #f7f3ea;
+        color: #16233d;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans Thai", sans-serif;
+        text-align: center;
+      }
+      .card {
+        max-width: 360px;
+      }
+      .icon {
+        width: 56px;
+        height: 56px;
+        border-radius: 16px;
+        background: linear-gradient(135deg, #14b8a6, #059669);
+        margin: 0 auto 20px;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 8px;
+      }
+      p {
+        font-size: 14px;
+        color: #5b6472;
+        line-height: 1.6;
+        margin: 0 0 20px;
+      }
+      button {
+        min-height: 44px;
+        padding: 0 20px;
+        border: none;
+        border-radius: 16px;
+        background: #059669;
+        color: #fff;
+        font-weight: 700;
+        font-size: 14px;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="icon" aria-hidden="true"></div>
+      <h1>ไม่มีการเชื่อมต่ออินเทอร์เน็ต</h1>
+      <p>
+        ตั้งหลักต้องใช้อินเทอร์เน็ตเพื่อแสดงข้อมูลการเงินล่าสุดของคุณ
+        กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่อีกครั้ง
+      </p>
+      <button type="button" onclick="location.reload()">ลองใหม่</button>
+    </div>
+  </body>
+</html>
