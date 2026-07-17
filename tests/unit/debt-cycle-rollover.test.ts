@@ -23,6 +23,7 @@ describe("rollDebtCycleForward", () => {
     expect(rollDebtCycleForward("2026-06-03", "2026-07-02", "2026-07-03")).toEqual({
       cycleStartDate: "2026-07-03",
       cycleEndDate: "2026-08-02",
+      monthsElapsed: 1,
     });
   });
 
@@ -32,6 +33,7 @@ describe("rollDebtCycleForward", () => {
     expect(rollDebtCycleForward("2026-06-03", "2026-07-02", "2026-10-15")).toEqual({
       cycleStartDate: "2026-10-03",
       cycleEndDate: "2026-11-02",
+      monthsElapsed: 4,
     });
   });
 
@@ -43,6 +45,7 @@ describe("rollDebtCycleForward", () => {
     expect(result).toEqual({
       cycleStartDate: "2026-03-01",
       cycleEndDate: "2026-03-31",
+      monthsElapsed: 2,
     });
   });
 
@@ -80,6 +83,7 @@ describe("listDebts: lazily rolls a debt's cycle window forward when read past i
     const [beforeRollover] = await listDebts(USER_ID, false, new Date("2026-07-01T12:00:00+07:00"));
     expect(beforeRollover?.cycleStartDate).toBe("2026-06-03");
     expect(beforeRollover?.cycleEndDate).toBe("2026-07-02");
+    expect(beforeRollover?.dueDate).toBe("2026-07-02");
     expect(beforeRollover?.amountPaidThisCycleSatang).toBe(5_340_00);
 
     // Read again well past the cycle's end date -- 2026-08-15 falls two
@@ -88,6 +92,11 @@ describe("listDebts: lazily rolls a debt's cycle window forward when read past i
     const [afterRollover] = await listDebts(USER_ID, false, new Date("2026-08-15T12:00:00+07:00"));
     expect(afterRollover?.cycleStartDate).toBe("2026-08-03");
     expect(afterRollover?.cycleEndDate).toBe("2026-09-02");
+    // due_date must advance in lockstep with cycle_end_date -- otherwise the
+    // debt would keep showing the old, already-paid 2026-07-02 due date (and
+    // an incorrect "overdue" status computed from it) even though the June
+    // payment fully covered that cycle on time.
+    expect(afterRollover?.dueDate).toBe("2026-09-02");
     // The old payment (in the rolled-past cycle) no longer counts, and no
     // new payment has been made yet in the new window.
     expect(afterRollover?.amountPaidThisCycleSatang).toBe(0);
@@ -132,5 +141,6 @@ describe("listDebts: lazily rolls a debt's cycle window forward when read past i
     const [result] = await listDebts(USER_ID, true, new Date("2026-09-01T12:00:00+07:00"));
     expect(result?.cycleStartDate).toBe("2026-06-03");
     expect(result?.cycleEndDate).toBe("2026-07-02");
+    expect(result?.dueDate).toBe("2026-07-02");
   });
 });

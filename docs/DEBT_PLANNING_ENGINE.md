@@ -12,6 +12,8 @@ New debts get `cycle_start_date`/`cycle_end_date` derived from `due_date` at cre
 
 **Cycle rollover.** `listDebts` lazily advances a debt's cycle window forward whenever it's read past its own `cycle_end_date` (`rollDebtCycleForward` in `src/lib/finance/date.ts`, wired in via `rolloverDebtCycleIfDue`/`rolloverMockDebtCycleIfDue` in `src/lib/data/finance-repository.ts`). Only debts in a payable status (`active`/`overdue`) roll; a closed debt's cycle is frozen. A debt with no cycle dates set at all is never rolled — it keeps using the calendar-month fallback, which self-corrects every month on its own. Rolling forward re-derives the target cycle from the *original* stored dates (not by compounding onto the previous roll), so a debt due on the 31st that rolls through a short February returns to the 31st in March instead of staying pinned at 28 forever. A roll also recomputes and persists `amount_paid_this_cycle_satang` for the new window in the same step — a payment from the now-past cycle stops counting, consistent with the cycle-scoping rule above.
 
+A roll also advances `due_date` by the same number of months as the cycle window (`rollDebtCycleForward` returns `monthsElapsed` for exactly this). `due_date` and `cycle_end_date` are set equal at creation and represent the same underlying due date; `debtDueStatus` (below) reads `due_date` directly, independent of the cycle window, so leaving it un-advanced would make a fully-current debt (paid on time, cycle correctly rolled) keep displaying its old, already-settled due date and an incorrect `overdue` status computed from it.
+
 Statement metadata is stored separately:
 
 - `statement_balance_satang`: balance from the reviewed statement.
