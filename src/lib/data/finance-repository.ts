@@ -17,9 +17,11 @@ import {
 import {
   deriveDebtCycleFromDueDate,
   getBangkokMonthOf,
+  getBangkokTodayString,
   getDebtCycleWindow,
   isValidDateKey,
   isValidMonthQuery,
+  rollDebtCycleForward,
   TRANSACTION_OCCURRED_AT_REQUIRED_TH,
 } from "@/lib/finance/date";
 import { logSafeError } from "@/lib/observability/safe-diagnostics";
@@ -460,11 +462,15 @@ export async function deleteTransaction(userId: string, id: string) {
   if (existing?.debt_id) await recalculateDebtPaidThisCycle(userId, existing.debt_id);
 }
 
-export async function listDebts(userId: string, includeClosed = false): Promise<Debt[]> {
+export async function listDebts(userId: string, includeClosed = false, today: Date = new Date()): Promise<Debt[]> {
+  const todayKey = getBangkokTodayString(today);
+
   if (isMockAuthEnabled()) {
-    return getMockState().debts.filter(
+    const debts = getMockState().debts.filter(
       (debt) => debt.userId === userId && debt.status !== "deleted" && (includeClosed || debt.status !== "paid_off"),
     );
+    for (const debt of debts) rolloverMockDebtCycleIfDue(debt, todayKey);
+    return debts;
   }
 
   const supabase = await createSupabaseServerClient();
@@ -473,7 +479,82 @@ export async function listDebts(userId: string, includeClosed = false): Promise<
   if (!includeClosed) query = query.neq("status", "paid_off");
   const { data, error } = await timeAsync("query.debts", async () => query, { userId });
   if (error) throw new Error(error.message);
-  return (data ?? []).map(mapDebt);
+  const debts = (data ?? []).map(mapDebt);
+  return Promise.all(debts.map((debt) => rolloverDebtCycleIfDue(userId, debt, todayKey)));
+}
+
+/**
+ * Lazily advances a debt's cycle window when it's read past its own
+ * cycle_end_date, instead of leaving a stale window in place until the
+ * next explicit edit. Without this, a debt created by the due-date
+ * derivation in `createDebt` would work correctly for its first billing
+ * cycle only -- once that cycle's end date passed, every later payment
+ * would fall outside the never-advancing window and silently stop
+ * counting toward "paid this cycle" again, reproducing the exact bug this
+ * derivation was built to fix, one cycle later. Only debts in a payable
+ * status (`active`/`overdue`, matching `assertDebtActiveForPayment`) are
+ * rolled -- a closed debt's history is frozen, not still ticking forward.
+ * A debt with no cycle dates set at all has nothing to roll; it keeps
+ * using the calendar-month fallback, which already self-corrects monthly.
+ */
+async function rolloverDebtCycleIfDue(userId: string, debt: Debt, todayKey: string): Promise<Debt> {
+  if (debt.status !== "active" && debt.status !== "overdue") return debt;
+  if (!debt.cycleStartDate || !debt.cycleEndDate) return debt;
+  const rolled = rollDebtCycleForward(debt.cycleStartDate, debt.cycleEndDate, todayKey);
+  if (!rolled) return debt;
+
+  const cycle = getDebtCycleWindow(rolled);
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("amount_satang")
+    .eq("user_id", userId)
+    .eq("debt_id", debt.id)
+    .eq("type", "debt_payment")
+    .eq("status", "confirmed")
+    .gte("occurred_at", cycle.startInstant)
+    .lt("occurred_at", cycle.endExclusiveInstant);
+  if (error) handlePostgrestError(error);
+  const total = (data ?? []).reduce((sum, row) => sum + Number(row.amount_satang), 0);
+
+  const { error: updateError } = await supabase
+    .from("debts")
+    .update({
+      cycle_start_date: rolled.cycleStartDate,
+      cycle_end_date: rolled.cycleEndDate,
+      amount_paid_this_cycle_satang: total,
+    })
+    .eq("id", debt.id)
+    .eq("user_id", userId)
+    .neq("status", "deleted");
+  if (updateError) throw new Error(updateError.message);
+
+  return { ...debt, cycleStartDate: rolled.cycleStartDate, cycleEndDate: rolled.cycleEndDate, amountPaidThisCycleSatang: total };
+}
+
+function rolloverMockDebtCycleIfDue(debt: Debt, todayKey: string): void {
+  if (debt.status !== "active" && debt.status !== "overdue") return;
+  if (!debt.cycleStartDate || !debt.cycleEndDate) return;
+  const rolled = rollDebtCycleForward(debt.cycleStartDate, debt.cycleEndDate, todayKey);
+  if (!rolled) return;
+
+  debt.cycleStartDate = rolled.cycleStartDate;
+  debt.cycleEndDate = rolled.cycleEndDate;
+
+  const cycle = getDebtCycleWindow(rolled);
+  const start = new Date(cycle.startInstant).getTime();
+  const endExclusive = new Date(cycle.endExclusiveInstant).getTime();
+  debt.amountPaidThisCycleSatang = getMockState()
+    .transactions.filter(
+      (transaction) =>
+        transaction.userId === debt.userId &&
+        transaction.debtId === debt.id &&
+        transaction.type === "debt_payment" &&
+        transaction.status === "confirmed" &&
+        new Date(transaction.occurredAt).getTime() >= start &&
+        new Date(transaction.occurredAt).getTime() < endExclusive,
+    )
+    .reduce((sum, transaction) => sum + transaction.amountSatang, 0);
 }
 
 export async function createDebt(userId: string, input: DebtInput): Promise<Debt> {
