@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist_Mono, Noto_Sans_Thai } from "next/font/google";
+import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 import { ToastProvider } from "@/components/feedback/ToastProvider";
 import "./globals.css";
 
@@ -48,6 +49,7 @@ export default function RootLayout({
         <a href="#main-content" className="skip-link">
           ข้ามไปยังเนื้อหา
         </a>
+        <ServiceWorkerRegister />
         <ToastProvider>{children}</ToastProvider>
       </body>
     </html>
