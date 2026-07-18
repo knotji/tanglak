@@ -16,6 +16,21 @@ vi.mock("@/lib/auth/session", async (importOriginal) => {
   };
 });
 
+const repositoryMocks = vi.hoisted(() => ({
+  getTransactionByDocumentId: vi.fn(),
+  originalGetTransactionByDocumentId: undefined as unknown as typeof import("@/lib/data/finance-repository").getTransactionByDocumentId,
+}));
+
+vi.mock("@/lib/data/finance-repository", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/lib/data/finance-repository")>();
+  repositoryMocks.originalGetTransactionByDocumentId = original.getTransactionByDocumentId;
+  repositoryMocks.getTransactionByDocumentId.mockImplementation(original.getTransactionByDocumentId);
+  return {
+    ...original,
+    getTransactionByDocumentId: repositoryMocks.getTransactionByDocumentId,
+  };
+});
+
 function resetState() {
   const state = getMockState();
   state.documents = [];
@@ -52,6 +67,8 @@ function receiptFormData(overrides: Record<string, string> = {}) {
 
 beforeEach(() => {
   resetState();
+  repositoryMocks.getTransactionByDocumentId.mockReset();
+  repositoryMocks.getTransactionByDocumentId.mockImplementation(repositoryMocks.originalGetTransactionByDocumentId);
 });
 
 afterEach(() => {
@@ -94,5 +111,28 @@ describe("deleteDocumentAction guards against removing evidence for a confirmed 
 
     expect(result.ok).toBe(false);
     expect(await getDocument(USER_ID, doc.id)).not.toBeNull();
+  });
+
+  it("does not delete when a confirmation flips the document's status in the exact window between the pre-check read and the delete statement (Codex atomicity finding)", async () => {
+    const doc = await seedDocument("needs_review");
+
+    // Simulate a concurrent confirmDocumentAction call that finishes and
+    // flips this document's status to "confirmed" right in between our
+    // pre-check reads and the actual delete call -- deleteDocumentAction's
+    // own linked-transaction pre-check still sees "no linked transaction"
+    // here (this mock stands in for that timing), so only an atomic,
+    // status-conditioned delete statement can still catch it.
+    repositoryMocks.getTransactionByDocumentId.mockImplementationOnce(async (userId: string, documentId: string) => {
+      const stored = getMockState().documents.find((d) => d.id === documentId && d.userId === userId);
+      if (stored) stored.status = "confirmed";
+      return null;
+    });
+
+    const result = await deleteDocumentAction(doc.id);
+
+    expect(result.ok).toBe(false);
+    const survivor = await getDocument(USER_ID, doc.id);
+    expect(survivor).not.toBeNull();
+    expect(survivor?.status).toBe("confirmed");
   });
 });

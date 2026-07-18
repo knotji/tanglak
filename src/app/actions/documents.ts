@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/session";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isMockAuthEnabled } from "@/lib/auth/session";
-import type { Debt, Transaction } from "@/types/domain";
+import type { Debt, FinanceDocument, Transaction } from "@/types/domain";
 import {
   createDocument,
   getDocument,
@@ -234,6 +234,14 @@ export async function retryExtractionAction(documentId: string): Promise<Documen
 /**
  * 3. Delete document record and storage file safely
  */
+const PENDING_DOCUMENT_STATUSES: FinanceDocument["status"][] = [
+  "review_ready",
+  "needs_review",
+  "failed",
+  "failed_retryable",
+  "failed_permanent",
+];
+
 export async function deleteDocumentAction(documentId: string): Promise<DocumentActionState> {
   const user = await requireUser();
   try {
@@ -241,7 +249,7 @@ export async function deleteDocumentAction(documentId: string): Promise<Document
     if (!doc) {
       return { ok: false, message: "ไม่พบข้อมูลเอกสาร" };
     }
-    if (doc.status !== "review_ready" && doc.status !== "needs_review" && !doc.status.startsWith("failed")) {
+    if (!PENDING_DOCUMENT_STATUSES.includes(doc.status)) {
       return { ok: false, message: "ไม่สามารถลบเอกสารนี้ได้เนื่องจากถูกดำเนินการไปแล้ว" };
     }
     const linkedTransaction = await getTransactionByDocumentId(user.id, documentId);
@@ -249,7 +257,20 @@ export async function deleteDocumentAction(documentId: string): Promise<Document
       return { ok: false, message: "ไม่สามารถลบเอกสารนี้ได้เนื่องจากมีรายการที่ยืนยันแล้วผูกอยู่" };
     }
 
-    // Delete from Supabase private storage
+    // The status check above is a fast, non-authoritative pre-check for a
+    // clean error message; deleteDocument re-checks status as part of the
+    // same delete statement, so a confirmation that has *already* flipped
+    // the status in the time since our read above still wins the race
+    // safely -- nothing is deleted in that case.
+    const deleted = await deleteDocument(user.id, documentId, PENDING_DOCUMENT_STATUSES);
+    if (!deleted) {
+      return { ok: false, message: "ไม่สามารถลบเอกสารนี้ได้เนื่องจากถูกดำเนินการไปแล้ว" };
+    }
+
+    // Only remove the storage file once the row is confirmed gone -- if
+    // storage were removed first and the atomic delete above then lost the
+    // race, a still-confirmed document/transaction would be left pointing
+    // at evidence that no longer exists.
     if (!isMockAuthEnabled()) {
       const supabase = await createSupabaseServerClient();
       const { error: removeError } = await supabase.storage
@@ -264,9 +285,6 @@ export async function deleteDocumentAction(documentId: string): Promise<Document
         });
       }
     }
-
-    // Delete from database
-    await deleteDocument(user.id, documentId);
 
     revalidatePath("/transactions");
     return { ok: true, message: "ลบเอกสารและไฟล์สำเร็จ" };
