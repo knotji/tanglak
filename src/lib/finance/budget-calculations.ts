@@ -29,7 +29,7 @@ export type BudgetStatus = "healthy" | "near_limit" | "overspent" | "no_budget";
  *     at 0 -- refunds can never make a category's spend negative.
  * income and transfer are never included, regardless of category label.
  */
-function transactionSpendDelta(transaction: Transaction): number {
+export function transactionSpendDelta(transaction: Transaction): number {
   switch (transaction.type) {
     case "expense":
     case "debt_payment":
@@ -41,7 +41,7 @@ function transactionSpendDelta(transaction: Transaction): number {
   }
 }
 
-function isBudgetRelevant(transaction: Transaction, month: string): boolean {
+export function isBudgetRelevant(transaction: Transaction, month: string): boolean {
   // Only confirmed transactions count. This naturally excludes rolled-back
   // history-import transactions (rollback deletes the row entirely -- see
   // docs/HISTORY_IMPORT_IDEMPOTENCY.md) and anything still draft/needs_review/rejected.

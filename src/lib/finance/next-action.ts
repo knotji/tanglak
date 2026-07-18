@@ -1,6 +1,7 @@
 import { daysUntilDue, isOverdue, remainingToMinimum } from "@/lib/finance/calculations";
 import { formatTHB } from "@/lib/finance/money";
 import { portfolioStrategyLabel, type PortfolioRecommendation } from "@/lib/finance/portfolio-recommendation";
+import type { SpendForecast } from "@/lib/finance/spend-forecast";
 import type { Debt } from "@/types/domain";
 
 export type NextAction = {
@@ -21,6 +22,7 @@ export type NextActionInput = {
   hasAnyTransaction: boolean;
   unreviewedCount?: number;
   portfolioRecommendation?: PortfolioRecommendation | null;
+  spendForecast?: SpendForecast | null;
 };
 
 /**
@@ -28,14 +30,9 @@ export type NextActionInput = {
  * priority order: overdue minimum > due today > due within 3 days > minimum
  * not met (any other due date, including none) > no monthly budget >
  * overspent category > unbudgeted-spending category > unreviewed items >
- * near-limit category > no transactions yet > "on track" fallback. Only ever
- * one action is
+ * near-limit category > portfolio strategy recommendation > no transactions yet >
+ * spend forecast > "on track" fallback. Only ever one action is
  * returned -- callers must not render more than one of these at a time.
- * Due-today is a distinct tier from due-soon (see F-005 in
- * docs/SLIP_DEBT_IMPLEMENTATION_FINDINGS.md) -- it must never render as
- * "due in 0 days" merged into the due-soon bucket. Overspent (a positive
- * budget actually exceeded) outranks unbudgeted spending (no positive
- * budget configured at all) since the former is an active plan violation.
  */
 export function determineNextAction(input: NextActionInput, today: Date = new Date()): NextAction {
   const overdueDebt = input.debts.find((debt) => isOverdue(debt, today));
@@ -93,11 +90,6 @@ export function determineNextAction(input: NextActionInput, today: Date = new Da
     };
   }
 
-  // A debt with no due date in the near term (including one with no due
-  // date at all) but whose minimum this cycle still hasn't been met --
-  // surfaced below overdue/due-today/due-soon debts but above
-  // monthly-budget prompts, since an unmet debt obligation still outranks
-  // budgeting nudges.
   const unmetMinimumDebt = input.debts.find((debt) => remainingToMinimum(debt) > 0);
   if (unmetMinimumDebt) {
     return {
@@ -179,6 +171,22 @@ export function determineNextAction(input: NextActionInput, today: Date = new Da
       action: "เพิ่มรายการ",
       actionHref: "/transactions",
       tone: "primary",
+    };
+  }
+
+  if (
+    input.spendForecast &&
+    input.spendForecast.isAvailable &&
+    input.spendForecast.onTrackToExceedBudget &&
+    input.spendForecast.daysBeforeMonthEnd !== null
+  ) {
+    const days = input.spendForecast.daysBeforeMonthEnd;
+    return {
+      title: "งบมีแนวโน้มหมดก่อนสิ้นเดือน",
+      body: `จากการใช้จ่ายช่วงล่าสุด คาดว่างบอาจหมดก่อนสิ้นเดือนประมาณ ${days} วัน`,
+      action: "ดูและปรับงบ",
+      actionHref: "/budget",
+      tone: "debt",
     };
   }
 

@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   buildBudgetSummary,
   calculateCategorySpend,
+  isBudgetRelevant,
   statusForCategory,
   summarizeCategory,
+  transactionSpendDelta,
 } from "@/lib/finance/budget-calculations";
 import { formatTHB } from "@/lib/finance/money";
 import type { BudgetCategory, MonthlyBudget, Transaction } from "@/types/domain";
@@ -172,6 +174,33 @@ describe("calculateCategorySpend — transaction inclusion rules", () => {
       "2026-07",
     );
     expect(spend.byLabel["หมวดที่แต่งขึ้นเอง"]).toBe(300);
+  });
+});
+
+describe("exported budget relevance helpers", () => {
+  it("keeps expense and debt payments as positive spend, refunds as negative spend, and other types neutral", () => {
+    expect(transactionSpendDelta(tx({ type: "expense", amountSatang: 1_000 }))).toBe(1_000);
+    expect(transactionSpendDelta(tx({ type: "debt_payment", amountSatang: 2_000 }))).toBe(2_000);
+    expect(transactionSpendDelta(tx({ type: "refund", amountSatang: 300 }))).toBe(-300);
+    expect(transactionSpendDelta(tx({ type: "income", amountSatang: 5_000 }))).toBe(0);
+    expect(transactionSpendDelta(tx({ type: "transfer", amountSatang: 5_000 }))).toBe(0);
+  });
+
+  it("matches the budget engine's confirmed Bangkok-month relevance rules", () => {
+    expect(isBudgetRelevant(tx({ type: "expense", status: "confirmed" }), "2026-07")).toBe(true);
+    expect(isBudgetRelevant(tx({ type: "debt_payment", status: "confirmed" }), "2026-07")).toBe(true);
+    expect(isBudgetRelevant(tx({ type: "refund", status: "confirmed" }), "2026-07")).toBe(true);
+    expect(isBudgetRelevant(tx({ type: "income", status: "confirmed" }), "2026-07")).toBe(false);
+    expect(isBudgetRelevant(tx({ type: "transfer", status: "confirmed" }), "2026-07")).toBe(false);
+    expect(isBudgetRelevant(tx({ type: "expense", status: "draft" }), "2026-07")).toBe(false);
+    expect(isBudgetRelevant(tx({ type: "expense", status: "needs_review" }), "2026-07")).toBe(false);
+    expect(isBudgetRelevant(tx({ type: "expense", status: "rejected" }), "2026-07")).toBe(false);
+    expect(isBudgetRelevant(tx({ type: "expense", occurredAt: "2026-06-30T23:59:00+07:00" }), "2026-07")).toBe(false);
+  });
+
+  it("uses Bangkok-local month boundaries for relevance, not UTC string prefixes", () => {
+    expect(isBudgetRelevant(tx({ occurredAt: "2026-06-30T18:30:00.000Z" }), "2026-07")).toBe(true);
+    expect(isBudgetRelevant(tx({ occurredAt: "2026-07-31T18:00:00.000Z" }), "2026-07")).toBe(false);
   });
 });
 

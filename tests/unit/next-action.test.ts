@@ -19,6 +19,21 @@ function debt(overrides: Partial<Debt> = {}): Debt {
 
 const TODAY = new Date(Date.UTC(2026, 6, 15)); // 2026-07-15, fixed reference point
 
+const exceedingForecast = {
+  isAvailable: true,
+  trailingWindowDaysUsed: 7,
+  trailingSpendSatang: 7_000,
+  averageDailySpendSatang: 1_000,
+  remainingDaysInMonth: 16,
+  projectedAdditionalSpendSatang: 16_000,
+  projectedMonthEndSpendSatang: 40_000,
+  remainingBudgetSatang: 5_000,
+  projectedBudgetVarianceSatang: 11_000,
+  onTrackToExceedBudget: true,
+  projectedBudgetExhaustionDate: "2026-07-20",
+  daysBeforeMonthEnd: 11,
+};
+
 describe("determineNextAction — single highest-priority action", () => {
   it("prioritizes an overdue debt above a missing budget and overspent category", () => {
     const overdue = debt({ dueDate: "2026-07-01" }); // 14 days before TODAY
@@ -331,6 +346,155 @@ describe("determineNextAction — single highest-priority action", () => {
     );
 
     expect(action.title).toBe("เดือนนี้ยังอยู่ในแผน");
+  });
+
+  it("lets overdue debt urgency outrank a spend forecast", () => {
+    const action = determineNextAction(
+      {
+        debts: [debt({ dueDate: "2026-07-01" })],
+        hasBudget: true,
+        hasAnyTransaction: true,
+        spendForecast: exceedingForecast,
+      },
+      TODAY,
+    );
+
+    expect(action.tone).toBe("overdue");
+    expect(action.title).not.toContain("งบหมด");
+  });
+
+  it("lets due-soon debt urgency outrank a spend forecast", () => {
+    const action = determineNextAction(
+      {
+        debts: [debt({ dueDate: "2026-07-17" })],
+        hasBudget: true,
+        hasAnyTransaction: true,
+        spendForecast: exceedingForecast,
+      },
+      TODAY,
+    );
+
+    expect(action.title).toBe("ใกล้ครบกำหนดชำระ");
+    expect(action.actionHref).toBe("/debts");
+  });
+
+  it("lets unmet minimum payment outrank a spend forecast", () => {
+    const action = determineNextAction(
+      {
+        debts: [debt({ dueDate: "2026-07-25" })],
+        hasBudget: true,
+        hasAnyTransaction: true,
+        spendForecast: exceedingForecast,
+      },
+      TODAY,
+    );
+
+    expect(action.title).toContain("ยังชำระไม่ถึงยอดขั้นต่ำ");
+    expect(action.actionHref).toBe("/debts");
+  });
+
+  it("lets existing budget actions outrank a spend forecast", () => {
+    const action = determineNextAction(
+      {
+        debts: [],
+        hasBudget: true,
+        overspentCategoryLabel: "อาหาร",
+        hasAnyTransaction: true,
+        spendForecast: exceedingForecast,
+      },
+      TODAY,
+    );
+
+    expect(action.title).toContain("เกินงบ");
+    expect(action.title).not.toContain("งบหมด");
+  });
+
+  it("lets portfolio strategy outrank a spend forecast", () => {
+    const paidMinimum = debt({
+      id: "focus",
+      name: "สินเชื่อดอกสูง",
+      minimumPaymentSatang: 1_000_00,
+      amountPaidThisCycleSatang: 1_000_00,
+      dueDate: "2026-07-25",
+    });
+    const action = determineNextAction(
+      {
+        debts: [paidMinimum],
+        hasBudget: true,
+        hasAnyTransaction: true,
+        portfolioRecommendation: {
+          recommendedStrategy: "avalanche",
+          focusDebtId: "focus",
+          estimatedInterestSavingSatang: 1_000_00,
+          reason: "แนะนำลดดอกเบี้ยก่อน",
+        },
+        spendForecast: exceedingForecast,
+      },
+      TODAY,
+    );
+
+    expect(action.title).toContain("สินเชื่อดอกสูง");
+    expect(action.actionHref).toBe("/debts/strategy");
+  });
+
+  it("surfaces spend forecast advice only at the lowest advisory tier", () => {
+    const action = determineNextAction(
+      {
+        debts: [],
+        hasBudget: true,
+        hasAnyTransaction: true,
+        spendForecast: exceedingForecast,
+      },
+      TODAY,
+    );
+
+    expect(action.title).toBe("งบมีแนวโน้มหมดก่อนสิ้นเดือน");
+    expect(action.body).toContain("คาดว่างบอาจหมดก่อนสิ้นเดือนประมาณ 11 วัน");
+    expect(action.action).toBe("ดูและปรับงบ");
+    expect(action.actionHref).toBe("/budget");
+  });
+
+  it("lets no-transactions-yet alert outrank a spend forecast", () => {
+    const action = determineNextAction(
+      {
+        debts: [],
+        hasBudget: true,
+        hasAnyTransaction: false,
+        spendForecast: exceedingForecast,
+      },
+      TODAY,
+    );
+
+    expect(action.title).toBe("เริ่มจากบันทึกรายการแรก");
+  });
+
+  it("does not surface spend forecast advice when forecast is on track or missing", () => {
+    const onTrack = { ...exceedingForecast, onTrackToExceedBudget: false };
+    const baseInput = {
+      debts: [],
+      hasBudget: true,
+      hasAnyTransaction: true,
+    };
+
+    expect(determineNextAction({ ...baseInput, spendForecast: onTrack }, TODAY).title).toBe("เดือนนี้ยังอยู่ในแผน");
+    expect(determineNextAction({ ...baseInput, spendForecast: null }, TODAY).title).toBe("เดือนนี้ยังอยู่ในแผน");
+  });
+
+  it("does not mutate the spend forecast input", () => {
+    const forecast = structuredClone(exceedingForecast);
+    const before = structuredClone(forecast);
+
+    determineNextAction(
+      {
+        debts: [],
+        hasBudget: true,
+        hasAnyTransaction: true,
+        spendForecast: forecast,
+      },
+      TODAY,
+    );
+
+    expect(forecast).toEqual(before);
   });
 
   it("prompts for the first transaction when nothing has been recorded yet", () => {
