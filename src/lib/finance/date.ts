@@ -198,8 +198,8 @@ export function deriveDebtCycleFromDueDate(dueDate: string): { cycleStartDate: s
  * been read in months rolls forward directly to the correct cycle in one
  * call rather than requiring one call per elapsed cycle.
  *
- * Each candidate month-offset is computed from the *original*
- * cycleStartDate/cycleEndDate (via shiftDateKeyByMonths), never by
+ * The new end date is computed by re-evaluating each candidate month-offset
+ * from the *original* cycleEndDate (via shiftDateKeyByMonths), never by
  * compounding onto the previous step's already-clamped result. A debt due
  * on the 31st that rolls through February (clamped to the 28th/29th) must
  * return to the 31st in March, not stay permanently pinned to 28 the way
@@ -207,6 +207,21 @@ export function deriveDebtCycleFromDueDate(dueDate: string): { cycleStartDate: s
  * clamping is a property of the target month, re-evaluated fresh every
  * time against the original day-of-month, not a mutation that should
  * accumulate.
+ *
+ * The new start date is always derived fresh from the new end date (one
+ * day after "end shifted back a month"), the same construction
+ * `deriveDebtCycleFromDueDate` uses -- never by independently shifting the
+ * *original* cycleStartDate forward by the same month offset. The two can
+ * clamp differently across variable month lengths (e.g. a start date that
+ * lands on the 31st shifting into a 30-day month while the end date, on a
+ * different day-of-month, doesn't clamp), which could otherwise let the
+ * new cycle's start land on or before the previous cycle's end date --
+ * double-counting a payment made on that boundary day in both cycles.
+ * `cycleStartDate` is still taken as an input (and validated) for API
+ * symmetry with the stored window, but no longer affects the computed
+ * output -- this function only ever models month-long cycles, matching
+ * every real cycle window in this app (always produced by
+ * `deriveDebtCycleFromDueDate`).
  *
  * This only ever operates on an already-set cycle window (both dates
  * present) -- a debt with no cycle dates at all still uses the calendar-
@@ -239,7 +254,7 @@ export function rollDebtCycleForward(
     end = shiftDateKeyByMonths(cycleEndDate, monthsElapsed);
   }
   return {
-    cycleStartDate: shiftDateKeyByMonths(cycleStartDate, monthsElapsed),
+    cycleStartDate: shiftDateKey(shiftDateKeyByMonths(end, -1), 1),
     cycleEndDate: end,
     monthsElapsed,
   };

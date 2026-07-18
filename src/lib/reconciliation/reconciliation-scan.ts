@@ -42,7 +42,14 @@ export type ScanForReconciliationCandidatesResult = {
  * creates duplicate rows.
  */
 export async function scanForReconciliationCandidates(userId: string): Promise<ScanForReconciliationCandidatesResult> {
-  const [transactions, debts] = await Promise.all([listAllTransactions(userId), listDebts(userId)]);
+  // skipRollover: true -- this scan must never mutate debts (see "never
+  // mutates transactions or debts" in reconciliation-scan.test.ts); the
+  // lazy cycle-rollover in listDebts is a write side effect that has no
+  // place in a read-only candidate scan.
+  const [transactions, debts] = await Promise.all([
+    listAllTransactions(userId),
+    listDebts(userId, false, new Date(), { skipRollover: true }),
+  ]);
   const confirmedTransactions = transactions.filter((transaction) => transaction.status === "confirmed");
 
   const drafts: ReconciliationCandidateDraft[] = [
