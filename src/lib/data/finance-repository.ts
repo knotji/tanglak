@@ -543,18 +543,24 @@ function isDebtCyclePaymentSatisfied(
  * before committing to the roll -- see the callers below.
  *
  * Also re-derives from the current due date whenever a *stored* window has
- * drifted out of sync with it (cycle_end_date !== due_date), rather than
- * trusting the stored window blindly. due_date and cycle_end_date are
- * meant to always be equal -- they start equal at creation and every
- * rollover advances both by the same amount -- so any mismatch means the
- * stored window is stale, almost always because the due date was edited
- * before PR #51 taught updateDebt to re-derive the cycle window on a
- * due-date change. Trusting a stale window here means checking payment
- * satisfaction against the WRONG (old) date range, which can wrongly look
- * unpaid and permanently block the debt from ever rolling forward again,
- * even though the current due date's real obligation was paid on time --
- * reproducing the exact "still shows overdue with ฿0 paid" bug for a
- * *stored*, not just missing, cycle window.
+ * fallen behind it (cycle_end_date < due_date), rather than trusting the
+ * stored window blindly. This only fires when the stored end date is
+ * strictly *before* the due date -- not merely different from it -- so an
+ * intentionally custom window that legitimately extends past its due date
+ * (e.g. cycle_end_date after due_date, as `updateDebt`'s explicit-window
+ * override is designed to support and tests) is left alone; only a window
+ * that has fallen strictly behind is treated as stale.
+ *
+ * A stale, behind-due-date window happens when the due date was edited
+ * forward (e.g. a new monthly statement) before PR #51 taught updateDebt
+ * to re-derive the cycle window on a due-date change -- due_date moves
+ * on, cycle_end_date stays frozen in the past. Trusting a stale window
+ * here means checking payment satisfaction against the WRONG (old) date
+ * range, which can wrongly look unpaid and permanently block the debt
+ * from ever rolling forward again, even though the current due date's
+ * real obligation was paid on time -- reproducing the exact "still shows
+ * overdue with ฿0 paid" bug for a *stored*, not just missing, cycle
+ * window.
  */
 function resolveDebtCycleRollover(
   debt: Pick<Debt, "cycleStartDate" | "cycleEndDate" | "dueDate">,
@@ -562,7 +568,7 @@ function resolveDebtCycleRollover(
 ): { cycleStartDate: string; cycleEndDate: string; dueDate?: string; baseline: { cycleStartDate: string; cycleEndDate: string } } | null {
   const hasStoredWindow = Boolean(debt.cycleStartDate && debt.cycleEndDate);
   const storedWindowInSyncWithDueDate =
-    hasStoredWindow && (!debt.dueDate || !isValidDateKey(debt.dueDate) || debt.cycleEndDate === debt.dueDate);
+    hasStoredWindow && (!debt.dueDate || !isValidDateKey(debt.dueDate) || debt.cycleEndDate! >= debt.dueDate);
 
   const baseline = storedWindowInSyncWithDueDate
     ? { cycleStartDate: debt.cycleStartDate!, cycleEndDate: debt.cycleEndDate! }
