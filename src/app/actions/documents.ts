@@ -241,6 +241,13 @@ export async function deleteDocumentAction(documentId: string): Promise<Document
     if (!doc) {
       return { ok: false, message: "ไม่พบข้อมูลเอกสาร" };
     }
+    if (doc.status !== "review_ready" && doc.status !== "needs_review" && !doc.status.startsWith("failed")) {
+      return { ok: false, message: "ไม่สามารถลบเอกสารนี้ได้เนื่องจากถูกดำเนินการไปแล้ว" };
+    }
+    const linkedTransaction = await getTransactionByDocumentId(user.id, documentId);
+    if (linkedTransaction) {
+      return { ok: false, message: "ไม่สามารถลบเอกสารนี้ได้เนื่องจากมีรายการที่ยืนยันแล้วผูกอยู่" };
+    }
 
     // Delete from Supabase private storage
     if (!isMockAuthEnabled()) {
