@@ -1604,6 +1604,34 @@ export async function countPendingAttentionItems(userId: string): Promise<number
   return (txs.count ?? 0) + (docs.count ?? 0) + (batches.count ?? 0);
 }
 
+/**
+ * Documents already extracted but not yet confirmed -- specifically the
+ * ones a review link (/upload/review/[id]) still makes sense for. Exists
+ * so the upload page can surface "you still have N slips waiting" even
+ * after the in-memory batch-results list that showed them right after
+ * upload is gone (e.g. the user navigated away to review one of several,
+ * or refreshed) -- without this, an unconfirmed document from a multi-file
+ * upload had no way back to it at all once that ephemeral list unmounted,
+ * even though it was still sitting in the database waiting on the user.
+ */
+export async function listPendingReviewDocuments(userId: string): Promise<FinanceDocument[]> {
+  if (isMockAuthEnabled()) {
+    return getMockState()
+      .documents.filter((d) => d.userId === userId && (d.status === "review_ready" || d.status === "needs_review"))
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("documents")
+    .select("*")
+    .eq("user_id", userId)
+    .in("status", ["review_ready", "needs_review"])
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []).map(mapDocument);
+}
+
 // === History Import Batches Repository ===
 
 export async function createImportBatch(
