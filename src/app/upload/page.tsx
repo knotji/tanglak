@@ -4,10 +4,12 @@ import { PageHeader } from "@/components/PageHeader";
 import { UploadClient } from "./UploadClient";
 import { requireUser } from "@/lib/auth/session";
 import { requireCompletedOnboarding } from "@/lib/auth/onboarding";
+import { listPendingReviewDocuments } from "@/lib/data/finance-repository";
 
 export default async function UploadPage() {
   const user = await requireUser();
   await requireCompletedOnboarding(user);
+  const pendingDocuments = await listPendingReviewDocuments(user.id);
 
   return (
     <AppShell>
@@ -16,7 +18,7 @@ export default async function UploadPage() {
         subtitle="เริ่มจากรายการของเดือนนี้ แล้วค่อยเพิ่มทีละรายการได้"
       />
 
-      <UploadClient />
+      <UploadClient pendingDocuments={pendingDocuments} />
 
       <NextActionCard
         title="คุณเป็นคนยืนยันเสมอ"

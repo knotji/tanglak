@@ -1707,6 +1707,65 @@ export async function countPendingAttentionItems(userId: string): Promise<number
   return (txs.count ?? 0) + (docs.count ?? 0) + (batches.count ?? 0);
 }
 
+/**
+ * Documents already extracted but not yet confirmed -- specifically the
+ * ones a review link (/upload/review/[id]) still makes sense for. Exists
+ * so the upload page can surface "you still have N slips waiting" even
+ * after the in-memory batch-results list that showed them right after
+ * upload is gone (e.g. the user navigated away to review one of several,
+ * or refreshed) -- without this, an unconfirmed document from a multi-file
+ * upload had no way back to it at all once that ephemeral list unmounted,
+ * even though it was still sitting in the database waiting on the user.
+ */
+export async function listPendingReviewDocuments(userId: string): Promise<FinanceDocument[]> {
+  if (isMockAuthEnabled()) {
+    const linkedDocumentIds = new Set(
+      getMockState()
+        .transactions.filter((t) => t.userId === userId && t.documentId)
+        .map((t) => t.documentId),
+    );
+    return getMockState()
+      .documents.filter(
+        (d) =>
+          d.userId === userId &&
+          (d.status === "review_ready" || d.status === "needs_review") &&
+          !linkedDocumentIds.has(d.id),
+      )
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("documents")
+    .select("*")
+    .eq("user_id", userId)
+    .in("status", ["review_ready", "needs_review"])
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(error.message);
+  const documents = (data ?? []).map(mapDocument);
+  if (documents.length === 0) return documents;
+
+  // A document that already has a transaction linked to it (documentId) has
+  // already been acted on -- most notably, the AI Financial Autopilot
+  // auto-executing a receipt/delivery slip creates its transaction directly
+  // without ever marking the source document "confirmed" (see
+  // runSlipImportAutopilot/autopilot-executor.ts). Without this exclusion,
+  // an already-auto-saved slip would still show up here as "needs review",
+  // and clicking into it would land on the manual review form for a
+  // transaction that already exists.
+  const { data: linkedTransactions, error: linkedError } = await supabase
+    .from("transactions")
+    .select("document_id")
+    .eq("user_id", userId)
+    .in(
+      "document_id",
+      documents.map((d) => d.id),
+    );
+  if (linkedError) handlePostgrestError(linkedError);
+  const linkedDocumentIds = new Set((linkedTransactions ?? []).map((row) => row.document_id));
+  return documents.filter((d) => !linkedDocumentIds.has(d.id));
+}
+
 // === History Import Batches Repository ===
 
 export async function createImportBatch(

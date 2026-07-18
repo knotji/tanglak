@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { uploadAndExtractAction } from "@/app/actions/documents";
 import { StepProgress } from "@/components/feedback/StepProgress";
+import type { FinanceDocument } from "@/types/domain";
 
 /**
  * Slip-first document type quick-select. Bulk history upload is deliberately
@@ -48,7 +49,7 @@ type FileResult = {
   message?: string;
 };
 
-export function UploadClient() {
+export function UploadClient({ pendingDocuments = [] }: { pendingDocuments?: FinanceDocument[] }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [docType, setDocType] = useState<string>("other");
@@ -192,12 +193,13 @@ export function UploadClient() {
   };
 
   const handleStartOver = () => {
-    setResults(null);
-    setSelectedFiles([]);
-    setErrorMessage(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
+    // A full navigation (not just resetting local state) so the pending-
+    // review section below re-fetches fresh from the server -- a batch
+    // that just finished can have left new review_ready/needs_review
+    // documents behind (any the user didn't click into), and the
+    // `pendingDocuments` prop was only ever captured once, when this page
+    // first loaded, so it wouldn't otherwise reflect them.
+    window.location.href = "/upload";
   };
 
   const formatSize = (bytes: number) => {
@@ -291,6 +293,41 @@ export function UploadClient() {
         accept="image/jpeg,image/png,image/webp,application/pdf"
         onChange={handleFileChange}
       />
+
+      {/* Pending review documents -- slips already read by AI but not yet
+          confirmed, e.g. from an earlier multi-file batch where the user
+          navigated away to review one and the rest fell out of this
+          page's in-memory results list. The document itself was never
+          lost (it's still sitting here, unconfirmed), just previously
+          impossible to get back to without this section. */}
+      {selectedFiles.length === 0 && pendingDocuments.length > 0 && (
+        <div className="rounded-[16px] border border-primary/20 bg-primary-soft/20 p-4">
+          <p className="text-sm font-bold text-foreground">
+            มีรายการรอตรวจสอบอยู่ {pendingDocuments.length} รายการ
+          </p>
+          <ul className="mt-3 flex flex-col gap-2">
+            {pendingDocuments.map((doc) => (
+              <li
+                key={doc.id}
+                className="flex items-center gap-3 rounded-[12px] border border-border bg-white px-3 py-2.5"
+              >
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-primary-soft text-primary">
+                  <FileIcon size={18} />
+                </div>
+                <div className="min-w-0 flex-1 truncate text-sm font-bold text-foreground">
+                  {doc.originalFilename || "สลิป"}
+                </div>
+                <Link
+                  href={`/upload/review/${doc.id}`}
+                  className="shrink-0 rounded-[10px] bg-primary px-3 py-1.5 text-xs font-bold text-white"
+                >
+                  ตรวจสอบ
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Main Upload Box Card */}
       {selectedFiles.length === 0 ? (
