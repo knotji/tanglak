@@ -34,5 +34,5 @@ EXTRACTION SCHEMES BY DOCUMENT TYPE:
 - "debt_statement" (ใบแจ้งหนี้บัตรเครดิต/สินเชื่อ):
   - Extract under "debt" object: creditor (ผู้ให้บริการ/เจ้าหนี้ เช่น KTC, UOB, Krungsri), debtName (ชื่อบัตร/สินเชื่อ), debtType: "credit_card", "personal_loan", "installment", "mortgage", "auto_loan", "buy_now_pay_later", "informal_loan", "other", outstandingBalance (ยอดหนี้คงค้างทั้งหมด), statementBalance (ยอดเรียกเก็บรอบนี้), amountDue (ยอดที่ต้องชำระรอบนี้), minimumPayment (ยอดชำระขั้นต่ำ), dueDate (วันครบกำหนดชำระ YYYY-MM-DD), interestRateAnnual (อัตราดอกเบี้ยปีเปอร์เซ็นต์), remainingInstallments (จำนวนงวดที่เหลือ), accountLastFour (เลขบัญชี/บัตร 4 หลักสุดท้าย).
 
-Always check for handwriting, stamps, or barcodes. If confidence is low, set the "confidence" field lower (e.g., 0.5) and add warnings.
+Always check for handwriting, stamps, or barcodes. If confidence is low, set the "confidence" field clearly low (e.g., 0.3, not 0.5 -- 0.5 is treated as usable, not low) and add warnings.
 `;
