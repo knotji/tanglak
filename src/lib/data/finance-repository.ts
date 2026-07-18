@@ -1543,21 +1543,44 @@ export async function failDocumentProcessing(
   return data ? mapDocument(data) : null;
 }
 
-export async function deleteDocument(userId: string, id: string): Promise<void> {
+/**
+ * Deletes a document row only if its status is still one of
+ * `allowedStatuses` at the moment the delete actually executes -- the
+ * status check is part of the same delete statement (real Supabase) or the
+ * same synchronous filter (mock), not a separate read beforehand, so a
+ * concurrent confirmation that has already flipped the document's status
+ * cannot lose the race to a delete that read a stale "still pending"
+ * status earlier. Returns false (no error) if the row no longer matched
+ * `allowedStatuses` -- the caller decides how to report that.
+ */
+export async function deleteDocument(
+  userId: string,
+  id: string,
+  allowedStatuses: FinanceDocument["status"][],
+): Promise<boolean> {
   if (isMockAuthEnabled()) {
     const state = getMockState();
-    state.documents = state.documents.filter((d) => !(d.id === id && d.userId === userId));
-    state.documentExtractions = state.documentExtractions.filter((e) => !(e.documentId === id && e.userId === userId));
-    return;
+    const before = state.documents.length;
+    state.documents = state.documents.filter(
+      (d) => !(d.id === id && d.userId === userId && allowedStatuses.includes(d.status)),
+    );
+    const deleted = state.documents.length < before;
+    if (deleted) {
+      state.documentExtractions = state.documentExtractions.filter((e) => !(e.documentId === id && e.userId === userId));
+    }
+    return deleted;
   }
 
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("documents")
     .delete()
     .eq("id", id)
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .in("status", allowedStatuses)
+    .select("id");
   if (error) throw new Error(error.message);
+  return (data?.length ?? 0) > 0;
 }
 
 export async function createDocumentExtraction(
