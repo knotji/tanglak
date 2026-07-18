@@ -193,7 +193,10 @@ describe("navigation performance wiring", () => {
     expect(historyPage).not.toContain("input[type='file']");
     expect(upload).toContain("disabled={isProcessing}");
     expect(upload).toContain("aria-busy={isProcessing}");
-    expect(upload).toContain("setErrorMessage(res.message");
+    // Each file's failure is surfaced individually in the per-file results
+    // list (a single global error banner can't distinguish which file among
+    // several failed), rather than one page-level errorMessage.
+    expect(upload).toContain('status: "error", message: res.message');
     expect(upload).toContain("setIsProcessing(false)");
   });
 
