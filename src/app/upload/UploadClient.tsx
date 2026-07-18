@@ -193,12 +193,13 @@ export function UploadClient({ pendingDocuments = [] }: { pendingDocuments?: Fin
   };
 
   const handleStartOver = () => {
-    setResults(null);
-    setSelectedFiles([]);
-    setErrorMessage(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
+    // A full navigation (not just resetting local state) so the pending-
+    // review section below re-fetches fresh from the server -- a batch
+    // that just finished can have left new review_ready/needs_review
+    // documents behind (any the user didn't click into), and the
+    // `pendingDocuments` prop was only ever captured once, when this page
+    // first loaded, so it wouldn't otherwise reflect them.
+    window.location.href = "/upload";
   };
 
   const formatSize = (bytes: number) => {

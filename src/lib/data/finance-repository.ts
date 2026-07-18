@@ -1616,8 +1616,18 @@ export async function countPendingAttentionItems(userId: string): Promise<number
  */
 export async function listPendingReviewDocuments(userId: string): Promise<FinanceDocument[]> {
   if (isMockAuthEnabled()) {
+    const linkedDocumentIds = new Set(
+      getMockState()
+        .transactions.filter((t) => t.userId === userId && t.documentId)
+        .map((t) => t.documentId),
+    );
     return getMockState()
-      .documents.filter((d) => d.userId === userId && (d.status === "review_ready" || d.status === "needs_review"))
+      .documents.filter(
+        (d) =>
+          d.userId === userId &&
+          (d.status === "review_ready" || d.status === "needs_review") &&
+          !linkedDocumentIds.has(d.id),
+      )
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
@@ -1629,7 +1639,28 @@ export async function listPendingReviewDocuments(userId: string): Promise<Financ
     .in("status", ["review_ready", "needs_review"])
     .order("created_at", { ascending: true });
   if (error) throw new Error(error.message);
-  return (data ?? []).map(mapDocument);
+  const documents = (data ?? []).map(mapDocument);
+  if (documents.length === 0) return documents;
+
+  // A document that already has a transaction linked to it (documentId) has
+  // already been acted on -- most notably, the AI Financial Autopilot
+  // auto-executing a receipt/delivery slip creates its transaction directly
+  // without ever marking the source document "confirmed" (see
+  // runSlipImportAutopilot/autopilot-executor.ts). Without this exclusion,
+  // an already-auto-saved slip would still show up here as "needs review",
+  // and clicking into it would land on the manual review form for a
+  // transaction that already exists.
+  const { data: linkedTransactions, error: linkedError } = await supabase
+    .from("transactions")
+    .select("document_id")
+    .eq("user_id", userId)
+    .in(
+      "document_id",
+      documents.map((d) => d.id),
+    );
+  if (linkedError) handlePostgrestError(linkedError);
+  const linkedDocumentIds = new Set((linkedTransactions ?? []).map((row) => row.document_id));
+  return documents.filter((d) => !linkedDocumentIds.has(d.id));
 }
 
 // === History Import Batches Repository ===
