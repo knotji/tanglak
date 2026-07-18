@@ -195,11 +195,13 @@ function getMockExtraction(
   // autopilot-confidence.ts) so the upload always lands on the manual
   // review form. Lets tests exercise the review FORM itself (e.g. its own
   // client-side money-amount validation) with realistic values, without
-  // the autopilot vertical slice intercepting the upload first.
+  // the autopilot vertical slice intercepting the upload first. Kept well
+  // below even a lowered threshold (not just "below 0.55") so this fixture
+  // doesn't need to be re-tuned every time the thresholds are adjusted.
   if (nameLower.includes("forcereview")) {
     return extractedFinancialDocumentSchema.parse({
       documentType: "delivery_receipt",
-      confidence: 0.5,
+      confidence: 0.2,
       transaction: {
         type: "expense",
         amount: 185,

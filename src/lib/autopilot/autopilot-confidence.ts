@@ -9,8 +9,14 @@ import type { ExtractedCategoryResolution } from "@/lib/finance/category-fallbac
 import { computeLearnedCategoryConfidence } from "@/lib/finance/category-learning";
 import type { AutopilotConfidence } from "./autopilot-types";
 
-const HIGH_THRESHOLD = 0.85;
-const MEDIUM_THRESHOLD = 0.55;
+// Lowered from 0.85/0.55 at the owner's explicit request, accepting the
+// trade-off that more slips auto-save on a first read instead of stopping
+// for manual review -- and therefore that a wrong auto-save (amount,
+// category) happens somewhat more often. Every auto-saved/execute-with-
+// notice action remains reversible via the existing undo affordance
+// (settings/autopilot-activity) regardless of this threshold.
+const HIGH_THRESHOLD = 0.7;
+const MEDIUM_THRESHOLD = 0.4;
 
 /**
  * Confidence in the core transaction fields (amount, occurredAt, type) --
