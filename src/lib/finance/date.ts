@@ -157,7 +157,7 @@ export function shiftDateKey(dateKey: string, offsetDays: number): string {
  * 2026-03-03 -- a naive `Date.UTC(year, month - 1 + offset, day)` would
  * silently roll over because February has fewer than 31 days).
  */
-function shiftDateKeyByMonths(dateKey: string, monthOffset: number): string {
+export function shiftDateKeyByMonths(dateKey: string, monthOffset: number): string {
   if (!isValidDateKey(dateKey)) {
     throw new Error("Invalid date");
   }
@@ -212,12 +212,21 @@ export function deriveDebtCycleFromDueDate(dueDate: string): { cycleStartDate: s
  * present) -- a debt with no cycle dates at all still uses the calendar-
  * month fallback in `getDebtCycleWindow`, which self-corrects every month
  * on its own and has nothing to roll forward.
+ *
+ * Also returns `monthsElapsed` so the caller can shift the debt's
+ * `due_date` by the same amount -- due_date and cycle_end_date are set
+ * equal at creation (see `deriveDebtCycleFromDueDate`) and are meant to
+ * always represent the same underlying due date; rolling the cycle
+ * window forward without also advancing due_date would leave the debt
+ * permanently displaying a stale, already-passed due date (and an
+ * incorrect "overdue" status) even after the debt is fully current on
+ * its new cycle.
  */
 export function rollDebtCycleForward(
   cycleStartDate: string,
   cycleEndDate: string,
   today: string,
-): { cycleStartDate: string; cycleEndDate: string } | null {
+): { cycleStartDate: string; cycleEndDate: string; monthsElapsed: number } | null {
   if (!isValidDateKey(cycleStartDate) || !isValidDateKey(cycleEndDate) || !isValidDateKey(today)) {
     throw new Error("Invalid date");
   }
@@ -232,6 +241,7 @@ export function rollDebtCycleForward(
   return {
     cycleStartDate: shiftDateKeyByMonths(cycleStartDate, monthsElapsed),
     cycleEndDate: end,
+    monthsElapsed,
   };
 }
 

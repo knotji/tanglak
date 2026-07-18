@@ -22,6 +22,7 @@ import {
   isValidDateKey,
   isValidMonthQuery,
   rollDebtCycleForward,
+  shiftDateKeyByMonths,
   TRANSACTION_OCCURRED_AT_REQUIRED_TH,
 } from "@/lib/finance/date";
 import { logSafeError } from "@/lib/observability/safe-diagnostics";
@@ -496,12 +497,26 @@ export async function listDebts(userId: string, includeClosed = false, today: Da
  * rolled -- a closed debt's history is frozen, not still ticking forward.
  * A debt with no cycle dates set at all has nothing to roll; it keeps
  * using the calendar-month fallback, which already self-corrects monthly.
+ *
+ * Also advances `due_date` by the same number of months as the cycle
+ * window. Without this, a rolled debt would keep showing its old,
+ * already-settled due date -- and an incorrect "overdue" status computed
+ * from it (`debtDueStatus` in debt-status.ts reads `due_date` directly,
+ * independent of the cycle window) -- even though the debt is fully
+ * current on payments for its new cycle.
  */
 async function rolloverDebtCycleIfDue(userId: string, debt: Debt, todayKey: string): Promise<Debt> {
   if (debt.status !== "active" && debt.status !== "overdue") return debt;
   if (!debt.cycleStartDate || !debt.cycleEndDate) return debt;
   const rolled = rollDebtCycleForward(debt.cycleStartDate, debt.cycleEndDate, todayKey);
   if (!rolled) return debt;
+
+  // due_date is set equal to cycle_end_date at creation (deriveDebtCycleFromDueDate)
+  // and both represent the same underlying due date -- shift it forward by the
+  // same number of months so the debt stops showing a stale, already-settled
+  // due date (and a resulting incorrect "overdue" status) once its cycle rolls.
+  const newDueDate =
+    debt.dueDate && isValidDateKey(debt.dueDate) ? shiftDateKeyByMonths(debt.dueDate, rolled.monthsElapsed) : debt.dueDate;
 
   const cycle = getDebtCycleWindow(rolled);
   const supabase = await createSupabaseServerClient();
@@ -522,6 +537,7 @@ async function rolloverDebtCycleIfDue(userId: string, debt: Debt, todayKey: stri
     .update({
       cycle_start_date: rolled.cycleStartDate,
       cycle_end_date: rolled.cycleEndDate,
+      due_date: newDueDate,
       amount_paid_this_cycle_satang: total,
     })
     .eq("id", debt.id)
@@ -529,7 +545,13 @@ async function rolloverDebtCycleIfDue(userId: string, debt: Debt, todayKey: stri
     .neq("status", "deleted");
   if (updateError) throw new Error(updateError.message);
 
-  return { ...debt, cycleStartDate: rolled.cycleStartDate, cycleEndDate: rolled.cycleEndDate, amountPaidThisCycleSatang: total };
+  return {
+    ...debt,
+    cycleStartDate: rolled.cycleStartDate,
+    cycleEndDate: rolled.cycleEndDate,
+    dueDate: newDueDate,
+    amountPaidThisCycleSatang: total,
+  };
 }
 
 function rolloverMockDebtCycleIfDue(debt: Debt, todayKey: string): void {
@@ -540,6 +562,9 @@ function rolloverMockDebtCycleIfDue(debt: Debt, todayKey: string): void {
 
   debt.cycleStartDate = rolled.cycleStartDate;
   debt.cycleEndDate = rolled.cycleEndDate;
+  if (debt.dueDate && isValidDateKey(debt.dueDate)) {
+    debt.dueDate = shiftDateKeyByMonths(debt.dueDate, rolled.monthsElapsed);
+  }
 
   const cycle = getDebtCycleWindow(rolled);
   const start = new Date(cycle.startInstant).getTime();
