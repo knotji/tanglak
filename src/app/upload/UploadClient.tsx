@@ -14,8 +14,10 @@ import {
   CheckCircle2,
   Camera,
 } from "lucide-react";
-import { uploadAndExtractAction } from "@/app/actions/documents";
+import { deleteDocumentAction, uploadAndExtractAction } from "@/app/actions/documents";
 import { StepProgress } from "@/components/feedback/StepProgress";
+import { ConfirmDialog } from "@/components/feedback/ConfirmDialog";
+import { useToast } from "@/components/feedback/ToastProvider";
 import type { FinanceDocument } from "@/types/domain";
 
 /**
@@ -57,6 +59,24 @@ export function UploadClient({ pendingDocuments = [] }: { pendingDocuments?: Fin
   const [progressStep, setProgressStep] = useState(uploadSteps[0].id);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [results, setResults] = useState<FileResult[] | null>(null);
+  const [visiblePendingDocuments, setVisiblePendingDocuments] = useState(pendingDocuments);
+  const [docPendingDelete, setDocPendingDelete] = useState<FinanceDocument | null>(null);
+  const [isDeletingDoc, setIsDeletingDoc] = useState(false);
+  const { showToast } = useToast();
+
+  const handleConfirmDeletePendingDoc = async () => {
+    if (!docPendingDelete) return;
+    setIsDeletingDoc(true);
+    const res = await deleteDocumentAction(docPendingDelete.id);
+    setIsDeletingDoc(false);
+    if (res.ok) {
+      setVisiblePendingDocuments((prev) => prev.filter((d) => d.id !== docPendingDelete.id));
+      setDocPendingDelete(null);
+      showToast("ลบรายการแล้ว", "success");
+    } else {
+      showToast(res.message || "ลบรายการไม่สำเร็จ", "error");
+    }
+  };
 
   const openFileDialog = (nextDocType?: string) => {
     if (nextDocType) setDocType(nextDocType);
@@ -300,13 +320,13 @@ export function UploadClient({ pendingDocuments = [] }: { pendingDocuments?: Fin
           page's in-memory results list. The document itself was never
           lost (it's still sitting here, unconfirmed), just previously
           impossible to get back to without this section. */}
-      {selectedFiles.length === 0 && pendingDocuments.length > 0 && (
+      {selectedFiles.length === 0 && visiblePendingDocuments.length > 0 && (
         <div className="rounded-[16px] border border-primary/20 bg-primary-soft/20 p-4">
           <p className="text-sm font-bold text-foreground">
-            มีรายการรอตรวจสอบอยู่ {pendingDocuments.length} รายการ
+            มีรายการรอตรวจสอบอยู่ {visiblePendingDocuments.length} รายการ
           </p>
           <ul className="mt-3 flex flex-col gap-2">
-            {pendingDocuments.map((doc) => (
+            {visiblePendingDocuments.map((doc) => (
               <li
                 key={doc.id}
                 className="flex items-center gap-3 rounded-[12px] border border-border bg-white px-3 py-2.5"
@@ -323,11 +343,31 @@ export function UploadClient({ pendingDocuments = [] }: { pendingDocuments?: Fin
                 >
                   ตรวจสอบ
                 </Link>
+                <button
+                  type="button"
+                  onClick={() => setDocPendingDelete(doc)}
+                  className="shrink-0 p-1.5 text-overdue"
+                  aria-label={`ลบ ${doc.originalFilename || "สลิป"}`}
+                >
+                  <Trash2 size={18} />
+                </button>
               </li>
             ))}
           </ul>
         </div>
       )}
+
+      <ConfirmDialog
+        open={docPendingDelete !== null}
+        title="ลบรายการนี้หรือไม่"
+        body={`"${docPendingDelete?.originalFilename || "สลิป"}" และข้อมูลที่ยังไม่ได้ยืนยันจะถูกลบ และไม่สามารถกู้คืนได้`}
+        confirmLabel="ลบรายการ"
+        cancelLabel="ยกเลิก"
+        confirmPending={isDeletingDoc}
+        pendingLabel="กำลังลบ..."
+        onConfirm={handleConfirmDeletePendingDoc}
+        onCancel={() => setDocPendingDelete(null)}
+      />
 
       {/* Main Upload Box Card */}
       {selectedFiles.length === 0 ? (
