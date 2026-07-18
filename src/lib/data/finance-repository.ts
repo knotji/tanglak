@@ -541,16 +541,35 @@ function isDebtCyclePaymentSatisfied(
  * Returns the un-rolled `baseline` window alongside the rolled result so
  * the caller can check whether that elapsed cycle was actually paid
  * before committing to the roll -- see the callers below.
+ *
+ * Also re-derives from the current due date whenever a *stored* window has
+ * drifted out of sync with it (cycle_end_date !== due_date), rather than
+ * trusting the stored window blindly. due_date and cycle_end_date are
+ * meant to always be equal -- they start equal at creation and every
+ * rollover advances both by the same amount -- so any mismatch means the
+ * stored window is stale, almost always because the due date was edited
+ * before PR #51 taught updateDebt to re-derive the cycle window on a
+ * due-date change. Trusting a stale window here means checking payment
+ * satisfaction against the WRONG (old) date range, which can wrongly look
+ * unpaid and permanently block the debt from ever rolling forward again,
+ * even though the current due date's real obligation was paid on time --
+ * reproducing the exact "still shows overdue with ฿0 paid" bug for a
+ * *stored*, not just missing, cycle window.
  */
 function resolveDebtCycleRollover(
   debt: Pick<Debt, "cycleStartDate" | "cycleEndDate" | "dueDate">,
   todayKey: string,
 ): { cycleStartDate: string; cycleEndDate: string; dueDate?: string; baseline: { cycleStartDate: string; cycleEndDate: string } } | null {
-  const baseline =
-    debt.cycleStartDate && debt.cycleEndDate
-      ? { cycleStartDate: debt.cycleStartDate, cycleEndDate: debt.cycleEndDate }
-      : debt.dueDate && isValidDateKey(debt.dueDate)
-        ? deriveDebtCycleFromDueDate(debt.dueDate)
+  const hasStoredWindow = Boolean(debt.cycleStartDate && debt.cycleEndDate);
+  const storedWindowInSyncWithDueDate =
+    hasStoredWindow && (!debt.dueDate || !isValidDateKey(debt.dueDate) || debt.cycleEndDate === debt.dueDate);
+
+  const baseline = storedWindowInSyncWithDueDate
+    ? { cycleStartDate: debt.cycleStartDate!, cycleEndDate: debt.cycleEndDate! }
+    : debt.dueDate && isValidDateKey(debt.dueDate)
+      ? deriveDebtCycleFromDueDate(debt.dueDate)
+      : hasStoredWindow
+        ? { cycleStartDate: debt.cycleStartDate!, cycleEndDate: debt.cycleEndDate! }
         : undefined;
   if (!baseline) return null;
 
