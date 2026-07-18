@@ -54,6 +54,22 @@ describe("rollDebtCycleForward", () => {
     expect(() => rollDebtCycleForward("2026-06-03", "not-a-date", "2026-07-10")).toThrow();
     expect(() => rollDebtCycleForward("2026-06-03", "2026-07-02", "not-a-date")).toThrow();
   });
+
+  it("never lets the new cycle's start land on or before the previous cycle's end, even across a clamped month-end due date", () => {
+    // deriveDebtCycleFromDueDate("2026-04-30") produces exactly this window
+    // (2026-03-31..2026-04-30) -- independently month-shifting the original
+    // start date (2026-03-31 -> clamped to 2026-04-30, since April has only
+    // 30 days) would collide with the new end date (also 2026-04-30),
+    // double-counting a payment made on that boundary day in both cycles.
+    const result = rollDebtCycleForward("2026-03-31", "2026-04-30", "2026-05-15");
+    expect(result).toEqual({
+      cycleStartDate: "2026-05-01",
+      cycleEndDate: "2026-05-30",
+      monthsElapsed: 1,
+    });
+    // The new cycle must start strictly after the old cycle's end.
+    expect(result!.cycleStartDate > "2026-04-30").toBe(true);
+  });
 });
 
 describe("listDebts: lazily rolls a debt's cycle window forward when read past its end date", () => {
@@ -112,7 +128,7 @@ describe("listDebts: lazily rolls a debt's cycle window forward when read past i
     expect(withNewPayment?.amountPaidThisCycleSatang).toBe(2_000_00);
   });
 
-  it("backfills and rolls a debt whose cycle window was never set (e.g. created before per-cycle tracking existed), as long as it has a due date", async () => {
+  it("backfills and rolls a debt whose cycle window was never set (e.g. created before per-cycle tracking existed), as long as it has a due date and that elapsed cycle was paid", async () => {
     // "Rabbit Cash" / "SAM" reproduction: a debt that predates cycle-window
     // tracking has NULL cycle_start_date/cycle_end_date in the database.
     // Before this fix, such a debt could never roll at all -- it fell back
@@ -120,7 +136,8 @@ describe("listDebts: lazily rolls a debt's cycle window forward when read past i
     // never advance, so it could show "overdue" indefinitely even once
     // paid. It must instead be backfilled with a derived window (the same
     // derivation createDebt uses for a brand-new debt) and rolled forward
-    // like any other tracked debt.
+    // like any other tracked debt -- but only once that derived (baseline)
+    // cycle is confirmed paid; see the next test for the unpaid case.
     const debt = await createDebt(USER_ID, {
       name: "Legacy",
       amountDueSatang: 100_00,
@@ -130,13 +147,43 @@ describe("listDebts: lazily rolls a debt's cycle window forward when read past i
     const stored = getMockState().debts.find((item) => item.id === debt.id)!;
     stored.cycleStartDate = undefined;
     stored.cycleEndDate = undefined;
+    // Paid in full within the derived baseline cycle (2026-06-19..2026-07-18).
+    await createTransaction(USER_ID, {
+      type: "debt_payment",
+      amountSatang: 100_00,
+      occurredAt: "2026-07-10T12:00:00+07:00",
+      debtId: debt.id,
+    });
 
-    // Derived baseline cycle (2026-06-19..2026-07-18) is rolled forward one
-    // month to cover 2026-08-15, and due_date advances alongside it.
+    // Baseline satisfied -> rolls forward one month to cover 2026-08-15,
+    // and due_date advances alongside it.
     const [result] = await listDebts(USER_ID, false, new Date("2026-08-15T12:00:00+07:00"));
     expect(result?.cycleStartDate).toBe("2026-07-19");
     expect(result?.cycleEndDate).toBe("2026-08-18");
     expect(result?.dueDate).toBe("2026-08-18");
+  });
+
+  it("does not roll a legacy debt's due date/cycle away from overdue when the elapsed baseline cycle was never paid", async () => {
+    // A debt that missed its bill must keep showing "overdue" against the
+    // real due date it missed -- rolling it forward to a fresh, not-yet-due
+    // cycle just because someone opened the debts page would silently hide
+    // a genuinely missed payment, which is the opposite of what a personal
+    // finance app is for.
+    const debt = await createDebt(USER_ID, {
+      name: "Unpaid Legacy",
+      amountDueSatang: 100_00,
+      minimumPaymentSatang: 100_00,
+      dueDate: "2026-07-18",
+    });
+    const stored = getMockState().debts.find((item) => item.id === debt.id)!;
+    stored.cycleStartDate = undefined;
+    stored.cycleEndDate = undefined;
+
+    const [result] = await listDebts(USER_ID, false, new Date("2026-08-15T12:00:00+07:00"));
+    expect(result?.dueDate).toBe("2026-07-18");
+    expect(result?.cycleStartDate).toBeUndefined();
+    expect(result?.cycleEndDate).toBeUndefined();
+    expect(result?.amountPaidThisCycleSatang).toBe(0);
   });
 
   it("reproduces the exact reported bug: a legacy debt (no stored cycle window) paid before its due date must not show overdue with ฿0 paid", async () => {
