@@ -542,29 +542,44 @@ function isDebtCyclePaymentSatisfied(
  * the caller can check whether that elapsed cycle was actually paid
  * before committing to the roll -- see the callers below.
  *
- * Also re-derives from the current due date whenever a *stored* window has
- * drifted out of sync with it (cycle_end_date !== due_date), rather than
- * trusting the stored window blindly. due_date and cycle_end_date are
- * meant to always be equal -- they start equal at creation and every
- * rollover advances both by the same amount -- so any mismatch means the
- * stored window is stale, almost always because the due date was edited
- * before PR #51 taught updateDebt to re-derive the cycle window on a
- * due-date change. Trusting a stale window here means checking payment
- * satisfaction against the WRONG (old) date range, which can wrongly look
- * unpaid and permanently block the debt from ever rolling forward again,
- * even though the current due date's real obligation was paid on time --
- * reproducing the exact "still shows overdue with ฿0 paid" bug for a
- * *stored*, not just missing, cycle window.
+ * Also re-derives from the current due date whenever a *stored* window no
+ * longer contains it (due_date falls before cycle_start_date or after
+ * cycle_end_date), rather than trusting the stored window blindly. A
+ * billing cycle that doesn't even cover its own due date can never be the
+ * right window to check payments against, regardless of whether the
+ * window is "custom" or just stale -- so containment (cycle_start_date <=
+ * due_date <= cycle_end_date), not exact equality to cycle_end_date, is
+ * the invariant worth enforcing. This still leaves alone an intentionally
+ * custom window that legitimately contains its due date without ending
+ * exactly on it (e.g. cycle_end_date somewhat after due_date, as
+ * `updateDebt`'s explicit-window override is designed to support and
+ * tests, and as tests/unit/repository.test.ts's "KTC" fixture already
+ * does) -- only a window the due date has drifted entirely outside of,
+ * in either direction, is treated as stale.
+ *
+ * A stale, out-of-containment window happens when the due date was
+ * edited (e.g. a new monthly statement, in either direction) before
+ * PR #51 taught updateDebt to re-derive the cycle window on a due-date
+ * change -- due_date moves, cycle_start_date/cycle_end_date stay frozen
+ * on the old billing period. Trusting a stale window here means checking
+ * payment satisfaction against the WRONG date range, which can wrongly
+ * look unpaid and permanently block the debt from ever rolling forward
+ * again, even though the current due date's real obligation was paid on
+ * time -- reproducing the exact "still shows overdue with ฿0 paid" bug
+ * for a *stored*, not just missing, cycle window.
  */
 function resolveDebtCycleRollover(
   debt: Pick<Debt, "cycleStartDate" | "cycleEndDate" | "dueDate">,
   todayKey: string,
 ): { cycleStartDate: string; cycleEndDate: string; dueDate?: string; baseline: { cycleStartDate: string; cycleEndDate: string } } | null {
   const hasStoredWindow = Boolean(debt.cycleStartDate && debt.cycleEndDate);
-  const storedWindowInSyncWithDueDate =
-    hasStoredWindow && (!debt.dueDate || !isValidDateKey(debt.dueDate) || debt.cycleEndDate === debt.dueDate);
+  const storedWindowContainsDueDate =
+    hasStoredWindow &&
+    (!debt.dueDate ||
+      !isValidDateKey(debt.dueDate) ||
+      (debt.cycleStartDate! <= debt.dueDate && debt.dueDate <= debt.cycleEndDate!));
 
-  const baseline = storedWindowInSyncWithDueDate
+  const baseline = storedWindowContainsDueDate
     ? { cycleStartDate: debt.cycleStartDate!, cycleEndDate: debt.cycleEndDate! }
     : debt.dueDate && isValidDateKey(debt.dueDate)
       ? deriveDebtCycleFromDueDate(debt.dueDate)
