@@ -186,6 +186,41 @@ describe("listDebts: lazily rolls a debt's cycle window forward when read past i
     expect(result?.amountPaidThisCycleSatang).toBe(0);
   });
 
+  it("reproduces the exact reported bug (SAM): re-derives from the current due date when a *stored* cycle window has drifted out of sync with it", async () => {
+    // SAM: due date is now 2026-07-02, but its stored cycle window is a
+    // stale one left over from before the due date was last edited under
+    // pre-PR-#51 code (which never re-derived the cycle window on a
+    // due-date change) -- 2026-05-03..2026-06-02, one whole month earlier
+    // than what the current due date implies. Paid ฿5,340 (the full amount
+    // due) on 2026-06-26 -- which falls inside the *correct* cycle
+    // (2026-06-03..2026-07-02) but not the stale stored one. Without
+    // detecting the desync, checking baseline satisfaction against the
+    // stale window finds no payment there and refuses to roll forever,
+    // reproducing "still shows overdue with ฿0 paid" for a debt that HAS a
+    // stored cycle window (unlike the fully-legacy no-window case above).
+    const debt = await createDebt(USER_ID, {
+      name: "SAM",
+      amountDueSatang: 5_340_00,
+      minimumPaymentSatang: 5_340_00,
+      dueDate: "2026-07-02",
+    });
+    const stored = getMockState().debts.find((item) => item.id === debt.id)!;
+    stored.cycleStartDate = "2026-05-03";
+    stored.cycleEndDate = "2026-06-02";
+    await createTransaction(USER_ID, {
+      type: "debt_payment",
+      amountSatang: 5_340_00,
+      occurredAt: "2026-06-26T06:41:00+07:00",
+      debtId: debt.id,
+    });
+
+    const [result] = await listDebts(USER_ID, false, new Date("2026-07-18T12:00:00+07:00"));
+    expect(result?.dueDate).toBe("2026-08-02");
+    expect(result?.cycleStartDate).toBe("2026-07-03");
+    expect(result?.cycleEndDate).toBe("2026-08-02");
+    expect(result?.amountPaidThisCycleSatang).toBe(0);
+  });
+
   it("reproduces the exact reported bug: a legacy debt (no stored cycle window) paid before its due date must not show overdue with ฿0 paid", async () => {
     // Rabbit Cash: due 2026-07-15, no cycle_start_date/cycle_end_date ever
     // persisted (a debt created before per-cycle tracking existed). Paid
