@@ -86,6 +86,44 @@ describe("updateDebt: re-derives the cycle window when due_date changes", () => 
     expect(updated.amountPaidThisCycleSatang).toBe(5_340_00);
   });
 
+  it("does not re-derive the cycle window when the patch resubmits the same, unchanged dueDate", async () => {
+    // The manual edit form always resubmits dueDate on every save (it's a
+    // required field on the form), even when the user only changed some
+    // other field -- saveDebtAction's payload always includes dueDate
+    // (src/app/actions/finance.ts). Keying re-derivation off "is dueDate
+    // present in the patch" instead of "did dueDate actually change" would
+    // re-derive (and can corrupt) an already-rolled cycle window on every
+    // single unrelated edit, e.g. wrongly reopening a previous, already-
+    // closed cycle so an old payment counts again.
+    const debt = await createDebt(USER_ID, {
+      name: "Money HUB",
+      outstandingBalanceSatang: 10_000_00,
+      amountDueSatang: 2_367_00,
+      minimumPaymentSatang: 2_367_00,
+      dueDate: "2026-07-19",
+    });
+    expect(debt.cycleStartDate).toBe("2026-06-20");
+    expect(debt.cycleEndDate).toBe("2026-07-19");
+
+    // Simulate the lazy rollover having already advanced the cycle window
+    // past what a fresh derivation from dueDate alone would produce (e.g.
+    // clamped differently by day-of-month), so a wrongful re-derivation is
+    // detectable.
+    const state = getMockState();
+    const stored = state.debts.find((item) => item.id === debt.id)!;
+    stored.cycleStartDate = "2026-07-01";
+    stored.cycleEndDate = "2026-07-19";
+
+    const updated = await updateDebt(USER_ID, debt.id, {
+      dueDate: "2026-07-19",
+      minimumPaymentSatang: 2_500_00,
+    });
+
+    expect(updated.minimumPaymentSatang).toBe(2_500_00);
+    expect(updated.cycleStartDate).toBe("2026-07-01");
+    expect(updated.cycleEndDate).toBe("2026-07-19");
+  });
+
   it("never overrides an explicitly supplied cycle window, even when dueDate also changes", async () => {
     const debt = await createDebt(USER_ID, {
       name: "Money HUB",

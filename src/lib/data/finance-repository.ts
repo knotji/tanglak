@@ -674,25 +674,6 @@ export async function updateDebt(userId: string, id: string, input: Partial<Debt
   // business rule depends on the others), so per-field validation of the
   // patch is equivalent to validating the merged row for these fields.
 
-  // Re-derive the cycle window from a *new* due date the same way createDebt
-  // does at creation, when the caller changes dueDate but doesn't also
-  // explicitly supply a cycle window -- without this, editing a debt's due
-  // date (via the manual edit form, or the document-review "update existing
-  // debt" path when a new monthly statement comes in) leaves cycle_start_date/
-  // cycle_end_date frozen at whatever they were before. That silently
-  // decouples the tracked cycle window from the debt's real due date: the
-  // lazy rollover in listDebts only ever month-shifts the *stored* (now
-  // stale) bounds, with no awareness of the current due_date, so it can drift
-  // onto a window that no longer brackets the due date at all -- a
-  // legitimate on-time payment then stops counting toward "paid this cycle"
-  // even though it clearly falls before the (correct, displayed) due date.
-  const derivedCycle =
-    input.dueDate && !input.cycleStartDate && !input.cycleEndDate && isValidDateKey(input.dueDate)
-      ? deriveDebtCycleFromDueDate(input.dueDate)
-      : undefined;
-  const effectiveCycleStartDate = input.cycleStartDate ?? derivedCycle?.cycleStartDate;
-  const effectiveCycleEndDate = input.cycleEndDate ?? derivedCycle?.cycleEndDate;
-
   if (isMockAuthEnabled()) {
     const state = getMockState();
     const index = state.debts.findIndex((debt) => debt.id === id);
@@ -704,6 +685,37 @@ export async function updateDebt(userId: string, id: string, input: Partial<Debt
     // practice this can only happen if a row was ever written outside this
     // guard, e.g. directly in SQL; belt-and-braces).
     validateDebtInput(input, state.debts[index]);
+
+    // Re-derive the cycle window from a *new* due date the same way createDebt
+    // does at creation, when the patch actually changes dueDate but doesn't
+    // also explicitly supply a cycle window -- without this, editing a
+    // debt's due date (via the manual edit form, or the document-review
+    // "update existing debt" path when a new monthly statement comes in)
+    // leaves cycle_start_date/cycle_end_date frozen at whatever they were
+    // before. That silently decouples the tracked cycle window from the
+    // debt's real due date: the lazy rollover in listDebts only ever
+    // month-shifts the *stored* (now stale) bounds, with no awareness of the
+    // current due_date, so it can drift onto a window that no longer
+    // brackets the due date at all -- a legitimate on-time payment then
+    // stops counting toward "paid this cycle" even though it clearly falls
+    // before the (correct, displayed) due date.
+    //
+    // Compared against the *existing* dueDate, not merely "is dueDate
+    // present in the patch" -- the manual edit form always resubmits
+    // dueDate on every save, even when the user didn't touch it, so keying
+    // off presence alone would re-derive (and can corrupt) an already-
+    // rolled cycle window on every unrelated edit.
+    const derivedCycle =
+      input.dueDate &&
+      input.dueDate !== state.debts[index].dueDate &&
+      !input.cycleStartDate &&
+      !input.cycleEndDate &&
+      isValidDateKey(input.dueDate)
+        ? deriveDebtCycleFromDueDate(input.dueDate)
+        : undefined;
+    const effectiveCycleStartDate = input.cycleStartDate ?? derivedCycle?.cycleStartDate;
+    const effectiveCycleEndDate = input.cycleEndDate ?? derivedCycle?.cycleEndDate;
+
     state.debts[index] = {
       ...state.debts[index],
       name: input.name ?? state.debts[index].name,
@@ -731,6 +743,15 @@ export async function updateDebt(userId: string, id: string, input: Partial<Debt
   const supabase = await createSupabaseServerClient();
   const existing = await getDebtForUser(userId, id);
   validateDebtInput(input, existing);
+  // See the matching comment in the mock-auth branch above -- only re-derive
+  // when dueDate actually changed from the existing row, not merely because
+  // it's present in the patch (the manual edit form always resubmits it).
+  const derivedCycle =
+    input.dueDate && input.dueDate !== existing.dueDate && !input.cycleStartDate && !input.cycleEndDate && isValidDateKey(input.dueDate)
+      ? deriveDebtCycleFromDueDate(input.dueDate)
+      : undefined;
+  const effectiveCycleStartDate = input.cycleStartDate ?? derivedCycle?.cycleStartDate;
+  const effectiveCycleEndDate = input.cycleEndDate ?? derivedCycle?.cycleEndDate;
   const { data, error } = await supabase
     .from("debts")
     .update({
